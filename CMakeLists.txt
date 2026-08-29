@@ -12,7 +12,8 @@ find_package(SDL3 REQUIRED CONFIG)
 
 add_library(simview STATIC
     src/seam/App.cpp
-    src/engine/Draw.cpp)
+    src/engine/Draw.cpp
+    src/sync/Sync.cpp)
 add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
