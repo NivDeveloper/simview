@@ -68,11 +68,13 @@ int main() {
     // Executor.
     std::vector<float> mag;
 
-    auto trace = app.Plot(
-        {.title = "magnetisation",
-         .x = {.label = "sample", .fit = sv::Fit::Stream},
-         .y = {.label = "m", .min = -1.0, .max = 1.0, .fit = sv::Fit::Fixed}});
-    trace.Line("m", [&] { return std::span<const float>(mag); });
+    app.Plot({.title = "magnetisation",
+              .x = {.label = "sample", .fit = sv::Fit::Stream},
+              .y = {.label = "m",
+                    .min = -1.0,
+                    .max = 1.0,
+                    .fit = sv::Fit::Fixed}})
+        .Line("m", [&] { return std::span<const float>(mag); });
 
     bool reseed_wanted = false;
     app.Panel("controls")
