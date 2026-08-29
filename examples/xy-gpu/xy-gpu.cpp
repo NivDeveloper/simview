@@ -24,15 +24,15 @@ int main() {
     tensor::SlotDevice sdev{*dev};
 
     // The sim state lives resident on the device for the whole run.
-    xy::Sim sim;
+    Sim sim;
     sim.seed(sdev);
 
     auto field = sv::FieldFromBuffer(
         app, gpud::sdl::native_buffer(*tensor::resident_buffer(sim.theta)),
-        {.extent = {xy::L, xy::L},
+        {.extent = {L, L},
          .map = sv::Colormap::Hue,
          .lo = 0.0f,
-         .hi = xy::two_pi});
+         .hi = two_pi});
 
     bool paused = false;
     std::uint64_t frame = 0;

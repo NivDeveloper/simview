@@ -14,8 +14,6 @@
 #include <cmath>
 #include <numbers>
 
-namespace xy {
-
 constexpr size_t L = 256;
 constexpr int side = L;
 using Field = tensor::Tensor<float, L, L>;
@@ -116,5 +114,3 @@ struct Sim {
             overrelax(sdev);
     }
 };
-
-} // namespace xy

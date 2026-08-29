@@ -22,6 +22,7 @@ int main() {
     std::vector<float> s(L * L, 1.0f);
     std::atomic<float> T{2.269f}; // start at the critical point
     std::mt19937 rng(2026);
+
     auto reseed = [&] {
         std::bernoulli_distribution half;
         for (auto &x : s)
@@ -35,20 +36,24 @@ int main() {
         std::uniform_real_distribution<float> u;
         std::uniform_int_distribution<unsigned> cell(0, L * L - 1);
         const float t = T.load(std::memory_order_relaxed);
+
         for (unsigned n = 0; n < L * L; ++n) {
             const unsigned k = cell(rng);
             const unsigned x = k % L, y = k / L;
             const float nn =
                 s[y * L + (x + 1) % L] + s[y * L + (x + L - 1) % L] +
                 s[((y + 1) % L) * L + x] + s[((y + L - 1) % L) * L + x];
+
             const float dE = 2.0f * s[k] * nn;
             if (dE <= 0.0f || u(rng) < std::exp(-dE / t))
                 s[k] = -s[k];
         }
+
         auto out = chan.State();
         std::copy(s.begin(), s.end(), out.begin());
         chan.Publish();
     });
+
     sim.Play();
 
     std::uint64_t gen = 0;
