@@ -8,5 +8,16 @@ foreach(t field_check loop_check sync_check gpud_check)
     if(NOT MSVC)
         target_compile_options(${t} PRIVATE -Wall -Wextra)
     endif()
+
+    # Windows resolves DLL imports at LOAD time, and a missing SDL3.dll
+    # raises a modal dialog that blocks forever where no desktop can
+    # dismiss it — a hang, not an error. Copy the runtime DLLs beside
+    # every executable so there is nothing to miss.
+    if(WIN32)
+        add_custom_command(TARGET ${t} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:${t}> $<TARGET_FILE_DIR:${t}>
+            COMMAND_EXPAND_LISTS)
+    endif()
     add_test(NAME headless.${t} COMMAND ${t})
 endforeach()
