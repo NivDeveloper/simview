@@ -3,12 +3,15 @@
 Lightweight cross-platform sim visualization over SDL3. C++20, the
 SYSTEM compiler (AppleClang/gcc/MSVC — deliberately NOT tensor's
 g++-16/reflection world). Design rationale and roadmap: docs/design.md.
-Current state: Move 3 — the sync layer (Executor + Channel, the
-inherited triple-buffer design) and the founding examples: ising-cpu
-(plain arrays + the sync layer; the independence canary) and xy-gpu
-(zero-copy Mode B, a standalone subproject). Field grew the external
-mode (field_from_buffer/rebind in native.h). Next: widgets + plots
-over vendored ImGui/ImPlot behind the one UI boundary.
+Current state: the engine builds ON gpud (the sibling projects' GPU
+interchange): gpud::sdl::try_open owns device bring-up, and the one
+opt-in door — include/simview/gpud.h — carries sv::Device(app) and
+the pull-model field (app.Field(producer, desc) resolves gpud's
+source_of protocol by ADL; the engine re-asks the source at every
+draw, so rebind does not exist). Examples: ising-cpu (plain arrays +
+the sync layer; the independence canary) and xy-gpu (the pull model,
+a standalone subproject). Next: widgets + plots over vendored
+ImGui/ImPlot behind the one UI boundary.
 
 ## Invariants (do not break)
 
@@ -25,23 +28,23 @@ over vendored ImGui/ImPlot behind the one UI boundary.
   | who | may include |
   | --- | --- |
   | `include/simview/*.h` (core) | each other + std. Nothing else, ever |
-  | opt-in interop headers (`native.h`; the gpud door when it lands) | core + std; may name SDL and gpud vocabulary — forward declarations preferred, gpud's SDK-free headers admissible; nothing of SDL's is ever included. lint rule (a) grows with each door |
+  | `include/simview/gpud.h` (the one door) | core + std + `<gpud/Device.h>` — gpud's SDK-free interface header is the ONE admissible foreign include; never SDL's, never a gpud backend header. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud) |
   | `src/**` | anything (SDL, later ImGui/ImPlot) — never installed |
   | a core consumer | `<simview/simview.h>` + libsimview; no SDL anywhere |
 
-- **SDL3 is PRIVATE.** It appears in exactly one public header
-  (native.h) as forward declarations — the deliberate carve-out for
-  zero-copy interop and device sharing. Including native.h is the
-  consumer declaring "SDL is my dependency too".
-- **No tensor — ever. gpud is the sanctioned interchange.** gpud is
-  the universal GPU abstraction the sibling projects share to
-  communicate GPU state, and simview may speak its vocabulary — in
-  the OPT-IN interop surface only (the native.h pattern: including
-  the door declares the dependency), never in the core, and
-  libsimview links nothing of it (interop sugar lowers inline). Data
-  crosses the impl as pointer+stride, `SDL_GPUBuffer *`, or gpud
-  vocabulary at that door. No shader toolchain: internal shaders are
-  committed bytecode; regeneration is a dev-only script.
+- **SDL3 is PRIVATE — in NO public header now**, not even as a
+  forward declaration: gpud vocabulary replaced the SDL handle door.
+- **No tensor — ever. gpud is the substrate.** gpud is the universal
+  GPU abstraction the sibling projects share, and the ENGINE builds
+  on it: gpud::sdl owns device bring-up (the Vulkan-loader hint, the
+  SPIR-V format policy), libsimview links gpud::sdl PRIVATE and
+  gpud::gpud PUBLIC (include dirs for the door). Consumers of the
+  core surface still see neither library. Data crosses the impl as
+  pointer+stride or gpud vocabulary (BufferSource is a POD) at the
+  door; the pull model means the engine asks the source at draw time
+  and per-frame rebinding does not exist. No shader toolchain:
+  internal shaders are committed bytecode (gpud resolves slangc
+  lazily, so device bring-up needs none); regeneration is dev-only.
 - **The impl never throws — and it reports itself.** A refusal is a
   null handle / `false`, with its sentence logged at the refusal site
   (SDL's error log). `LastError()` is programmatic access for tests
@@ -87,10 +90,10 @@ cached — option changes need `make clean` first.
 ## CI
 
 `.github/workflows/ci.yml`: {macOS, Linux, Windows} × (build library +
-every example, run hello, lint, install-check). SDL3 is brewed on
-macOS and source-built+cached elsewhere. The Windows leg is
-continue-on-error until proven. CI building EVERY example on EVERY
-push is the rule that keeps examples alive — vklib's never built the
+every in-tree example, lint, the ctest gates). SDL3 is brewed on
+macOS and source-built+cached elsewhere; gpud arrives by FetchContent
+at configure (network needed there). CI building EVERY example on
+EVERY push is the rule that keeps examples alive — vklib's never built the
 library and six of its eighteen examples were silently dead.
 
 ## Naming
@@ -98,14 +101,16 @@ library and six of its eighteen examples were silently dead.
 The namespace is `sv`. **Everything a user types is PascalCase with
 no underscores** — sugar classes own the clean names (`sv::App`,
 `sv::Field`, `sv::Executor`, `sv::Channel<T>`), their methods and the
-free functions match (`OnFrame`, `Run`, `Update`, `NativeDevice`,
-`LastError`), and no user-facing type wears a `Handle` suffix. The
+free functions match (`OnFrame`, `Run`, `Update`, `Device`,
+`LastError`), and no user-facing type wears a `Handle` suffix.
+`sv::Device(app)` and the producer overload `app.Field(p, desc)`
+require a TRUE App — check it first, as with `Raw()`. The
 impl lives in `sv::impl`: snake_case free functions over opaque
 handles, handle-first (`app_run(App *)`, `field_update`), spelled
 only by the sugar, the tests, and a future binding — never by a
 consumer. PODs and enums shared by both strata (`Config`,
 `FieldDesc`, `Key`) sit in `sv` and are PascalCase. The umbrella is
-`<simview/simview.h>`; `native.h` is opt-in and never included by
+`<simview/simview.h>`; `gpud.h` is opt-in and never included by
 the umbrella.
 
 **Sugar breathes**: between inline definitions longer than one line
@@ -123,7 +128,7 @@ Design rationale lives in docs/, implementation commentary in `src/`
 
 ```
 include/simview/   the installed surface: simview.h (umbrella),
-                   Types.h, App.h, native.h (the carve-out)
+                   Types.h, App.h, gpud.h (the one door)
 src/impl/          exported function definitions, one .cpp per header
 src/engine/        the SDL side — internal headers live here, never
                    installed

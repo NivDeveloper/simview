@@ -91,30 +91,34 @@ only after SDL's cross-thread command-buffer rules are pinned).
 
 | dep | policy |
 | --- | --- |
-| SDL3 | the ONE LINKED library dependency, PRIVATE (engine-only). Public headers never include it; `native.h` may FORWARD-DECLARE its handle types |
+| SDL3 | PRIVATE (engine-only); no public header names it at all |
 | Dear ImGui + ImPlot | vendored, pinned, PRIVATE (arrive in Move 3); one opt-in escape hatch for custom panels, explicitly version-locking |
 | tensor | absent, forever — its data arrives, its types never do |
-| gpud | the sanctioned GPU interchange across the sibling projects: the opt-in interop surface may speak its vocabulary (including that door declares gpud a dependency too); the core never names it; libsimview links nothing of it — interop sugar lowers inline, and a consumer holding gpud types links gpud already |
+| gpud | the substrate: the ENGINE builds on it (gpud::sdl owns device bring-up; linked PRIVATE, gpud::gpud PUBLIC for the door's include dirs, FetchContent-pinned by hash). The opt-in door `gpud.h` speaks its vocabulary; the core never names it |
 | shader toolchain | absent for consumers: internal shaders ship as committed bytecode (SPIR-V/MSL/DXIL); `shaders/regen.sh` is dev-only |
 | everything else | std, C++20, the SYSTEM compiler (this is not tensor's g++-16/reflection world) |
 
 ## Integration with sims (tensor/gpud as the worked case)
 
 The composition principle: gpud is the GPU interchange the sibling
-projects share — producers (tensor) export gpud vocabulary, simview
-imports it at its opt-in door, and NOBODY imports tensor. SDL stays
-the substrate simview draws with; its handle types remain the lower,
-SDL-level door (native.h) for producers that are not gpud's.
+projects share — one device, opened by simview THROUGH gpud, computed
+on by producers (tensor) that export gpud vocabulary, and NOBODY
+imports tensor. The interchange type is gpud's BufferSource: a
+producer implements `source_of(const P &)` (found by ADL), a field
+binds it once, and the engine PULLS current() at every draw — the
+moving residency of a value-semantics producer costs no per-frame
+glue and no API that scales with vis types.
 
 - **Mode A (default): host memory.** `field.update(state.data())` —
   works with every backend and every language; two devices may exist
   and it does not matter (a 256² float field is ~15 MB/s at 60 fps).
-- **Mode B (opt-in): zero-copy, one shared device.** simview creates
-  the device; the compute runtime ADOPTS it (`gpud::sdl::try_open_on`)
-  — or the reverse; per-frame `field.rebind(handle)` because resident
-  buffers ping-pong. Opting into `native.h` IS opting into SDL,
-  explicitly. A parked tensor holds a device handle and must die
-  before the device — the one lifetime rule of the glue.
+- **Mode B (opt-in): zero-copy, one shared device.** simview owns
+  the gpud device (`sv::Device(app)` hands it to the compute
+  runtime); `app.Field(producer, desc)` registers the pull source
+  once and no per-frame call exists. Opting into `gpud.h` IS opting
+  into gpud, explicitly. Producers die before the App — the one
+  lifetime rule of the glue (the field's source points into the
+  producer object).
 
 The core impl accepts behaviors (callables as fn-ptr+void*), handles
 (pointers), and integers (generation counters) — foreign vocabulary
