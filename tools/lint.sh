@@ -1,9 +1,10 @@
 #!/bin/sh
 # The surface hygiene gate (CLAUDE.md's include graph, mechanical):
 #   (a) core public headers include only std and sibling simview headers
-#   (b) SDL_/ImGui/ImPlot tokens are forbidden in the core surface
-#   (c) native.h may NAME SDL types (forward declarations) but must
-#       not INCLUDE anything of SDL's
+#   (b) SDK tokens (SDL_/ImGui/ImPlot/gpud) are forbidden in the core
+#       surface — only the opt-in doors may speak them
+#   (c) gpud.h may include gpud's SDK-free interface header
+#       <gpud/Device.h> and nothing else foreign — never SDL's
 #   (e) include/ carries no comments: the public surface explains
 #       itself or gets renamed until it does
 #   (f) examples never print: a showcase draws, it does not narrate,
@@ -20,19 +21,26 @@ for h in include/simview/*.h; do
     # (a): every include is <std-ish> or "sibling.h"
     bad_inc=$(grep -nE '^#include' "$h" | grep -vE '#include <[a-z_]+>' \
               | grep -vE '#include "(Types|App|Event|Field|Plots|Sync|simview)\.h"' || true)
+    if [ "$base" = "gpud.h" ]; then
+        bad_inc=$(echo "$bad_inc" | grep -v '#include <gpud/Device\.h>' || true)
+    fi
     if [ -n "$bad_inc" ]; then
         echo "LINT: $base: non-std, non-sibling include:"; echo "$bad_inc"
         fail=1
     fi
     # (b)/(c): SDK tokens
-    if [ "$base" = "native.h" ]; then
-        if grep -nE '#include.*SDL' "$h"; then
-            echo "LINT: native.h includes SDL — forward declarations only"
+    if [ "$base" = "gpud.h" ]; then
+        if grep -nE 'SDL_|ImGui|ImPlot' "$h"; then
+            echo "LINT: gpud.h names an SDK token — it speaks gpud only"
+            fail=1
+        fi
+        if grep -nE '#include <gpud/(Sdl|Auto|Mock|Vulkan|Metal|Cuda)' "$h"; then
+            echo "LINT: gpud.h includes a gpud backend header — Device.h only"
             fail=1
         fi
     else
-        if grep -nE 'SDL_|ImGui|ImPlot' "$h"; then
-            echo "LINT: $base names an SDK token — only native.h may"
+        if grep -nE 'SDL_|ImGui|ImPlot|gpud' "$h"; then
+            echo "LINT: $base names an SDK token — only the doors may"
             fail=1
         fi
     fi

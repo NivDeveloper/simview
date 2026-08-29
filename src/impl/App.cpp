@@ -3,7 +3,7 @@
 
 #include "../engine/Engine.h"
 
-#include <simview/native.h>
+#include <simview/gpud.h>
 #include <simview/simview.h>
 
 #include <algorithm>
@@ -191,8 +191,9 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
     if (!a || !data)
         return set_error("field_update: null"), false;
     if (a->field.external)
-        return set_error("this field reads a caller-owned buffer — "
-                         "rebind it, do not update it"),
+        return set_error("this field reads a caller-owned source, "
+                         "re-resolved each frame — update the producer, "
+                         "not the field"),
                false;
     if (t != DType::f32)
         return set_error("fields hold f32 values only for now"), false;
@@ -272,11 +273,15 @@ bool app_shot(App *a, const char *path) {
     return ok;
 }
 
-SDL_GPUDevice *native_device(App *a) { return a ? a->dev : nullptr; }
+gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }
 
-Field field_from_buffer(App *a, SDL_GPUBuffer *buf, const FieldDesc &d) {
+Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
     if (!a)
         return {};
+    if (!src.fn)
+        return set_error("a field needs a source that can answer — the "
+                         "BufferSource's fn is null"),
+               Field{};
     if (a->field.w)
         return set_error("one field per App for now — a second field is a "
                          "planned addition"),
@@ -286,20 +291,9 @@ Field field_from_buffer(App *a, SDL_GPUBuffer *buf, const FieldDesc &d) {
     if (!d.extent.w || !d.extent.h)
         return set_error("a field needs a non-zero extent"), Field{};
     a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
-                buf,        nullptr,    false,         true};
+                nullptr,    nullptr,    false,         true};
+    a->field.src = src;
     return Field{a};
-}
-
-bool field_rebind(Field f, SDL_GPUBuffer *buf) {
-    App *a = static_cast<App *>(f.p);
-    if (!a || !buf)
-        return set_error("field_rebind: null"), false;
-    if (!a->field.external)
-        return set_error("this field owns its buffer — update it, do "
-                         "not rebind it"),
-               false;
-    a->field.buf = buf;
-    return true;
 }
 
 } // namespace impl

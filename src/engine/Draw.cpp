@@ -86,6 +86,11 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
                   SDL_GPUTexture *target, Uint32 tw, Uint32 th,
                   SDL_GPUTextureFormat tf) {
     impl::App::FieldState &f = a->field;
+    if (f.external) {
+        // The pull: ask the source which buffer holds the data NOW.
+        gpud::Buffer *b = f.src.current();
+        f.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+    }
     if (f.w && f.dirty && !f.external) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{f.staging, 0};
@@ -101,7 +106,8 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
     ct.load_op = SDL_GPU_LOADOP_CLEAR;
     ct.store_op = SDL_GPU_STOREOP_STORE;
     SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    SDL_GPUGraphicsPipeline *pipe = f.w ? display_pipeline(a, tf) : nullptr;
+    SDL_GPUGraphicsPipeline *pipe =
+        (f.w && f.buf) ? display_pipeline(a, tf) : nullptr;
     if (pipe) {
         // Aspect-fit: scale window uv so the field fills the largest
         // centered rectangle; outside samples paint the bar color.

@@ -75,6 +75,13 @@ class App {
         return sv::Field{impl::field_create(a_, d)};
     }
 
+    template <class P> sv::Field Field(const P &p, const FieldDesc &d) {
+        if constexpr (requires { source_of(p); })
+            return sv::Field{field_from_source(a_, source_of(p), d)};
+        else
+            return sv::Field{field_from_source(a_, p, d)};
+    }
+
   private:
     void reset() {
         if (a_)
