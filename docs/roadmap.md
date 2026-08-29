@@ -51,12 +51,23 @@ ini.
 
 ## The sequence
 
-**1. The ImGui foundation** (next; plan below in this file's sibling
-notes). ImGui + the two official backends, one context, the field
-rendered into a texture and shown as a dockable panel, a dockspace,
-and viewports enabled — proven by tearing a panel into its own OS
-window. The field stops owning the swapchain; `Shot(field)` keeps the
-pixel tests chrome-free.
+**1. The ImGui layer** (shipped). ImGui + both official backends, one
+context per App, and a dockspace with a PASSTHRU central node — so the
+scene never leaves the swapchain and ImGui composites over it in a
+second pass. No panels means a window identical to before; floating
+panels are overlays; docked panels frame the scene. Panels the user
+writes came forward from item 4, because without them there is nothing
+to dock. Viewports enabled only when the backends themselves claim the
+capability.
+
+What this move does NOT do, deliberately: render a scene into a
+texture to put it inside a dockable panel. That is only needed to tear
+a VIEW out or show two at once, and it is also FORCED to wait —
+ImGui's SDL_GPU backend builds one pipeline for one colour format,
+while `app_shot` renders into its own, so UI can never reach a shot
+until that move lands. Which is why the UI's verification is honest
+about being manual: no runner has a display, and no shot can contain a
+panel.
 
 **2. Plots, and the first type.** The series architecture — `Series`
 POD (kind + source + style), one axis struct, retained handles that
@@ -67,11 +78,12 @@ PROOF that a type costs three sites. If either costs more, the
 architecture is wrong and this is where we learn it, not after ten
 types.
 
-**4. Panels the user writes.** The opt-in door (the `gpud.h` pattern)
-exposing raw ImGui for custom panels — vklib had no escape hatch at
-all, so anything the wrapper did not model was unreachable.
+**4. More than one field, and views in panels.** N scenes rather than
+one field per App, each renderable into a texture and shown in a
+dockable panel — which is what makes a view tearable and what finally
+lets the UI be pixel-tested.
 
-**5. More than one field.** N panels rather than one field per App;
+**5. (was: panels the user writes — shipped in move 1.)** N panels rather than one field per App;
 the refusal that exists today becomes a list.
 
 **6. 3D.** ImPlot3D for plot-shaped 3D, and — for particle/volume

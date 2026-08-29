@@ -28,7 +28,7 @@ ImGui/ImPlot behind the one UI boundary.
   | who | may include |
   | --- | --- |
   | `include/simview/*.h` (core) | each other + std. Nothing else, ever |
-  | `include/simview/gpud.h` (the one door) | core + std + `<gpud/Device.h>` — gpud's SDK-free interface header is the ONE admissible foreign include; never SDL's, never a gpud backend header. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud) |
+  | the opt-in doors: `gpud.h`, `Ui.h` | core + std + that stack's ONE SDK-free header (`<gpud/Device.h>`; `<imgui.h>`, later `<implot.h>`). A door speaks ONE stack — naming another's token fails lint. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud, and imgui's headers come from our target) |
   | `src/**` | anything (SDL, later ImGui/ImPlot) — never installed |
   | a core consumer | `<simview/simview.h>` + libsimview; no SDL anywhere |
 
@@ -53,6 +53,15 @@ ImGui/ImPlot behind the one UI boundary.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
+- **The UI layer is ImGui, and the scene stays on the swapchain.**
+  ImGui composites over it in a second LOAD pass; the dockspace's
+  central node is passthru. `ui_on()` is false until a panel is
+  registered, so an app that asks for no UI builds no ImGui frame at
+  all. Viewports are enabled only when the BACKENDS set their own
+  capability flags — never by us. No panel sets `NoDocking`. Capture
+  gates OS events, never `PostEvent`. The layout lives per-app under
+  `SDL_GetPrefPath`, saved on `WantSaveIniSettings` and again at quit
+  BUT only when a frame was built (else a good layout is truncated).
 - **A test is assertions and nothing else.** `tests/headless/` gives
   every check a `Harness.h` (device-or-SKIP, temp paths, shot-read-back),
   a `Check.h` (CHECK/CHECK_EQ/CHECK_GT keep going and print BOTH

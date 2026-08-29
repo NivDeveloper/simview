@@ -10,6 +10,42 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 
+namespace {
+
+// A layout is EARNED: you arrange your panels once and expect them
+// back. The predecessor put its ini in the working directory, so two
+// apps clobbered each other and running from elsewhere lost the lot.
+// SDL's pref path is per-app and per-user, and it creates the
+// directory for us. A title is arbitrary text, and punctuation makes
+// SDL_GetPrefPath fail outright on Windows — hence the sieve.
+std::string ini_path(const char *title) {
+    std::string app;
+    for (const char *p = title ? title : ""; *p; ++p) {
+        const unsigned char c = static_cast<unsigned char>(*p);
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == ' ' || c == '-' ||
+                        c == '_';
+        app += ok ? char(c) : '_';
+    }
+    if (app.empty())
+        app = "simview";
+
+    char *dir = SDL_GetPrefPath("simview", app.c_str());
+    if (!dir) {
+        // Not a refusal: the app runs, it just will not remember.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "simview: no layout directory (%s) — the panel layout "
+                    "will not persist",
+                    SDL_GetError());
+        return {};
+    }
+    std::string p = std::string(dir) + "layout.ini";
+    SDL_free(dir);
+    return p;
+}
+
+} // namespace
+
 namespace sv {
 
 bool ui_on(impl::App *a) { return a && a->ui.ctx && !a->ui_cbs.empty(); }
@@ -36,6 +72,10 @@ void ui_init(impl::App *a, const Config &c) {
         io.Fonts->SetTexID(ImTextureID(1));
         return;
     }
+
+    a->ui.ini = ini_path(c.title);
+    if (!a->ui.ini.empty())
+        ImGui::LoadIniSettingsFromDisk(a->ui.ini.c_str());
 
     ImGui_ImplSDL3_InitForSDLGPU(a->win);
     // The backend polls gamepads on every frame; simview initialises
@@ -66,6 +106,12 @@ void ui_quit(impl::App *a) {
         ImGui_ImplSDL3_Shutdown();
         ImGui_ImplSDLGPU3_Shutdown();
     }
+    // The frame-count guard is the difference between saving a layout
+    // and truncating a good one: an App that opens and closes without
+    // ever building a UI frame has nothing to write, and that is the
+    // default path for an app with no panels.
+    if (!a->ui.ini.empty() && ImGui::GetFrameCount() > 0)
+        ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
     ImGui::DestroyContext(a->ui.ctx);
     ImGui::SetCurrentContext(nullptr);
     a->ui.ctx = nullptr;
@@ -87,6 +133,14 @@ void ui_begin(impl::App *a) {
 void ui_end(impl::App *a) {
     ImGui::SetCurrentContext(a->ui.ctx);
     ImGui::Render();
+    // IniFilename is null, so ImGui asks rather than writing: we own
+    // the file, and clearing the flag is our half of that bargain.
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.WantSaveIniSettings) {
+        if (!a->ui.ini.empty())
+            ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
+        io.WantSaveIniSettings = false;
+    }
 }
 
 void ui_draw(impl::App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {

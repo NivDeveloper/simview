@@ -121,8 +121,33 @@ glue and no API that scales with vis types.
   producer object).
 
 The core impl accepts behaviors (callables as fn-ptr+void*), handles
-(pointers), and integers (generation counters) — foreign vocabulary
-is the interop doors' job, and gpud's is the one they speak.
+(pointers), and integers (generation counters) — foreign vocabulary is
+the interop doors' job, and there are two of them: gpud's and the UI's.
+
+## The UI layer
+
+A window has a SCENE (drawn to the swapchain — today a field, later a
+shader, particles, 3-D) and a UI layer above it. ImGui composites in a
+second render pass with `LOADOP_LOAD`, so the scene's own pass is
+untouched and there is no second renderer to drift. The dockspace uses
+`PassthruCentralNode`: its centre is a hole the scene shows through.
+Where a panel lives — floating over the scene, docked to an edge,
+tabbed with another, or torn out into its own OS window — is the
+user's drag, saved in the layout file, never a build-time mode.
+
+Three laws, each learned from the predecessor:
+
+- **We never advertise a capability the backends have not claimed.**
+  Viewports turn on only when both backend flags are set by the
+  backends themselves. Setting them by hand is what made vklib's
+  missing platform backend crash instead of refuse.
+- **No panel we draw sets `NoDocking`.** vklib's did, fullscreen, over
+  its own dockspace — which is how a working dockspace became
+  decorative.
+- **ImGui capture gates the OS's events, never the sim's own.** A
+  panel wanting the keyboard swallows key events before hotkeys see
+  them; `PostEvent` bypasses capture entirely, because the automation
+  seam addresses the app and must not depend on invisible UI state.
 
 ## Verification, and what runs where
 
