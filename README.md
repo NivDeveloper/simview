@@ -6,14 +6,20 @@ honest. The public surface is dependency-free — any C++20 compiler,
 `#include <simview/simview.h>`, link `libsimview` — and a grep-clean
 seam keeps it that way (docs/design.md is the architecture record).
 
-**Status: Move 2.** The walking skeleton: a real window loop
+**Status: Move 3.** The walking skeleton: a real window loop
 (register-then-run), the Event/Key vocabulary (USB-HID numbering),
 the host-path `Field` (a 2-D grid colormapped by committed-bytecode
 shaders — Gray/Hue/Viridis), and headless capture as API (`step()` +
 `shot()` — what CI runs). One field per App, f32, SPIR-V shaders (SDL's
-Vulkan driver on macOS; native MSL/DXIL are one named follow-up). Next,
-Move 3: the founding examples and the sim/render sync layer. The v0
-zero-copy XY demo lives in `attic/` until then.
+Vulkan driver on macOS; native MSL/DXIL are one named follow-up).
+
+The examples are the showcase: `hello-window` (an animated field in
+~45 lines), `ising-cpu` (a threaded sim through the Executor/Channel
+sync layer, plain C++ arrays — simview's independence proof), and
+`xy-gpu` (a GPU sim drawn zero-copy through `native.h`, a standalone
+subproject). Verification lives in tests/, never in examples.
+
+Next: widgets and plots over vendored ImGui/ImPlot.
 
 ## Build
 

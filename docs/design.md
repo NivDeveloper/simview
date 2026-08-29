@@ -146,7 +146,7 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
 | gates | `make lint` (dependency hygiene of the installed surface) and `make install-check` (install to a scratch prefix; compile a consumer against ONLY that, SDL absent) — both from day one |
 | unit | the sync layer under a fake clock; builder recording |
 | pixel | offscreen goldens per view type, small, committed |
-| examples | every example builds on every platform on every push; each carries a headless self-check |
+| examples | every in-tree example builds on every platform on every push — build-only: they are showcases, and tests/headless carries the verification they must not |
 | interaction | SDL_PushEvent-driven scripted input (later) |
 
 Every gate must be BROKEN once when added, to prove it fires.
@@ -158,10 +158,11 @@ Every gate must be BROKEN once when added, to prove it fires.
   Event/Key, host-path Field with the colormap pipeline (committed
   SPIR-V bytecode; native MSL/DXIL emission is a named follow-up),
   step/shot as headless API, hello-window.
-- **Move 3**: the founding examples — `ising-cpu` (plain arrays; the
-  independence proof and permanent canary) and `xy-gpu` (Mode B on the
-  named seams) — plus the Executor/HostChannel port and controls
-  widget.
+- **Move 3** (done): the founding examples — `ising-cpu` (plain
+  arrays + the sync layer; the canary) and `xy-gpu` (Mode B,
+  standalone subproject, the cross-compiler seam-ABI proof) — plus the
+  Executor/Channel port and the zero-copy field. Controls are keys
+  until the widget move.
 - Then: plots over ImPlot behind the one UI seam, aux windows,
   particles, threaded GpuChannel. v1.0 is not a feature: it is the CI
   matrix green on all three platforms with the docs matching reality.

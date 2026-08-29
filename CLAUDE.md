@@ -3,12 +3,12 @@
 Lightweight cross-platform sim visualization over SDL3. C++20, the
 SYSTEM compiler (AppleClang/gcc/MSVC — deliberately NOT tensor's
 g++-16/reflection world). Design rationale and roadmap: docs/design.md.
-Current state: Move 2 — the walking skeleton: real run() loop,
-Event/Key, the host-path Field (one per App, f32) over committed
-SPIR-V bytecode (shaders/regen.sh; native MSL/DXIL are one named
-follow-up — slang's default MSL emission does not follow SDL's binding
-conventions), app_step/app_shot as the headless drive. Next: Move 3 —
-founding examples + the Executor/HostChannel sync layer.
+Current state: Move 3 — the sync layer (Executor + Channel, the
+inherited triple-buffer design) and the founding examples: ising-cpu
+(plain arrays + the sync layer; the independence canary) and xy-gpu
+(zero-copy Mode B, a standalone subproject). Field grew the external
+mode (field_from_buffer/rebind in native.h). Next: widgets + plots
+over vendored ImGui/ImPlot behind the one UI seam.
 
 ## Invariants (do not break)
 
@@ -41,6 +41,11 @@ founding examples + the Executor/HostChannel sync layer.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
+- **Examples are showcases, tests carry the verification.** No argv
+  test modes, no probes in examples/ — that machinery lives in
+  tests/headless/. An example with extra toolchain needs (xy-gpu:
+  g++-16 -freflection) is a STANDALONE subproject that gates itself
+  loudly; CI builds every in-tree example.
 - No hardcoded toolchain paths; no `-march=native`; no globals — an
   App owns everything and dies with it.
 
