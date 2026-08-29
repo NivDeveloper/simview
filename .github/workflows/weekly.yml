@@ -1,0 +1,68 @@
+# Tier 2: the checks that cost too much to run per push, on Linux where
+# the sanitizer runtimes work. (They do NOT work on this project's
+# primary dev machine — the AppleClang ASan runtime spins in
+# get_dyld_hdr() during startup on macOS 26+, before main.) Weekly plus
+# manual, so a regression surfaces within days without spending minutes
+# on every commit.
+name: weekly
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        san: [address_undefined, thread]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SDL build dependencies
+        run: sudo apt-get update && sudo apt-get install -y
+             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
+             libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+             libdrm-dev libgbm-dev mesa-vulkan-drivers libvulkan1
+
+      - name: SDL3 cache
+        id: sdl
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/sdl3-prefix
+          key: sdl3-3.2.30-${{ runner.os }}
+
+      - name: SDL3 (source build)
+        if: steps.sdl.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch release-3.2.30 \
+              https://github.com/libsdl-org/SDL sdl-src
+          cmake -S sdl-src -B sdl-src/build -DCMAKE_BUILD_TYPE=Release \
+                -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+                -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/sdl3-prefix"
+          cmake --build sdl-src/build -j 4
+          cmake --install sdl-src/build
+
+      - name: build sanitized
+        run: |
+          SAN=$(echo "${{ matrix.san }}" | tr '_' ',')
+          CMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/sdl3-prefix" \
+            cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DSIMVIEW_SANITIZE="$SAN"
+          cmake --build build-san -j 4
+
+      # TSan's subject is the sync layer — the one place two threads
+      # meet; ASan/UBSan cover the whole host half. A device is not
+      # needed: the checks that want one SKIP by name.
+      - name: run
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        run: |
+          if [ "${{ matrix.san }}" = "thread" ]; then
+            ctest --test-dir build-san --output-on-failure --timeout 300 \
+                  -R sync_check
+          else
+            ctest --test-dir build-san --output-on-failure --timeout 300 \
+                  -E installed_surface
+          fi

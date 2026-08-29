@@ -15,6 +15,9 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # A hung test must cost minutes, not hours: the default job cap is
+    # six hours, and compute minutes are a budget.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +66,13 @@ jobs:
         shell: bash
         run: sh tools/lint.sh
 
-      - name: gates (installed surface)
-        run: ctest --test-dir build --output-on-failure -C Release
+      # Lavapipe (in mesa-vulkan-drivers) is a software Vulkan device,
+      # so the Linux leg actually DRAWS: the shot checks assert pixels,
+      # and a test that skips proves nothing. Where no device comes up
+      # the checks still SKIP by name — never a silent pass.
+      - name: gates (tests + installed surface)
+        env:
+          VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' || '' }}
+        # --timeout names the hanging test instead of stalling the job.
+        run: ctest --test-dir build --output-on-failure -C Release --timeout 120
 

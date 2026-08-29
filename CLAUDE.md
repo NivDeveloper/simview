@@ -72,7 +72,14 @@ ImGui/ImPlot behind the one UI boundary.
 | surface hygiene | `make lint` — tools/lint.sh over the installed headers |
 | the clean-surface proof | `make install-check` — install to a scratch prefix, compile examples/hello against ONLY it |
 | run the hello | `make run` |
-| clean | `make clean` |
+| **sanitizers** | `make san` / `make tsan` — ASan+UBSan over the suite, TSan over sync_check. **Neither runs on macOS 26+**: the AppleClang sanitizer runtime spins in `get_dyld_hdr()` during its own startup, before `main` — a runtime-vs-OS break, nothing to do with this code. `.github/workflows/weekly.yml` runs both on Linux |
+| **the flagship** | `make flagship` — builds examples/xy-gpu (needs g++-16); NO runner reaches it, so this is the local gate that keeps the door from rotting |
+| clean | `make clean` (build, build-san, build-tsan) |
+
+**The pre-push rung is `make test && make lint && make flagship`.**
+The flagship is deliberately out of CI — no runner has tensor's
+compiler — so this local gate is the only thing that keeps the gpud
+door from rotting.
 
 Editor tooling: `.clangd` reads the exported compile DB, and — plain
 C++20 — its diagnostics are trustworthy here, unlike the tensor repo;
@@ -92,8 +99,32 @@ cached — option changes need `make clean` first.
 `.github/workflows/ci.yml`: {macOS, Linux, Windows} × (build library +
 every in-tree example, lint, the ctest gates). SDL3 is brewed on
 macOS and source-built+cached elsewhere; gpud arrives by FetchContent
-at configure (network needed there). CI building EVERY example on
-EVERY push is the rule that keeps examples alive — vklib's never built the
+at configure (network needed there).
+
+**Push in batches, not per commit — GitHub compute minutes are a real
+budget.** A three-platform run costs several minutes of Windows and
+Linux time each, and the Windows leg is the expensive one (SDL and
+gpud both build from source there). So: commit freely and locally,
+push when a piece of work is COMPLETE, and let the local rungs — `make
+test`, `make lint`, `make flagship`, `make san` — be what catches
+mistakes. The concurrency group means a newer push cancels an older
+run, so batching also stops paying twice for superseded work. Never
+push a series of small commits one at a time just to watch CI.
+
+**The Linux leg draws.** Lavapipe (software Vulkan, from
+mesa-vulkan-drivers) gives that runner a real device, so the shot
+checks assert pixels there instead of skipping — and where no device
+comes up they still SKIP by name.
+
+**Tier 2, `weekly.yml`**: ASan+UBSan and TSan on Linux, scheduled
+weekly and runnable on demand — the sanitizer signal without a
+per-push bill, and the only place these runtimes work at all given
+the dev machine's OS. Every job carries `timeout-minutes`, and ctest
+a `--timeout`, so a hang costs minutes and NAMES the test rather than
+stalling for the six-hour default.
+
+CI building EVERY example on EVERY push is the rule that keeps
+examples alive — vklib's never built the
 library and six of its eighteen examples were silently dead.
 
 ## Naming
@@ -129,6 +160,9 @@ Design rationale lives in docs/, implementation commentary in `src/`
 ```
 include/simview/   the installed surface: simview.h (umbrella),
                    Types.h, App.h, gpud.h (the one door)
+third_party/       vendored deps, one dir each, PIN + LICENSE
+                   required (README.md is the contract; exempt from
+                   the format gate, never from the warning flags)
 src/impl/          exported function definitions, one .cpp per header
 src/engine/        the SDL side — internal headers live here, never
                    installed

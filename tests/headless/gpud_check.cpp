@@ -2,6 +2,8 @@
 // caller-owned gpud buffer drawn through the pull model (the field
 // asks the source at every draw), refusals named. Tests may speak
 // gpud — they are not consumers.
+#include "Bmp.h"
+
 #include <simview/gpud.h>
 #include <simview/simview.h>
 
@@ -50,6 +52,21 @@ int main() {
     struct stat st{};
     if (stat(p.c_str(), &st) != 0 || st.st_size <= 1024)
         return std::printf("FAIL: shot too small\n"), 1;
+
+    // The buffer holds a ramp along ONE axis, so the drawn image must
+    // vary along one and hold still along the other — the pull
+    // delivered the caller's data, in the caller's layout.
+    Bmp img;
+    if (!load_bmp(p, img))
+        return std::printf("FAIL: shot is not a readable BMP\n"), 1;
+    const unsigned a = img.w / 8, b = img.w - img.w / 8;
+    const unsigned c = img.h / 8, d = img.h - img.h / 8;
+    const int across = img.diff(a, img.h / 2, b, img.h / 2);
+    const int down = img.diff(img.w / 2, c, img.w / 2, d);
+    if ((across > 60) == (down > 60))
+        return std::printf("FAIL: not a one-axis ramp (across %d, down %d)\n",
+                           across, down),
+               1;
 
     std::printf("PASS: gpud door checks\n");
     return 0;

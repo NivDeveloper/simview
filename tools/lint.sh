@@ -11,7 +11,11 @@
 #       and the library reports its own failures
 #   (g) clang-format, pinned to major 20: a missing or mismatched tool
 #       is a NAMED SKIP, never a failure — a format gate failing on
-#       its tool version says nothing about the code
+#       its tool version says nothing about the code. third_party/ is
+#       exempt: it is upstream's code, and reformatting it would make
+#       every update a conflict
+#   (h) every vendored dependency records its upstream PIN and copies
+#       its LICENSE (third_party/README.md is the contract)
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
@@ -53,13 +57,25 @@ if command -v "$CF" >/dev/null 2>&1 \
         && "$CF" --version | grep -q 'version 20\.'; then
     # shellcheck disable=SC2046
     if ! "$CF" --dry-run -Werror \
-            $(git ls-files '*.cpp' '*.h' | grep -v bytecode) 2>&1; then
+            $(git ls-files '*.cpp' '*.h' | grep -v bytecode \
+              | grep -v '^third_party/') 2>&1; then
         echo "LINT: clang-format drift - run clang-format -i on the above"
         fail=1
     fi
 else
     echo "SKIP: clang-format major 20 not found - format gate not run"
 fi
+
+# (h)
+for d in third_party/*/; do
+    [ -d "$d" ] || continue
+    for need in PIN LICENSE; do
+        if [ ! -f "$d$need" ]; then
+            echo "LINT: $d has no $need (third_party/README.md's rules)"
+            fail=1
+        fi
+    done
+done
 
 # (f)
 if grep -n 'printf\|std::cout\|std::cerr\|std::print\|puts(\|SDL_Log' \

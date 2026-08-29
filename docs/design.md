@@ -92,7 +92,7 @@ only after SDL's cross-thread command-buffer rules are pinned).
 | dep | policy |
 | --- | --- |
 | SDL3 | PRIVATE (engine-only); no public header names it at all |
-| Dear ImGui + ImPlot | vendored, pinned, PRIVATE (arrive in Move 3); one opt-in escape hatch for custom panels, explicitly version-locking |
+| Dear ImGui + ImPlot (+ ImPlot3D) | vendored under `third_party/`, pinned by commit with LICENSE beside it (lint rule (h)), PRIVATE; one opt-in escape hatch for custom panels, explicitly version-locking |
 | tensor | absent, forever — its data arrives, its types never do |
 | gpud | the substrate: the ENGINE builds on it (gpud::sdl owns device bring-up; linked PRIVATE, gpud::gpud PUBLIC for the door's include dirs, FetchContent-pinned by hash). The opt-in door `gpud.h` speaks its vocabulary; the core never names it |
 | shader toolchain | absent for consumers: internal shaders ship as committed bytecode (SPIR-V/MSL/DXIL); `shaders/regen.sh` is dev-only |
@@ -123,6 +123,32 @@ glue and no API that scales with vis types.
 The core impl accepts behaviors (callables as fn-ptr+void*), handles
 (pointers), and integers (generation counters) — foreign vocabulary
 is the interop doors' job, and gpud's is the one they speak.
+
+## Verification, and what runs where
+
+Three rungs, deliberately split by where the signal lives:
+
+- **Local, every change**: `make test` (the headless checks — refusals,
+  the loop contract, the sync layer's tearing stress, and SHOT CHECKS
+  THAT READ PIXELS: a ramp's equal-value corners must agree and its
+  ends must not, so "it drew something" is an assertion, not a file
+  size) + `make lint`.
+- **Local, when it matters**: `make flagship` after anything the gpud
+  door touches — no runner has tensor's compiler, so that example can
+  only be gated here. (`make san`/`make tsan` exist and are correct,
+  but the AppleClang sanitizer runtime cannot start on macOS 26+, so
+  their real home is the weekly Linux workflow.)
+- **CI, per push**: three platforms build the library and every in-tree
+  example, run lint and the ctest gates. The Linux runner has a
+  software Vulkan device (lavapipe), so its shot checks draw for real.
+  Pushes are BATCHED — compute minutes are finite and the local rungs
+  are what catch mistakes.
+- **CI, weekly**: ASan+UBSan and TSan on Linux (`weekly.yml`), where
+  those runtimes work; timeouts everywhere so a hang is bounded.
+
+A new feature adds: one `tests/headless/<x>_check.cpp` (plain main,
+SKIP-with-reason when no device), its line in the foreach, and — if it
+adds a rule — one lint clause, broken once to watch it go red.
 
 ## Platform
 

@@ -4,6 +4,14 @@ project(simview VERSION 0.1.0 LANGUAGES CXX
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# A sanitizer list ("address,undefined" / "thread"), applied to the
+# library and everything built beside it. Empty = a normal build.
+set(SIMVIEW_SANITIZE "" CACHE STRING "Sanitizers to build with")
+if(SIMVIEW_SANITIZE)
+    add_compile_options(-fsanitize=${SIMVIEW_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${SIMVIEW_SANITIZE})
+endif()
+
 option(SIMVIEW_BUILD_EXAMPLES "Build simview examples" ${PROJECT_IS_TOP_LEVEL})
 option(SIMVIEW_BUILD_TESTS "Build simview tests" ${PROJECT_IS_TOP_LEVEL})
 
