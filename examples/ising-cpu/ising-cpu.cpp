@@ -1,7 +1,8 @@
 // The 2-D Ising model in plain C++ — no tensor library, no GPU
 // compute — simulated on simview's Executor thread and handed to the
-// window through a Channel, with its magnetisation traced beside it.
-// Space pauses, Up/Down move temperature, R reseeds, Esc quits.
+// window through a Channel, with its magnetisation traced beside it
+// and a panel of controls. Space pauses, Up/Down move temperature, R
+// reseeds, Esc quits — the same variables the panel writes.
 #include <simview/simview.h>
 
 #include <algorithm>
@@ -21,7 +22,11 @@ int main() {
     auto field = app.Field({.extent = {L, L}, .lo = -1.0f, .hi = 1.0f});
 
     std::vector<float> s(L * L, 1.0f);
-    std::atomic<float> T{2.269f}; // start at the critical point
+    // The slider moves a plain float on the main thread; the frame
+    // publishes it to the atomic the sim thread reads.
+    float temperature = 2.269f; // the critical point
+    bool running = true;
+    std::atomic<float> T{temperature};
     std::mt19937 rng(2026);
 
     auto reseed = [&] {
@@ -69,8 +74,27 @@ int main() {
          .y = {.label = "m", .min = -1.0, .max = 1.0, .fit = sv::Fit::Fixed}});
     trace.Line("m", [&] { return std::span<const float>(mag); });
 
+    bool reseed_wanted = false;
+    app.Panel("controls")
+        .Slider("temperature", temperature, 0.05f, 4.5f)
+        .Checkbox("running", running)
+        .Separator()
+        .Button("reseed", [&] { reseed_wanted = true; });
+
     std::uint64_t gen = 0;
     app.OnFrame([&] {
+        T.store(temperature, std::memory_order_relaxed);
+        if (running != sim.Playing())
+            running ? sim.Play() : sim.Pause();
+        if (reseed_wanted) {
+            reseed_wanted = false;
+            sim.Pause();
+            reseed();
+            mag.clear();
+            if (running)
+                sim.Play();
+        }
+
         if (auto latest = chan.Latest(gen); !latest.empty()) {
             field.Update(latest);
             float sum = 0.0f;
@@ -82,15 +106,14 @@ int main() {
         }
     });
 
-    app.OnKey(sv::Key::Space,
-              [&] { sim.Playing() ? sim.Pause() : sim.Play(); });
-    app.OnKey(sv::Key::Up, [&] { T = T.load() + 0.05f; });
-    app.OnKey(sv::Key::Down, [&] { T = std::max(0.05f, T.load() - 0.05f); });
-    app.OnKey(sv::Key::R, [&] {
-        sim.Pause();
-        reseed();
-        sim.Play();
-    });
+    // The keys move the same variables the panel does, so the two
+    // never disagree about what the sim is doing.
+    app.OnKey(sv::Key::Space, [&] { running = !running; });
+    app.OnKey(sv::Key::Up,
+              [&] { temperature = std::min(4.5f, temperature + 0.05f); });
+    app.OnKey(sv::Key::Down,
+              [&] { temperature = std::max(0.05f, temperature - 0.05f); });
+    app.OnKey(sv::Key::R, [&] { reseed_wanted = true; });
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
