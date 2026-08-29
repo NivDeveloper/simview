@@ -3,6 +3,8 @@
 // Internal to src/ — inside the include firewall, never installed.
 // The SDL side of the App lives here; public headers never see it.
 
+#include <simview/App.h>
+
 #include <SDL3/SDL.h>
 #include <gpud/Sdl.h>
 
@@ -12,8 +14,6 @@
 #include <vector>
 
 namespace sv {
-
-struct Event; // simview/Event.h
 
 // The one App state, in impl:: because the impl's opaque `App *`
 // points here.
@@ -36,6 +36,10 @@ struct App {
     };
     std::forward_list<Cb> frame_cbs; // registration order at run()
     std::forward_list<Ecb> event_cbs;
+    // Events posted through the automation seam, delivered by the
+    // next Step or loop iteration exactly like SDL's own.
+    std::vector<Event> posted;
+    sv::Stats stats;
     struct PipelineEntry {
         SDL_GPUTextureFormat format;
         SDL_GPUGraphicsPipeline *pipeline;

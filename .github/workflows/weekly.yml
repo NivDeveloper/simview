@@ -60,8 +60,7 @@ jobs:
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
           if [ "${{ matrix.san }}" = "thread" ]; then
-            ctest --test-dir build-san --output-on-failure --timeout 300 \
-                  -R sync_check
+            ctest --test-dir build-san --output-on-failure --timeout 300 -L pure
           else
             ctest --test-dir build-san --output-on-failure --timeout 300 \
                   -E installed_surface

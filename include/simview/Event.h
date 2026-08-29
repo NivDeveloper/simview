@@ -61,4 +61,12 @@ inline bool Is(const Event &e, Key k) {
     return e.key == static_cast<std::int32_t>(k);
 }
 
+inline Event KeyDown(Key k, bool repeat = false) {
+    return {Event::Type::KeyDown, static_cast<std::int32_t>(k), repeat};
+}
+
+inline Event KeyUp(Key k) {
+    return {Event::Type::KeyUp, static_cast<std::int32_t>(k), false};
+}
+
 }

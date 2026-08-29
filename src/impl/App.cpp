@@ -106,7 +106,17 @@ template <typename L, typename F> void in_order(const L &l, F f) {
     std::for_each(v.rbegin(), v.rend(), f);
 }
 
+// Events posted through the automation seam, delivered exactly where
+// SDL's own are: same callbacks, same order, same frame.
+void deliver_posted(App *a) {
+    std::vector<Event> queued;
+    queued.swap(a->posted);
+    for (const Event &e : queued)
+        in_order(a->event_cbs, [&](const App::Ecb &c) { c.fn(e, c.user); });
+}
+
 void poll(App *a) {
+    deliver_posted(a);
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         if (ev.type == SDL_EVENT_QUIT)
@@ -213,8 +223,16 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
 void app_step(App *a) {
     if (!a)
         return;
+    deliver_posted(a);
     in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
 }
+
+void app_post_event(App *a, const Event &e) {
+    if (a)
+        a->posted.push_back(e);
+}
+
+Stats app_stats(App *a) { return a ? a->stats : Stats{}; }
 
 bool app_shot(App *a, const char *path) {
     if (!a || !path)

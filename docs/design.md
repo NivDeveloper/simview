@@ -128,11 +128,15 @@ is the interop doors' job, and gpud's is the one they speak.
 
 Three rungs, deliberately split by where the signal lives:
 
-- **Local, every change**: `make test` (the headless checks — refusals,
-  the loop contract, the sync layer's tearing stress, and SHOT CHECKS
-  THAT READ PIXELS: a ramp's equal-value corners must agree and its
+- **Local, every change**: `make test` + `make lint`. The headless
+  checks cover refusals, the loop contract, posted-event delivery, the
+  engine's counters, the sync layer's tearing stress, and SHOT CHECKS
+  THAT READ PIXELS — a ramp's equal-value corners must agree and its
   ends must not, so "it drew something" is an assertion, not a file
-  size) + `make lint`.
+  size. Image assertions are statistics and geometry (mean, distinct
+  colours, content box, tolerant compare), never byte equality: three
+  drivers never round alike, and a golden that fails on a driver
+  difference teaches nothing.
 - **Local, when it matters**: `make flagship` after anything the gpud
   door touches — no runner has tensor's compiler, so that example can
   only be gated here. (`make san`/`make tsan` exist and are correct,
@@ -146,9 +150,23 @@ Three rungs, deliberately split by where the signal lives:
 - **CI, weekly**: ASan+UBSan and TSan on Linux (`weekly.yml`), where
   those runtimes work; timeouts everywhere so a hang is bounded.
 
-A new feature adds: one `tests/headless/<x>_check.cpp` (plain main,
-SKIP-with-reason when no device), its line in the foreach, and — if it
-adds a rule — one lint clause, broken once to watch it go red.
+A new feature adds: one `tests/headless/<x>_check.cpp` (harness +
+assertions), its line in the foreach with a `device`/`pure` label,
+and — if it adds a rule — one lint clause, broken once to watch it go
+red.
+
+Two decisions this infrastructure encodes, both worth keeping:
+
+- **The library owns no clock.** Frame time belongs to the sim, so a
+  rendered frame is a function of what the caller did, and every shot
+  is reproducible without special support. The day simview drives an
+  animation itself (a plot with a time axis), that clock must be
+  SETTABLE from a test on the same day it is written — retrofitting
+  determinism costs far more than building it in.
+- **Driving the App is public API, not a test hook.** `PostEvent`
+  delivers through the ordinary callbacks; anything a test can do to
+  an App, a scripted demo or a bug report can do too. A private test
+  backdoor would have tested a path users never take.
 
 ## Platform
 

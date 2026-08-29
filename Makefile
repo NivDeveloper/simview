@@ -42,8 +42,7 @@ tsan:
 	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build-tsan -DCMAKE_BUILD_TYPE=Debug \
 	    -DSIMVIEW_SANITIZE=thread
 	cmake --build build-tsan -j $(JOBS)
-	ctest --test-dir build-tsan --output-on-failure --timeout 300 \
-	    -R sync_check
+	ctest --test-dir build-tsan --output-on-failure --timeout 300 -L pure
 
 # The flagship (examples/xy-gpu) needs tensor's compiler, so no runner
 # and no in-tree build reaches it — this is the local gate that keeps

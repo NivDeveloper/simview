@@ -4,11 +4,19 @@
 #include "Field.h"
 #include "Types.h"
 
+#include <cstdint>
 #include <forward_list>
 #include <functional>
 #include <utility>
 
 namespace sv {
+
+struct Stats {
+    std::uint64_t frames = 0;
+    std::uint64_t uploads = 0;
+    std::uint64_t pipelines = 0;
+    std::uint64_t draws = 0;
+};
 
 namespace impl {
 
@@ -20,6 +28,8 @@ void app_request_quit(App *);
 void app_run(App *);
 void app_step(App *);
 bool app_shot(App *, const char *bmp_path);
+void app_post_event(App *, const Event &);
+Stats app_stats(App *);
 
 }
 
@@ -70,6 +80,10 @@ class App {
     void Run() { impl::app_run(a_); }
     void Step() { impl::app_step(a_); }
     bool Shot(const char *path) { return impl::app_shot(a_, path); }
+
+    void PostEvent(const Event &e) { impl::app_post_event(a_, e); }
+
+    sv::Stats Stats() const { return impl::app_stats(a_); }
 
     sv::Field Field(const FieldDesc &d) {
         return sv::Field{impl::field_create(a_, d)};

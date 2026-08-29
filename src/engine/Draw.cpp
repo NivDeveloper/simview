@@ -75,6 +75,7 @@ SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a,
         return nullptr;
     }
     a->pipelines.push_back({tf, p});
+    ++a->stats.pipelines;
     return p;
 }
 
@@ -85,6 +86,7 @@ namespace sv {
 void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
                   SDL_GPUTexture *target, Uint32 tw, Uint32 th,
                   SDL_GPUTextureFormat tf) {
+    ++a->stats.frames;
     impl::App::FieldState &f = a->field;
     if (f.external) {
         // The pull: ask the source which buffer holds the data NOW.
@@ -98,6 +100,7 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
         SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
         SDL_EndGPUCopyPass(cp);
         f.dirty = false;
+        ++a->stats.uploads;
     }
 
     SDL_GPUColorTargetInfo ct{};
@@ -132,6 +135,7 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
         SDL_BindGPUGraphicsPipeline(pass, pipe);
         SDL_BindGPUFragmentStorageBuffers(pass, 0, &f.buf, 1);
         SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+        ++a->stats.draws;
     }
     SDL_EndGPURenderPass(pass);
 }

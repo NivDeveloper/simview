@@ -2,28 +2,23 @@
 // caller-owned gpud buffer drawn through the pull model (the field
 // asks the source at every draw), refusals named. Tests may speak
 // gpud — they are not consumers.
-#include "Bmp.h"
+#include "Harness.h"
 
 #include <simview/gpud.h>
-#include <simview/simview.h>
 
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <sys/stat.h>
 #include <vector>
 
 int main() {
-    // Unbuffered: a test killed by a timeout must still have
-    // said how far it got.
-    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    harness::begin();
     using namespace sv;
+
     App app({.headless = true});
     if (!app)
-        return std::printf("SKIP: no GPU device (%s)\n", LastError()), 0;
+        return check::skip("gpud", LastError());
     gpud::Device &dev = sv::Device(app);
 
-    // A caller-owned buffer holding a vertical ramp, via pure gpud.
+    // A caller-owned buffer holding a ramp along ONE axis, via pure
+    // gpud — no raw SDL anywhere in this test.
     constexpr std::size_t W = 64, H = 64;
     std::vector<float> v(W * H);
     for (std::size_t y = 0; y < H; ++y)
@@ -32,45 +27,29 @@ int main() {
     gpud::Buffer ramp = dev.alloc(W * H * 4);
     dev.write(ramp, v.data(), W * H * 4);
 
-    // The refusal a null source earns, before any real field exists.
-    if (app.Field(gpud::BufferSource{}, {.extent = {W, H}}))
-        return std::printf("FAIL: null source not refused\n"), 1;
+    // A source that cannot answer is refused before anything is drawn.
+    CHECK(!app.Field(gpud::BufferSource{}, {.extent = {W, H}}));
 
     gpud::BufferSource src{
         +[](void *u) { return static_cast<gpud::Buffer *>(u); }, &ramp};
     auto f = app.Field(src, {.extent = {W, H}});
-    if (!f)
-        return std::printf("FAIL: Field from source (%s)\n", LastError()), 1;
+    REQUIRE(bool(f));
 
-    // Update on a pulled field must refuse; a second field must too.
-    if (f.Update(v))
-        return std::printf("FAIL: update on external not refused\n"), 1;
-    if (app.Field(src, {.extent = {W, H}}))
-        return std::printf("FAIL: second field not refused\n"), 1;
+    CHECK(!f.Update(v));                        // pulled, not pushed
+    CHECK(!app.Field(src, {.extent = {W, H}})); // one field per App
 
-    const char *tmp = std::getenv("TMPDIR");
-    const std::string p = std::string(tmp ? tmp : ".") + "/simview_gpud.bmp";
-    if (!app.Shot(p.c_str()))
-        return std::printf("FAIL: shot (%s)\n", LastError()), 1;
-    struct stat st{};
-    if (stat(p.c_str(), &st) != 0 || st.st_size <= 1024)
-        return std::printf("FAIL: shot too small\n"), 1;
-
-    // The buffer holds a ramp along ONE axis, so the drawn image must
-    // vary along one and hold still along the other — the pull
-    // delivered the caller's data, in the caller's layout.
     Bmp img;
-    if (!load_bmp(p, img))
-        return std::printf("FAIL: shot is not a readable BMP\n"), 1;
-    const unsigned a = img.w / 8, b = img.w - img.w / 8;
-    const unsigned c = img.h / 8, d = img.h - img.h / 8;
-    const int across = img.diff(a, img.h / 2, b, img.h / 2);
-    const int down = img.diff(img.w / 2, c, img.w / 2, d);
-    if ((across > 60) == (down > 60))
-        return std::printf("FAIL: not a one-axis ramp (across %d, down %d)\n",
-                           across, down),
-               1;
+    CHECK(harness::shot(app, "gpud", img));
+    if (!img.px.empty()) {
+        // A one-axis ramp: the image varies along one axis and holds
+        // still along the other, whichever way the shader maps it.
+        const int across =
+            img.diff(img.w / 8, img.h / 2, img.w - img.w / 8, img.h / 2);
+        const int down =
+            img.diff(img.w / 2, img.h / 8, img.w / 2, img.h - img.h / 8);
+        CHECK((across > 60) != (down > 60));
+        CHECK_GT(img.distinct(), std::size_t(4));
+    }
 
-    std::printf("PASS: gpud door checks\n");
-    return 0;
+    return check::summary("gpud");
 }

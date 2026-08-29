@@ -20,4 +20,12 @@ foreach(t field_check loop_check sync_check gpud_check)
             COMMAND_EXPAND_LISTS)
     endif()
     add_test(NAME headless.${t} COMMAND ${t})
+    # Labels split what needs a GPU from what does not: `ctest -L pure`
+    # is the device-free half (what the sanitizer job runs), `-LE
+    # device` is how a platform that cannot host one opts out BY NAME.
+    if(t STREQUAL "sync_check")
+        set_tests_properties(headless.${t} PROPERTIES LABELS "pure")
+    else()
+        set_tests_properties(headless.${t} PROPERTIES LABELS "device")
+    endif()
 endforeach()

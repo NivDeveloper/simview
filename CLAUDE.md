@@ -53,6 +53,28 @@ ImGui/ImPlot behind the one UI boundary.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
+- **A test is assertions and nothing else.** `tests/headless/` gives
+  every check a `Harness.h` (device-or-SKIP, temp paths, shot-read-back),
+  a `Check.h` (CHECK/CHECK_EQ/CHECK_GT keep going and print BOTH
+  values; REQUIRE leaves; `check::summary` is main's return) and a
+  `Bmp.h` (pixels, plus `mean`/`distinct`/`content`/`similar` — image
+  STATISTICS, never byte equality, because lavapipe, Metal and D3D12
+  never round alike). A new feature's check should be its assertions
+  and one `harness::` line.
+- **ctest labels split what needs a GPU from what does not**: `-L
+  device` is the drawing half, `-L pure` the device-free half the
+  sanitizer job runs, and `-LE device` is how a platform that cannot
+  host one opts out BY NAME.
+- **Input is testable because the App can be driven.**
+  `app.PostEvent(KeyDown(Key::Space))` queues an event that the next
+  `Step` (or loop iteration) delivers through the same callbacks SDL's
+  own events use — the automation seam. It is public API, not test
+  scaffolding: scripted demos and reproducible bug reports want it too.
+- **`app.Stats()` counts what the engine did** — frames, uploads,
+  pipelines, draws. Behaviour a timing test could only guess at
+  becomes an exact assertion: an unchanged field uploads ONCE, a
+  second shot re-uploads nothing, one target format makes one
+  pipeline.
 - **Examples are showcases, tests carry the verification.** No argv
   test modes, no probes in examples/ — that machinery lives in
   tests/headless/. And a showcase never prints — no stdout, no logs

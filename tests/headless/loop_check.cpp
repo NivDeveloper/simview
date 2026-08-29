@@ -1,31 +1,69 @@
-// The headless loop contract: step() fires frame callbacks in
-// registration order; quit is idempotent; no-device exits as a SKIP.
-#include <simview/simview.h>
+// The headless loop contract: Step fires frame callbacks in
+// registration order and delivers posted events, quit is idempotent,
+// and a headless Run returns rather than blocking.
+#include "Harness.h"
 
-#include <cstdio>
+#include <string>
 #include <vector>
 
 int main() {
-    // Unbuffered: a test killed by a timeout must still have
-    // said how far it got.
-    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    harness::begin();
     using namespace sv;
+
     App app({.headless = true});
     if (!app)
-        return std::printf("SKIP: no GPU device (%s)\n", LastError()), 0;
+        return check::skip("loop", LastError());
 
     std::vector<int> order;
     app.OnFrame([&] { order.push_back(1); });
     app.OnFrame([&] { order.push_back(2); });
     app.Step();
     app.Step();
-    if (order != std::vector<int>{1, 2, 1, 2})
-        return std::printf("FAIL: callback order\n"), 1;
+    CHECK_EQ(order.size(), std::size_t(4));
+    CHECK(order == std::vector<int>({1, 2, 1, 2}));
+
+    // Posted events reach the callbacks Step drives — the automation
+    // seam, and the only way input is testable at all.
+    int space = 0, other = 0;
+    app.OnKey(Key::Space, [&] { ++space; });
+    app.OnEvent([&](const Event &e) {
+        if (!Is(e, Key::Space))
+            ++other;
+    });
+    app.PostEvent(KeyDown(Key::Space));
+    app.PostEvent(KeyDown(Key::Escape));
+    CHECK_EQ(space, 0); // nothing is delivered before a Step
+    app.Step();
+    CHECK_EQ(space, 1);
+    CHECK_EQ(other, 1);
+    app.Step();
+    CHECK_EQ(space, 1); // the queue is drained, not replayed
+
+    // A key REPEAT is not a press: OnKey ignores it.
+    app.PostEvent(KeyDown(Key::Space, true));
+    app.Step();
+    CHECK_EQ(space, 1);
+
+    // The counters: a Step draws nothing (no window, no shot), and a
+    // field with no new data uploads once and only once.
+    const auto before = app.Stats();
+    CHECK_EQ(before.frames, std::uint64_t(0));
+    auto field = app.Field({.extent = {8, 8}});
+    std::vector<float> v(64, 0.5f);
+    CHECK(field.Update(v));
+    Bmp img;
+    CHECK(harness::shot(app, "loop", img));
+    CHECK_EQ(app.Stats().uploads, std::uint64_t(1));
+    CHECK_EQ(app.Stats().frames, std::uint64_t(1));
+    CHECK(harness::shot(app, "loop", img));
+    CHECK_EQ(app.Stats().uploads, std::uint64_t(1)); // unchanged: no re-upload
+    CHECK_EQ(app.Stats().frames, std::uint64_t(2));
+    CHECK_EQ(app.Stats().pipelines,
+             std::uint64_t(1)); // one format, one pipeline
 
     app.RequestQuit();
     app.RequestQuit(); // idempotent
-    app.Run();         // headless: returns immediately, logged
+    app.Run();         // headless: returns immediately
 
-    std::printf("PASS: loop checks\n");
-    return 0;
+    return check::summary("loop");
 }
