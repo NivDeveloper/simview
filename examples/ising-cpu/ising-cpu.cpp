@@ -14,9 +14,9 @@
 constexpr unsigned L = 256;
 
 int main() {
-    auto app = simview::init({.title = "simview — ising", .size = {768, 768}});
+    sv::App app({.title = "simview — ising", .size = {768, 768}});
     if (!app) return 1;
-    auto field = app.field({.extent = {L, L}, .lo = -1.0f, .hi = 1.0f});
+    auto field = app.Field({.extent = {L, L}, .lo = -1.0f, .hi = 1.0f});
 
     std::vector<float> s(L * L, 1.0f);
     std::atomic<float> T{2.269f}; // start at the critical point
@@ -27,8 +27,8 @@ int main() {
     };
     reseed();
 
-    simview::HostChannel<float> chan(L * L);
-    simview::ExecutorHandle sim([&] {
+    sv::Channel<float> chan(L * L);
+    sv::Executor sim([&] {
         // One Metropolis sweep at the current temperature.
         std::uniform_real_distribution<float> u;
         std::uniform_int_distribution<unsigned> cell(0, L * L - 1);
@@ -41,23 +41,21 @@ int main() {
             const float dE = 2.0f * s[k] * nn;
             if (dE <= 0.0f || u(rng) < std::exp(-dE / t)) s[k] = -s[k];
         }
-        auto out = chan.state();
+        auto out = chan.State();
         std::copy(s.begin(), s.end(), out.begin());
-        chan.publish();
+        chan.Publish();
     });
-    sim.play();
+    sim.Play();
 
     std::uint64_t gen = 0;
-    app.on_frame([&] {
-        if (auto latest = chan.latest(gen); !latest.empty())
-            field.update(latest);
+    app.OnFrame([&] {
+        if (auto latest = chan.Latest(gen); !latest.empty())
+            field.Update(latest);
     });
-    app.on_key(simview::Key::Space,
-               [&] { sim.playing() ? sim.pause() : sim.play(); });
-    app.on_key(simview::Key::Up, [&] { T = T.load() + 0.05f; });
-    app.on_key(simview::Key::Down,
-               [&] { T = std::max(0.05f, T.load() - 0.05f); });
-    app.on_key(simview::Key::R, [&] { sim.pause(); reseed(); sim.play(); });
-    app.on_key(simview::Key::Escape, [&] { app.request_quit(); });
-    app.run();
+    app.OnKey(sv::Key::Space, [&] { sim.Playing() ? sim.Pause() : sim.Play(); });
+    app.OnKey(sv::Key::Up, [&] { T = T.load() + 0.05f; });
+    app.OnKey(sv::Key::Down, [&] { T = std::max(0.05f, T.load() - 0.05f); });
+    app.OnKey(sv::Key::R, [&] { sim.Pause(); reseed(); sim.Play(); });
+    app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Run();
 }

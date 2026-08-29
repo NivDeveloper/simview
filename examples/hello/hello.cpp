@@ -6,16 +6,16 @@
 #include <cstdio>
 
 int main() {
-    std::printf("simview %s\n", simview::version());
-    auto app = simview::init({.title = "hello", .headless = true});
+    std::printf("simview %s\n", sv::Version());
+    sv::App app({.title = "hello", .headless = true});
     if (!app) {
         std::printf("no GPU device on this machine: %s\n",
-                    simview::last_error());
+                    sv::LastError());
         return 0;
     }
     bool fired = false;
-    app.on_frame([&] { fired = true; });
-    app.run(); // Move 1: drives zero frames
+    app.OnFrame([&] { fired = true; });
+    app.Run(); // headless: returns immediately
     std::printf("device open, run() returned, frame fired: %s\n",
                 fired ? "yes" : "not yet (Move 2)");
     return 0;

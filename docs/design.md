@@ -34,18 +34,23 @@ calls; it holds no logic of its own.
 
 ```cpp
 // the seam: exported from libsimview
-Field field_create(App &, const FieldDesc &);
-bool  field_update(Field, const void *data, DType, size_t n, size_t stride);
+namespace sv::seam {
+Field field_create(App *, const FieldDesc &);
+bool  field_update(Field, const void *data, DType, size_t n);
+}
 
 // the sugar: inline, compiled into the consumer
-inline bool Field::update(std::span<const float> v) {
-    return field_update(*this, v.data(), DType::f32, v.size(), sizeof(float));
+inline bool sv::Field::Update(std::span<const float> v) {
+    return seam::field_update(f_, v.data(), DType::f32, v.size());
 }
 ```
 
-The reader convention, uniform everywhere: **seam = free functions
-over handles; sugar = inline methods on the handles.** One glance at
-any declaration says which side it is on.
+The reader convention, uniform everywhere: **the seam is `sv::seam`,
+snake_case free functions over handles; the sugar is `sv`, PascalCase
+classes and methods owning the clean names** (`sv::App`, `sv::Field`
+— no `Handle` suffix anywhere). One glance at any spelling says which
+side it is on, and a consumer never types an underscore or the word
+`seam`.
 
 Why both strata exist: the seam buys ABI stability, mockability, and a
 cheap future C-ABI; the sugar buys vklib-grade ergonomics (its ising
@@ -53,6 +58,14 @@ example was 205 lines with ~20 of ceremony — the bar). vklib had only
 the sugar with no deliberate ABI stratum beneath, which is how its
 public headers accumulated five boundary mechanisms and its internals;
 gpud is nearly all seam. simview takes both on purpose.
+
+On C interop: the seam is C-SHAPED (POD/handle/fn-ptr arguments
+only), not C-LINKAGE — its symbols are C++-mangled and its functions
+take references. That is deliberate: C has no namespaces, so a C API
+was always going to be a separate flat `extern "C"` file of `sv_*`
+wrappers, and the POD-only law is what makes generating it
+mechanical. Nesting the seam in `sv::seam` changes nothing about
+that path.
 
 ## Layers
 
@@ -126,7 +139,7 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
   `frame()` escape hatch may be added later if a real sim needs to own
   its loop; it would be seam-level, with run() as sugar over it.
 - **Errors: the seam never throws.** Constructors that fail return a
-  null handle; operations return bool; `simview::last_error()` gives
+  null handle; operations return bool; `sv::LastError()` gives
   the sentence (SDL's own convention — the engine wraps it anyway).
 - **Headless is first-class.** Every view renders offscreen
   byte-identically to onscreen; `--shot`-style offscreen capture is

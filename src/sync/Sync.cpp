@@ -11,7 +11,8 @@
 #include <mutex>
 #include <thread>
 
-namespace simview {
+namespace sv {
+namespace seam {
 
 namespace {
 
@@ -151,4 +152,5 @@ std::uint64_t executor_ticks(Executor ex) {
     return e ? e->ticks.load(std::memory_order_acquire) : 0;
 }
 
-} // namespace simview
+} // namespace seam
+} // namespace sv

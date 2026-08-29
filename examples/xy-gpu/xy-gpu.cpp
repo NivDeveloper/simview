@@ -13,12 +13,11 @@
 #include <gpud/Sdl.h>
 
 int main() {
-    auto app = simview::init({.title = "simview — xy (tensor on gpud)",
-                              .size = {768, 768}});
+    sv::App app({.title = "simview — xy (tensor on gpud)", .size = {768, 768}});
     if (!app) return 1;
 
     // The adopt seam: gpud computes on simview's device.
-    auto dev = gpud::sdl::try_open_on(simview::native_device(app.get()));
+    auto dev = gpud::sdl::try_open_on(sv::NativeDevice(app));
     if (!dev) return 1;
     tensor::SlotDevice sdev{*dev};
 
@@ -26,28 +25,27 @@ int main() {
     xy::Sim sim;
     sim.seed(sdev);
 
-    auto field = simview::field_from_buffer(
-        app.get(), gpud::sdl::native_buffer(*tensor::resident_buffer(sim.theta)),
-        {.extent = {xy::L, xy::L}, .map = simview::Colormap::Hue,
+    auto field = sv::FieldFromBuffer(
+        app, gpud::sdl::native_buffer(*tensor::resident_buffer(sim.theta)),
+        {.extent = {xy::L, xy::L}, .map = sv::Colormap::Hue,
          .lo = 0.0f, .hi = xy::two_pi});
 
     bool paused = false;
     std::uint64_t frame = 0;
-    app.on_frame([&] {
+    app.OnFrame([&] {
         if (paused) return;
         sim.step(sdev);
         if (++frame % 64 == 0) sim.rewrap(sdev);
         // Residency ping-pongs: rebind the freshest buffer each frame.
-        simview::field_rebind(field, gpud::sdl::native_buffer(
-                                         *tensor::resident_buffer(sim.theta)));
+        sv::FieldRebind(field, gpud::sdl::native_buffer(
+                                   *tensor::resident_buffer(sim.theta)));
     });
-    app.on_key(simview::Key::Space, [&] { paused = !paused; });
-    app.on_key(simview::Key::Up, [&] { sim.T = std::min(2.0f, sim.T + 0.05f); });
-    app.on_key(simview::Key::Down,
-               [&] { sim.T = std::max(0.05f, sim.T - 0.05f); });
-    app.on_key(simview::Key::R, [&] { sim.randomize(sdev); });
-    app.on_key(simview::Key::Escape, [&] { app.request_quit(); });
-    app.run();
+    app.OnKey(sv::Key::Space, [&] { paused = !paused; });
+    app.OnKey(sv::Key::Up, [&] { sim.T = std::min(2.0f, sim.T + 0.05f); });
+    app.OnKey(sv::Key::Down, [&] { sim.T = std::max(0.05f, sim.T - 0.05f); });
+    app.OnKey(sv::Key::R, [&] { sim.randomize(sdev); });
+    app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Run();
     // Teardown order is the lifetime rule: the sim's parked tensors
     // (device handles) die with `sim` before `dev`, and `app` — the
     // device's owner — goes last, in reverse declaration order.

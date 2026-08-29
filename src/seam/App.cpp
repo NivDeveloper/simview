@@ -12,13 +12,15 @@
 #include <filesystem>
 #include <vector>
 
-namespace simview {
+namespace sv {
 
 namespace {
 thread_local std::string g_error;
 } // namespace
 
 void set_error(std::string msg) { g_error = std::move(msg); }
+
+namespace seam {
 
 const char *version() { return SIMVIEW_VERSION; }
 const char *last_error() { return g_error.c_str(); }
@@ -124,7 +126,7 @@ void poll(App *a) {
 void app_run(App *a) {
     if (!a) return;
     if (a->headless) {
-        SDL_Log("simview: headless app — drive it with step()/shot()");
+        SDL_Log("simview: headless app — drive it with Step()/Shot()");
         return;
     }
     a->quit = false;
@@ -286,4 +288,5 @@ bool field_rebind(Field f, SDL_GPUBuffer *buf) {
     return true;
 }
 
-} // namespace simview
+} // namespace seam
+} // namespace sv

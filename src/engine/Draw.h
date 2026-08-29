@@ -4,7 +4,7 @@
 
 #include "Engine.h"
 
-namespace simview {
+namespace sv {
 
 // std140-compatible: 4-byte scalars only, matching the shader's Params.
 struct DrawParams {
@@ -19,6 +19,6 @@ struct DrawParams {
 // The pipeline for a given target format, created on demand and cached
 // on the App. Picks SPIR-V when the driver takes it, else MSL source;
 // DXIL is a planned addition (the error names it).
-SDL_GPUGraphicsPipeline *display_pipeline(App *, SDL_GPUTextureFormat);
+SDL_GPUGraphicsPipeline *display_pipeline(seam::App *, SDL_GPUTextureFormat);
 
-} // namespace simview
+} // namespace sv

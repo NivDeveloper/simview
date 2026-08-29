@@ -5,6 +5,8 @@
 #   (c) native.h may NAME SDL types (forward declarations) but must
 #       not INCLUDE anything of SDL's
 #   (d) the attic never re-enters the build
+#   (e) include/ carries no comments: the public surface explains
+#       itself or gets renamed until it does
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
@@ -31,6 +33,12 @@ for h in include/simview/*.h; do
         fi
     fi
 done
+
+# (e)
+if grep -n '//\|/\*' include/simview/*.h; then
+    echo "LINT: a comment in include/ — the surface must be self-explanatory"
+    fail=1
+fi
 
 # (d)
 if grep -rn "attic" CMakeLists.txt examples/*/CMakeLists.txt \

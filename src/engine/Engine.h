@@ -9,12 +9,13 @@
 #include <string>
 #include <vector>
 
-namespace simview {
+namespace sv {
 
-// The one App state. Named `App` because the public opaque handle IS
-// this type — the seam's `App *` points here.
 struct Event; // simview/Event.h
 
+// The one App state, in seam:: because the seam's opaque `App *`
+// points here.
+namespace seam {
 struct App {
     SDL_GPUDevice *dev = nullptr;
     SDL_Window *win = nullptr; // null when headless
@@ -48,13 +49,14 @@ struct App {
     };
     FieldState field; // w == 0 means "no field yet"
 };
+} // namespace seam
 
 // Draw.cpp: upload-if-dirty then render the field into target — the
 // ONE pass both the window and shot() record.
-void render_field(App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target,
+void render_field(seam::App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target,
                   Uint32 tw, Uint32 th, SDL_GPUTextureFormat);
 
-// The per-thread sentence behind simview::last_error().
+// The per-thread sentence behind sv::LastError().
 void set_error(std::string msg);
 
-} // namespace simview
+} // namespace sv

@@ -1,15 +1,9 @@
 #pragma once
 
-// The input vocabulary. Key values ARE USB-HID usage codes — the
-// standard that SDL scancodes adopt — so this is numbering adopted,
-// never a hand-maintained mirror that can drift. Only the keys sims
-// actually bind are named; every other key still arrives as its
-// integer scancode in Event::key.
-
 #include <cstdint>
 #include <functional>
 
-namespace simview {
+namespace sv {
 
 enum class Key : std::int32_t {
     A = 4, B = 5, C = 6, D = 7, E = 8, F = 9, G = 10, H = 11, I = 12,
@@ -25,12 +19,12 @@ enum class Key : std::int32_t {
 struct Event {
     enum class Type : std::int32_t { KeyDown, KeyUp };
     Type type;
-    std::int32_t key; // the scancode; compare against Key's values
+    std::int32_t key;
     bool repeat;
 };
 
-inline bool is(const Event &e, Key k) {
+inline bool Is(const Event &e, Key k) {
     return e.key == static_cast<std::int32_t>(k);
 }
 
-} // namespace simview
+}

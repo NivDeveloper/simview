@@ -8,15 +8,13 @@
 constexpr unsigned W = 256, H = 192;
 
 int main() {
-    auto app = simview::init({.title = "simview — hello-window",
-                              .size = {W * 3, H * 3}});
+    sv::App app({.title = "simview — hello-window", .size = {W * 3, H * 3}});
     if (!app) return 1;
-    auto field = app.field({.extent = {W, H},
-                            .map = simview::Colormap::Viridis});
+    auto field = app.Field({.extent = {W, H}, .map = sv::Colormap::Viridis});
 
     std::vector<float> v(W * H);
     float t = 0;
-    app.on_frame([&] {
+    app.OnFrame([&] {
         t += 0.02f;
         for (unsigned y = 0; y < H; ++y)
             for (unsigned x = 0; x < W; ++x) {
@@ -26,8 +24,8 @@ int main() {
                     0.25f * std::sin(7.0f * fy + 1.3f * t) *
                         std::cos(5.0f * (fx + fy) - 0.7f * t);
             }
-        field.update(v);
+        field.Update(v);
     });
-    app.on_key(simview::Key::Escape, [&] { app.request_quit(); });
-    app.run();
+    app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Run();
 }

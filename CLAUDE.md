@@ -18,7 +18,8 @@ over vendored ImGui/ImPlot behind the one UI seam.
   a template, never a std type in a signature. The SUGAR is inline
   code in the same headers (methods on handles, builders): it may use
   std freely and must lower ONLY onto seam calls, no logic of its own.
-  Reader convention: seam = free functions, sugar = inline methods.
+  The strata are told apart by NAMESPACE and by NAME: the seam lives
+  in `sv::seam`, the sugar in `sv`, and a user never spells `seam`.
 - **The include graph:**
 
   | who | may include |
@@ -36,7 +37,7 @@ over vendored ImGui/ImPlot behind the one UI seam.
   seam as pointer+stride or (native.h) `SDL_GPUBuffer *`. Internal
   shaders are committed bytecode for all three formats; regeneration
   is a dev-only script.
-- **The seam never throws.** Null handle / `false` + `last_error()`.
+- **The seam never throws.** Null handle / `false` + `LastError()`.
 - **Headless is first-class.** Every view must render offscreen
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
@@ -75,10 +76,23 @@ library and six of its eighteen examples were silently dead.
 
 ## Naming
 
-Handle and POD types PascalCase (`App`, `FieldDesc`); seam free
-functions snake_case, handle-first (`app_run(App)`, `field_update`);
-sugar methods snake_case. The umbrella is `<simview/simview.h>`;
-`native.h` is opt-in and never included by the umbrella.
+The namespace is `sv`. **Everything a user types is PascalCase with
+no underscores** — sugar classes own the clean names (`sv::App`,
+`sv::Field`, `sv::Executor`, `sv::Channel<T>`), their methods and the
+free functions match (`OnFrame`, `Run`, `Update`, `NativeDevice`,
+`LastError`), and no user-facing type wears a `Handle` suffix. The
+seam lives in `sv::seam`: snake_case free functions over opaque
+handles, handle-first (`app_run(App *)`, `field_update`), spelled
+only by the sugar, the tests, and a future binding — never by a
+consumer. PODs and enums shared by both strata (`Config`,
+`FieldDesc`, `Key`) sit in `sv` and are PascalCase. The umbrella is
+`<simview/simview.h>`; `native.h` is opt-in and never included by
+the umbrella.
+
+**`include/` carries no comments — not one.** The public surface must
+explain itself; a header that needs prose needs renaming instead.
+Design rationale lives in docs/, implementation commentary in `src/`
+(where comments are fine). `tools/lint.sh` rule (e) gates this.
 
 ## Layout
 

@@ -13,11 +13,11 @@
 #include <vector>
 
 int main() {
-    using namespace simview;
-    auto app = init({.headless = true});
+    using namespace sv;
+    App app({.headless = true});
     if (!app)
-        return std::printf("SKIP: no GPU device (%s)\n", last_error()), 0;
-    SDL_GPUDevice *dev = native_device(app.get());
+        return std::printf("SKIP: no GPU device (%s)\n", LastError()), 0;
+    SDL_GPUDevice *dev = NativeDevice(app);
 
     // The caller-owned buffer, filled with a vertical ramp by hand.
     constexpr Uint32 W = 64, H = 64;
@@ -47,20 +47,20 @@ int main() {
     SDL_ReleaseGPUFence(dev, fe);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 
-    auto f = field_from_buffer(app.get(), buf, {.extent = {W, H}});
-    if (!f) return std::printf("FAIL: field_from_buffer (%s)\n",
-                               last_error()),
+    auto f = FieldFromBuffer(app, buf, {.extent = {W, H}});
+    if (!f) return std::printf("FAIL: FieldFromBuffer (%s)\n",
+                               LastError()),
                    1;
-    // update() on an external field must refuse, rebind must accept.
-    if (field_update(f, v.data(), DType::f32, v.size()))
+    // Update() on an external field must refuse, rebind must accept.
+    if (f.Update(v))
         return std::printf("FAIL: update on external not refused\n"), 1;
-    if (!field_rebind(f, buf))
-        return std::printf("FAIL: rebind refused (%s)\n", last_error()), 1;
+    if (!FieldRebind(f, buf))
+        return std::printf("FAIL: rebind refused (%s)\n", LastError()), 1;
 
     const char *tmp = std::getenv("TMPDIR");
     const std::string p = std::string(tmp ? tmp : ".") + "/simview_native.bmp";
-    if (!app.shot(p.c_str()))
-        return std::printf("FAIL: shot (%s)\n", last_error()), 1;
+    if (!app.Shot(p.c_str()))
+        return std::printf("FAIL: shot (%s)\n", LastError()), 1;
     struct stat st{};
     if (stat(p.c_str(), &st) != 0 || st.st_size <= 1024)
         return std::printf("FAIL: shot too small\n"), 1;

@@ -5,7 +5,7 @@
 
 #include <simview/simview.h>
 
-namespace simview {
+namespace sv {
 namespace {
 
 SDL_GPUShader *make_shader(SDL_GPUDevice *dev, SDL_GPUShaderStage stage,
@@ -25,7 +25,7 @@ SDL_GPUShader *make_shader(SDL_GPUDevice *dev, SDL_GPUShaderStage stage,
 
 } // namespace
 
-SDL_GPUGraphicsPipeline *display_pipeline(App *a, SDL_GPUTextureFormat tf) {
+SDL_GPUGraphicsPipeline *display_pipeline(seam::App *a, SDL_GPUTextureFormat tf) {
     for (const auto &e : a->pipelines)
         if (e.format == tf) return e.pipeline;
 
@@ -42,13 +42,13 @@ SDL_GPUGraphicsPipeline *display_pipeline(App *a, SDL_GPUTextureFormat tf) {
     } else {
         set_error("this driver does not take SPIR-V shaders — native "
                   "MSL and DXIL bytecode are a planned addition");
-        SDL_Log("simview: %s", last_error());
+        SDL_Log("simview: %s", seam::last_error());
         return nullptr;
     }
     if (!vs || !fs) {
         set_error(SDL_GetError());
         SDL_Log("simview: shader creation failed (%s driver): %s",
-                SDL_GetGPUDeviceDriver(a->dev), last_error());
+                SDL_GetGPUDeviceDriver(a->dev), seam::last_error());
         if (vs) SDL_ReleaseGPUShader(a->dev, vs);
         if (fs) SDL_ReleaseGPUShader(a->dev, fs);
         return nullptr;
@@ -67,20 +67,20 @@ SDL_GPUGraphicsPipeline *display_pipeline(App *a, SDL_GPUTextureFormat tf) {
     SDL_ReleaseGPUShader(a->dev, fs);
     if (!p) {
         set_error(SDL_GetError());
-        SDL_Log("simview: pipeline creation failed: %s", last_error());
+        SDL_Log("simview: pipeline creation failed: %s", seam::last_error());
         return nullptr;
     }
     a->pipelines.push_back({tf, p});
     return p;
 }
 
-} // namespace simview
+} // namespace sv
 
-namespace simview {
+namespace sv {
 
-void render_field(App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
+void render_field(seam::App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
                   Uint32 tw, Uint32 th, SDL_GPUTextureFormat tf) {
-    App::FieldState &f = a->field;
+    seam::App::FieldState &f = a->field;
     if (f.w && f.dirty && !f.external) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{f.staging, 0};
@@ -126,4 +126,4 @@ void render_field(App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
     SDL_EndGPURenderPass(pass);
 }
 
-} // namespace simview
+} // namespace sv
