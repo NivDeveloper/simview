@@ -91,20 +91,20 @@ only after SDL's cross-thread command-buffer rules are pinned).
 
 | dep | policy |
 | --- | --- |
-| SDL3 | the ONE library dependency, PRIVATE (engine-only). Public headers never include it; `native.h` may FORWARD-DECLARE its handle types — the one carve-out |
+| SDL3 | the ONE LINKED library dependency, PRIVATE (engine-only). Public headers never include it; `native.h` may FORWARD-DECLARE its handle types |
 | Dear ImGui + ImPlot | vendored, pinned, PRIVATE (arrive in Move 3); one opt-in escape hatch for custom panels, explicitly version-locking |
-| tensor / gpud | absent, forever. Data arrives as pointer+stride or (native.h) `SDL_GPUBuffer *` |
+| tensor | absent, forever — its data arrives, its types never do |
+| gpud | the sanctioned GPU interchange across the sibling projects: the opt-in interop surface may speak its vocabulary (including that door declares gpud a dependency too); the core never names it; libsimview links nothing of it — interop sugar lowers inline, and a consumer holding gpud types links gpud already |
 | shader toolchain | absent for consumers: internal shaders ship as committed bytecode (SPIR-V/MSL/DXIL); `shaders/regen.sh` is dev-only |
 | everything else | std, C++20, the SYSTEM compiler (this is not tensor's g++-16/reflection world) |
 
 ## Integration with sims (tensor/gpud as the worked case)
 
-The composition principle: the three libraries never learn about each
-other; THE APP is the only place they meet, and handles flow through a
-chain of ADJACENT boundaries — tensor exports `gpud::Buffer *`
-(`resident_buffer`), gpud exports `SDL_GPUBuffer *`
-(`gpud::sdl::native_buffer`), simview imports `SDL_GPUBuffer *`
-(`native.h`). No library skips a level.
+The composition principle: gpud is the GPU interchange the sibling
+projects share — producers (tensor) export gpud vocabulary, simview
+imports it at its opt-in door, and NOBODY imports tensor. SDL stays
+the substrate simview draws with; its handle types remain the lower,
+SDL-level door (native.h) for producers that are not gpud's.
 
 - **Mode A (default): host memory.** `field.update(state.data())` —
   works with every backend and every language; two devices may exist
@@ -116,11 +116,9 @@ chain of ADJACENT boundaries — tensor exports `gpud::Buffer *`
   explicitly. A parked tensor holds a device handle and must die
   before the device — the one lifetime rule of the glue.
 
-The impl accepts behaviors (callables as fn-ptr+void*), handles
-(pointers), and integers (generation counters) — never foreign types.
-The future threaded GpuChannel synchronizes on a caller-supplied
-generation source (an integer callback the app wires to its runtime's
-`completed()`), so even that needs no dependency.
+The core impl accepts behaviors (callables as fn-ptr+void*), handles
+(pointers), and integers (generation counters) — foreign vocabulary
+is the interop doors' job, and gpud's is the one they speak.
 
 ## Platform
 

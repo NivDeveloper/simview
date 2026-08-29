@@ -3,7 +3,8 @@
 The 2-D XY model computed by the [tensor] library on the GPU (gpud's
 SDL backend, adopted onto simview's own device) and drawn zero-copy:
 the fragment shader reads the very buffer the compute wrote. Three
-libraries meet only here; none includes another.
+libraries meet only here; none includes tensor, and gpud is the
+interchange the stack shares.
 
 Standalone subproject: tensor needs `g++-16 -freflection`, simview
 builds with the system compiler — so this configures apart (build the

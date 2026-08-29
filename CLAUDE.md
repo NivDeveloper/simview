@@ -25,7 +25,7 @@ over vendored ImGui/ImPlot behind the one UI boundary.
   | who | may include |
   | --- | --- |
   | `include/simview/*.h` (core) | each other + std. Nothing else, ever |
-  | `include/simview/native.h` | core + std; may FORWARD-DECLARE SDL types; includes nothing of SDL's |
+  | opt-in interop headers (`native.h`; the gpud door when it lands) | core + std; may name SDL and gpud vocabulary — forward declarations preferred, gpud's SDK-free headers admissible; nothing of SDL's is ever included. lint rule (a) grows with each door |
   | `src/**` | anything (SDL, later ImGui/ImPlot) — never installed |
   | a core consumer | `<simview/simview.h>` + libsimview; no SDL anywhere |
 
@@ -33,10 +33,15 @@ over vendored ImGui/ImPlot behind the one UI boundary.
   (native.h) as forward declarations — the deliberate carve-out for
   zero-copy interop and device sharing. Including native.h is the
   consumer declaring "SDL is my dependency too".
-- **No tensor, no gpud, no shader toolchain — ever.** Data crosses the
-  impl as pointer+stride or (native.h) `SDL_GPUBuffer *`. Internal
-  shaders are committed bytecode for all three formats; regeneration
-  is a dev-only script.
+- **No tensor — ever. gpud is the sanctioned interchange.** gpud is
+  the universal GPU abstraction the sibling projects share to
+  communicate GPU state, and simview may speak its vocabulary — in
+  the OPT-IN interop surface only (the native.h pattern: including
+  the door declares the dependency), never in the core, and
+  libsimview links nothing of it (interop sugar lowers inline). Data
+  crosses the impl as pointer+stride, `SDL_GPUBuffer *`, or gpud
+  vocabulary at that door. No shader toolchain: internal shaders are
+  committed bytecode; regeneration is a dev-only script.
 - **The impl never throws — and it reports itself.** A refusal is a
   null handle / `false`, with its sentence logged at the refusal site
   (SDL's error log). `LastError()` is programmatic access for tests
