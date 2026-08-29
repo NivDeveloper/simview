@@ -59,6 +59,10 @@ jobs:
           [ "$RUNNER_OS" != "macOS" ] && PP="$GITHUB_WORKSPACE/sdl3-prefix"
           CMAKE_PREFIX_PATH="$PP" cmake -B build -DCMAKE_BUILD_TYPE=Release
 
+      - name: Vulkan ICDs present (Linux)
+        if: runner.os == 'Linux'
+        run: ls -la /usr/share/vulkan/icd.d/ || echo "no ICD directory"
+
       - name: build library + every example
         run: cmake --build build -j 4 --config Release
 
@@ -73,6 +77,7 @@ jobs:
       - name: gates (tests + installed surface)
         env:
           VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' || '' }}
+          VK_DRIVER_FILES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' || '' }}
           # gpud says why a device did not come up; SDL says what it
           # tried. Cheap, and the only view into a runner we cannot
           # attach a debugger to.

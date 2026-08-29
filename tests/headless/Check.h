@@ -45,11 +45,14 @@ inline int summary(const char *name) {
     return failures ? 1 : 0;
 }
 
-// A named non-result: the machine cannot host this test. Never
-// printed for a pass, so a skip and a pass never read alike.
+// A named non-result: the machine cannot host this test. Returns
+// ctest's SKIP_RETURN_CODE, so the summary says Skipped rather than
+// Passed — a skip and a pass must not read alike in the log EITHER.
+inline constexpr int skip_code = 77;
+
 inline int skip(const char *name, const char *why) {
     std::printf("SKIP: %s (%s)\n", name, why);
-    return 0;
+    return skip_code;
 }
 
 } // namespace check
