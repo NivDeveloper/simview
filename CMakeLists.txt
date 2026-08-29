@@ -21,7 +21,9 @@ target_compile_definitions(simview PRIVATE
     SIMVIEW_VERSION="${PROJECT_VERSION}")
 set_target_properties(simview PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
-target_compile_options(simview PRIVATE -Wall -Wextra)
+if(NOT MSVC)
+    target_compile_options(simview PRIVATE -Wall -Wextra)
+endif()
 
 install(TARGETS simview ARCHIVE DESTINATION lib)
 install(DIRECTORY include/simview DESTINATION include)

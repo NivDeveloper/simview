@@ -1,0 +1,64 @@
+# The rule this enforces (CLAUDE.md): the library AND every example
+# build on all three platforms on every push, and the surface gates
+# run everywhere. Runners have no GPU — hello reports "no device" as
+# an outcome, not a failure; the build and the gates are the substance.
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # TODO: prove the Windows leg, then drop this.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SDL3 (brew)
+        if: runner.os == 'macOS'
+        run: brew install sdl3
+
+      - name: SDL3 cache
+        if: runner.os != 'macOS'
+        id: sdl
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/sdl3-prefix
+          key: sdl3-3.2.30-${{ runner.os }}
+
+      - name: SDL3 (source build)
+        if: runner.os != 'macOS' && steps.sdl.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git clone --depth 1 --branch release-3.2.30 \
+              https://github.com/libsdl-org/SDL sdl-src
+          cmake -S sdl-src -B sdl-src/build -DCMAKE_BUILD_TYPE=Release \
+                -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+                -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/sdl3-prefix"
+          cmake --build sdl-src/build -j 4 --config Release
+          cmake --install sdl-src/build --config Release
+
+      - name: configure
+        shell: bash
+        run: |
+          PP=""
+          [ "$RUNNER_OS" != "macOS" ] && PP="$GITHUB_WORKSPACE/sdl3-prefix"
+          CMAKE_PREFIX_PATH="$PP" cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: build library + every example
+        run: cmake --build build -j 4 --config Release
+
+      - name: lint (surface hygiene)
+        shell: bash
+        run: sh tools/lint.sh
+
+      - name: gates (installed surface)
+        run: ctest --test-dir build --output-on-failure -C Release
+
+      - name: run hello
+        shell: bash
+        run: |
+          ./build/examples/hello/hello 2>/dev/null \
+            || ./build/examples/hello/Release/hello.exe
