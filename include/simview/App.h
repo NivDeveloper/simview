@@ -6,6 +6,7 @@
 // drives no frames yet (the window arrives in Move 2).
 
 #include "Event.h"
+#include "Field.h"
 #include "Types.h"
 
 #include <forward_list>
@@ -31,9 +32,16 @@ void app_on_event(App *, void (*fn)(const Event &, void *), void *user);
 // any callback.
 void app_request_quit(App *);
 // Block driving the window's frame loop until quit is requested or the
-// window closes. A headless App returns immediately (drive it with
-// step()/shot() instead — Move 2).
+// window closes. A headless App returns immediately — drive it with
+// step()/shot() instead.
 void app_run(App *);
+// One headless "frame": fires the frame callbacks (the sim advances)
+// and applies pending field uploads, without a window. run()'s loop
+// body is the windowed twin.
+void app_step(App *);
+// Render the CURRENT field state offscreen through the same pass the
+// window uses and write a BMP — the eyeless-verification primitive.
+bool app_shot(App *, const char *bmp_path);
 
 // ── sugar ───────────────────────────────────────────────────────────
 // The owning wrapper a consumer holds; every method lowers onto the
@@ -78,6 +86,11 @@ class AppHandle {
     }
     void request_quit() { app_request_quit(a_); }
     void run() { app_run(a_); }
+    void step() { app_step(a_); }
+    bool shot(const char *path) { return app_shot(a_, path); }
+    FieldHandle field(const FieldDesc &d) {
+        return FieldHandle{field_create(a_, d)};
+    }
 
   private:
     void reset() {

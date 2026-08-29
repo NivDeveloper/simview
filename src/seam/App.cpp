@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <vector>
 
@@ -36,11 +37,12 @@ App *app_init(const Config &c) {
                 break;
             }
 
-    // Every format simview ships bytecode for; SDL picks the driver.
-    SDL_GPUDevice *dev = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_MSL |
-            SDL_GPU_SHADERFORMAT_DXIL,
-        false, nullptr);
+    // SPIR-V only for now: it is the one format whose emitted binding
+    // layout provably matches SDL's conventions. Native Metal (MSL)
+    // and D3D12 (DXIL) need convention-correct emission — one planned
+    // follow-up; on macOS SDL serves SPIR-V via its Vulkan driver.
+    SDL_GPUDevice *dev =
+        SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
     if (!dev) {
         set_error(SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -69,6 +71,9 @@ void app_quit(App *a) {
     SDL_WaitForGPUIdle(a->dev);
     for (const auto &e : a->pipelines)
         SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
+    if (a->field.buf) SDL_ReleaseGPUBuffer(a->dev, a->field.buf);
+    if (a->field.staging)
+        SDL_ReleaseGPUTransferBuffer(a->dev, a->field.staging);
     if (a->win) {
         SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
         SDL_DestroyWindow(a->win);
@@ -135,16 +140,119 @@ void app_run(App *a) {
             SDL_CancelGPUCommandBuffer(cmd); // minimized: not an error
             continue;
         }
-        // Move 2 step 1: clear only; the field render pass lands next.
-        SDL_GPUColorTargetInfo ct{};
-        ct.texture = swap;
-        ct.clear_color = {0.09f, 0.09f, 0.10f, 1.0f};
-        ct.load_op = SDL_GPU_LOADOP_CLEAR;
-        ct.store_op = SDL_GPU_STOREOP_STORE;
-        SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-        SDL_EndGPURenderPass(pass);
+        int tw = 0, th = 0;
+        SDL_GetWindowSizeInPixels(a->win, &tw, &th);
+        render_field(a, cmd, swap, Uint32(tw), Uint32(th),
+                     SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
         SDL_SubmitGPUCommandBuffer(cmd);
     }
+}
+
+Field field_create(App *a, const FieldDesc &d) {
+    if (!a) return {};
+    if (a->field.w)
+        return set_error("Move 2 draws one field per App - a second "
+                         "field_create is a later move"),
+               Field{};
+    if (d.dtype != DType::f32)
+        return set_error("Move 2 fields hold f32 values only"), Field{};
+    if (!d.extent.w || !d.extent.h)
+        return set_error("a field needs a non-zero extent"), Field{};
+
+    const Uint32 bytes = d.extent.w * d.extent.h * 4;
+    SDL_GPUBufferCreateInfo bci{};
+    bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+    bci.size = bytes;
+    SDL_GPUBuffer *buf = SDL_CreateGPUBuffer(a->dev, &bci);
+    SDL_GPUTransferBufferCreateInfo tci{};
+    tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tci.size = bytes;
+    SDL_GPUTransferBuffer *staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+    if (!buf || !staging) {
+        set_error(SDL_GetError());
+        if (buf) SDL_ReleaseGPUBuffer(a->dev, buf);
+        if (staging) SDL_ReleaseGPUTransferBuffer(a->dev, staging);
+        return {};
+    }
+    a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
+                buf,        staging,    false};
+    return Field{a};
+}
+
+bool field_update(Field f, const void *data, DType t, std::size_t count) {
+    App *a = static_cast<App *>(f.p);
+    if (!a || !data) return set_error("field_update: null"), false;
+    if (t != DType::f32)
+        return set_error("Move 2 fields hold f32 values only"), false;
+    if (count != std::size_t(a->field.w) * a->field.h)
+        return set_error("field_update: count must equal w*h"), false;
+    // cycle=true: per-frame streaming; the frame in flight may still
+    // read the previous contents (SDL's sanctioned ring).
+    void *map = SDL_MapGPUTransferBuffer(a->dev, a->field.staging, true);
+    if (!map) return set_error(SDL_GetError()), false;
+    std::memcpy(map, data, count * 4);
+    SDL_UnmapGPUTransferBuffer(a->dev, a->field.staging);
+    a->field.dirty = true;
+    return true;
+}
+
+void app_step(App *a) {
+    if (!a) return;
+    in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+}
+
+bool app_shot(App *a, const char *path) {
+    if (!a || !path) return set_error("shot: null"), false;
+    const Uint32 w = a->field.w ? a->field.w * 2 : 512;
+    const Uint32 h = a->field.h ? a->field.h * 2 : 512;
+
+    SDL_GPUTextureCreateInfo ti{};
+    ti.type = SDL_GPU_TEXTURETYPE_2D;
+    ti.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    ti.width = w;
+    ti.height = h;
+    ti.layer_count_or_depth = 1;
+    ti.num_levels = 1;
+    SDL_GPUTexture *tex = SDL_CreateGPUTexture(a->dev, &ti);
+    SDL_GPUTransferBufferCreateInfo tci{};
+    tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    tci.size = w * h * 4;
+    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+    if (!tex || !tb) {
+        set_error(SDL_GetError());
+        if (tex) SDL_ReleaseGPUTexture(a->dev, tex);
+        if (tb) SDL_ReleaseGPUTransferBuffer(a->dev, tb);
+        return false;
+    }
+
+    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
+    render_field(a, cmd, tex, w, h, ti.format);
+    SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureRegion reg{};
+    reg.texture = tex;
+    reg.w = w;
+    reg.h = h;
+    reg.d = 1;
+    SDL_GPUTextureTransferInfo dst{};
+    dst.transfer_buffer = tb;
+    SDL_DownloadFromGPUTexture(cp, &reg, &dst);
+    SDL_EndGPUCopyPass(cp);
+    SDL_GPUFence *fe = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    SDL_WaitForGPUFences(a->dev, true, &fe, 1);
+    SDL_ReleaseGPUFence(a->dev, fe);
+
+    void *pixels = SDL_MapGPUTransferBuffer(a->dev, tb, false);
+    SDL_Surface *s = SDL_CreateSurfaceFrom(int(w), int(h),
+                                           SDL_PIXELFORMAT_RGBA32, pixels,
+                                           int(w * 4));
+    const bool ok = SDL_SaveBMP(s, path);
+    if (!ok) set_error(SDL_GetError());
+    SDL_DestroySurface(s);
+    SDL_UnmapGPUTransferBuffer(a->dev, tb);
+    SDL_ReleaseGPUTransferBuffer(a->dev, tb);
+    SDL_ReleaseGPUTexture(a->dev, tex);
+    return ok;
 }
 
 SDL_GPUDevice *native_device(App *a) { return a ? a->dev : nullptr; }

@@ -35,7 +35,23 @@ struct App {
         SDL_GPUGraphicsPipeline *pipeline;
     };
     std::vector<PipelineEntry> pipelines; // one per target format
+
+    // Move 2: at most one field; the window is the field.
+    struct FieldState {
+        Uint32 w = 0, h = 0;
+        Sint32 cmap = 0;
+        float lo = 0, hi = 1;
+        SDL_GPUBuffer *buf = nullptr;
+        SDL_GPUTransferBuffer *staging = nullptr;
+        bool dirty = false; // staging holds a newer grid than buf
+    };
+    FieldState field; // w == 0 means "no field yet"
 };
+
+// Draw.cpp: upload-if-dirty then render the field into target — the
+// ONE pass both the window and shot() record.
+void render_field(App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target,
+                  Uint32 tw, Uint32 th, SDL_GPUTextureFormat);
 
 // The per-thread sentence behind simview::last_error().
 void set_error(std::string msg);

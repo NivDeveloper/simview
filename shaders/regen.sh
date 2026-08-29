@@ -1,8 +1,10 @@
 #!/bin/sh
-# Regenerate the committed display bytecode (SPIR-V + MSL) from
+# Regenerate the committed display bytecode (SPIR-V) from
 # display.slang. Dev-only: consumers never need a shader toolchain.
-# DXIL (Windows/D3D12) is a planned addition. Deterministic: running
-# twice must produce identical bytes — CI-adjacent checks rely on it.
+# Native MSL and DXIL are a planned addition — both need emission that
+# follows SDL's per-stage binding conventions, which slang's defaults
+# do not (measured: slang-MSL bound nothing and painted NaN-black).
+# Deterministic: running twice must produce identical bytes.
 set -eu
 cd "$(dirname "$0")"
 SLANGC=${SLANGC:-$(command -v slangc || echo /usr/local/bin/slangc)}
@@ -20,10 +22,7 @@ for e in vsmain fsmain; do
     stage=$([ "$e" = vsmain ] && echo vertex || echo fragment)
     "$SLANGC" display.slang -target spirv -entry $e -stage $stage \
         -fvk-use-entrypoint-name -emit-spirv-directly -o "$e.spv"
-    "$SLANGC" display.slang -target metal -entry $e -stage $stage \
-        -o "$e.metal"
     emit "$e" "display_${e}_spirv" "$e.spv"
-    emit "$e" "display_${e}_msl" "$e.metal"
-    rm -f "$e.spv" "$e.metal"
+    rm -f "$e.spv"
 done
 echo "regen: bytecode written to $OUT"
