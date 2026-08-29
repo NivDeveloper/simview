@@ -147,11 +147,11 @@ int main() {
             rewrap(sdev, theta);
     });
 
-    app.OnKey(sv::Key::Space, [&] { paused = !paused; });
-    app.OnKey(sv::Key::Up, [&] { T = std::min(2.0f, T + 0.05f); });
-    app.OnKey(sv::Key::Down, [&] { T = std::max(0.05f, T - 0.05f); });
-    app.OnKey(sv::Key::R, [&] { theta = random_angles(sdev); });
-    app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.OnKey(sv::Key::Space, [&] { paused = !paused; })
+        .OnKey(sv::Key::Up, [&] { T = std::min(2.0f, T + 0.05f); })
+        .OnKey(sv::Key::Down, [&] { T = std::max(0.05f, T - 0.05f); })
+        .OnKey(sv::Key::R, [&] { theta = random_angles(sdev); })
+        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
     // Teardown is the lifetime rule: the parked tensors (the field's

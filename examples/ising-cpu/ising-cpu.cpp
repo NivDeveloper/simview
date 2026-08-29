@@ -110,13 +110,13 @@ int main() {
 
     // The keys move the same variables the panel does, so the two
     // never disagree about what the sim is doing.
-    app.OnKey(sv::Key::Space, [&] { running = !running; });
-    app.OnKey(sv::Key::Up,
-              [&] { temperature = std::min(4.5f, temperature + 0.05f); });
-    app.OnKey(sv::Key::Down,
-              [&] { temperature = std::max(0.05f, temperature - 0.05f); });
-    app.OnKey(sv::Key::R, [&] { reseed_wanted = true; });
-    app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.OnKey(sv::Key::Space, [&] { running = !running; })
+        .OnKey(sv::Key::Up,
+               [&] { temperature = std::min(4.5f, temperature + 0.05f); })
+        .OnKey(sv::Key::Down,
+               [&] { temperature = std::max(0.05f, temperature - 0.05f); })
+        .OnKey(sv::Key::R, [&] { reseed_wanted = true; })
+        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
 }

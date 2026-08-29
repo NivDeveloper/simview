@@ -185,6 +185,14 @@ consumer. PODs and enums shared by both strata (`Config`,
 `<simview/simview.h>`; `gpud.h` is opt-in and never included by
 the umbrella.
 
+**Chaining is the idiom.** Every registration returns its handle —
+`app.OnKey(...).OnKey(...).OnFrame(...)`,
+`app.Panel("controls").Slider(...).Checkbox(...).Button(...)`,
+`app.Plot({...}).Line(...)` — so setting up reads as one statement per
+subject rather than one per call. Keep a named handle only when
+something arrives later: a field updated every frame, or series added
+in a loop.
+
 **Build a descriptor with designated initialisers**, never a default
 construction followed by a run of assignments: `Desc{.a = x, .b = y}`
 says what the value IS in one expression, and a field that is meant to

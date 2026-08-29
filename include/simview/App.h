@@ -55,14 +55,15 @@ class App {
     explicit operator bool() const { return a_ != nullptr; }
     impl::App *Raw() const { return a_; }
 
-    void OnFrame(std::function<void()> fn) {
+    App &OnFrame(std::function<void()> fn) {
         cbs_.push_front(std::move(fn));
         impl::app_on_frame(
             a_, [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
             &cbs_.front());
+        return *this;
     }
 
-    void OnEvent(std::function<void(const Event &)> fn) {
+    App &OnEvent(std::function<void(const Event &)> fn) {
         ecbs_.push_front(std::move(fn));
         impl::app_on_event(
             a_,
@@ -70,10 +71,11 @@ class App {
                 (*static_cast<std::function<void(const Event &)> *>(u))(e);
             },
             &ecbs_.front());
+        return *this;
     }
 
-    void OnKey(Key k, std::function<void()> fn) {
-        OnEvent([k, fn = std::move(fn)](const Event &e) {
+    App &OnKey(Key k, std::function<void()> fn) {
+        return OnEvent([k, fn = std::move(fn)](const Event &e) {
             if (e.type == Event::Type::KeyDown && !e.repeat && Is(e, k))
                 fn();
         });
@@ -84,14 +86,18 @@ class App {
     void Step() { impl::app_step(a_); }
     bool Shot(const char *path) { return impl::app_shot(a_, path); }
 
-    void OnUi(std::function<void()> fn) {
+    App &OnUi(std::function<void()> fn) {
         cbs_.push_front(std::move(fn));
         impl::app_on_ui(
             a_, [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
             &cbs_.front());
+        return *this;
     }
 
-    void PostEvent(const Event &e) { impl::app_post_event(a_, e); }
+    App &PostEvent(const Event &e) {
+        impl::app_post_event(a_, e);
+        return *this;
+    }
 
     sv::Stats Stats() const { return impl::app_stats(a_); }
 
