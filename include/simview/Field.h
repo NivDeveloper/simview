@@ -16,7 +16,7 @@ struct FieldDesc {
     float lo = 0.0f, hi = 1.0f;
 };
 
-namespace seam {
+namespace impl {
 
 struct App;
 
@@ -33,16 +33,16 @@ bool field_update(Field, const void *data, DType, std::size_t count);
 class Field {
   public:
     Field() = default;
-    explicit Field(seam::Field f) : f_(f) {}
+    explicit Field(impl::Field f) : f_(f) {}
     explicit operator bool() const { return bool(f_); }
-    seam::Field Raw() const { return f_; }
+    impl::Field Raw() const { return f_; }
 
     bool Update(std::span<const float> v) {
-        return seam::field_update(f_, v.data(), DType::f32, v.size());
+        return impl::field_update(f_, v.data(), DType::f32, v.size());
     }
 
   private:
-    seam::Field f_;
+    impl::Field f_;
 };
 
 }

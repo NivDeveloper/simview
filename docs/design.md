@@ -16,55 +16,55 @@ view is a future decision, not a founding one).
 The public surface (`include/simview/`) has two strata; the split is
 between what the LINKER sees and what the READER sees.
 
-**The seam** is the set of symbols exported from libsimview — the
+**The impl** is the set of symbols exported from libsimview — the
 compiled boundary, the ABI. Its signatures are deliberately boring:
 opaque handles (`struct App { void *p; }`-shaped), POD structs, enums,
 `const char *`, primitives, and function-pointer + `void *` pairs.
 Never a template (they cannot be compiled into a library ahead of
 time); never a std type in a signature (a compiler-coupling hazard
-across a shared-library boundary). The seam is what must stay stable,
+across a shared-library boundary). The impl is what must stay stable,
 what a future .so exports, what tests mock, and what an ABI review
 reads.
 
 **The sugar** is inline code in the same public headers — methods on
 the handle types, builders, span/lambda overloads. It compiles into
 the CONSUMER's binary, never into libsimview, so it may use std freely
-and be reshaped at any time. Its one law: it lowers ONLY onto seam
+and be reshaped at any time. Its one law: it lowers ONLY onto impl
 calls; it holds no logic of its own.
 
 ```cpp
-// the seam: exported from libsimview
-namespace sv::seam {
+// the impl: exported from libsimview
+namespace sv::impl {
 Field field_create(App *, const FieldDesc &);
 bool  field_update(Field, const void *data, DType, size_t n);
 }
 
 // the sugar: inline, compiled into the consumer
 inline bool sv::Field::Update(std::span<const float> v) {
-    return seam::field_update(f_, v.data(), DType::f32, v.size());
+    return impl::field_update(f_, v.data(), DType::f32, v.size());
 }
 ```
 
-The reader convention, uniform everywhere: **the seam is `sv::seam`,
+The reader convention, uniform everywhere: **the impl is `sv::impl`,
 snake_case free functions over handles; the sugar is `sv`, PascalCase
 classes and methods owning the clean names** (`sv::App`, `sv::Field`
 — no `Handle` suffix anywhere). One glance at any spelling says which
 side it is on, and a consumer never types an underscore or the word
-`seam`.
+`impl`.
 
-Why both strata exist: the seam buys ABI stability, mockability, and a
+Why both strata exist: the impl buys ABI stability, mockability, and a
 cheap future C-ABI; the sugar buys vklib-grade ergonomics (its ising
 example was 205 lines with ~20 of ceremony — the bar). vklib had only
 the sugar with no deliberate ABI stratum beneath, which is how its
 public headers accumulated five boundary mechanisms and its internals;
-gpud is nearly all seam. simview takes both on purpose.
+gpud is nearly all impl. simview takes both on purpose.
 
-On C interop: the seam is C-SHAPED (POD/handle/fn-ptr arguments
+On C interop: the impl is C-SHAPED (POD/handle/fn-ptr arguments
 only), not C-LINKAGE — its symbols are C++-mangled and its functions
 take references. That is deliberate: C has no namespaces, so a C API
 was always going to be a separate flat `extern "C"` file of `sv_*`
 wrappers, and the POD-only law is what makes generating it
-mechanical. Nesting the seam in `sv::seam` changes nothing about
+mechanical. Nesting the impl in `sv::impl` changes nothing about
 that path.
 
 ## Layers
@@ -101,7 +101,7 @@ only after SDL's cross-thread command-buffer rules are pinned).
 
 The composition principle: the three libraries never learn about each
 other; THE APP is the only place they meet, and handles flow through a
-chain of ADJACENT seams — tensor exports `gpud::Buffer *`
+chain of ADJACENT boundaries — tensor exports `gpud::Buffer *`
 (`resident_buffer`), gpud exports `SDL_GPUBuffer *`
 (`gpud::sdl::native_buffer`), simview imports `SDL_GPUBuffer *`
 (`native.h`). No library skips a level.
@@ -116,7 +116,7 @@ chain of ADJACENT seams — tensor exports `gpud::Buffer *`
   explicitly. A parked tensor holds a device handle and must die
   before the device — the one lifetime rule of the glue.
 
-The seam accepts behaviors (callables as fn-ptr+void*), handles
+The impl accepts behaviors (callables as fn-ptr+void*), handles
 (pointers), and integers (generation counters) — never foreign types.
 The future threaded GpuChannel synchronizes on a caller-supplied
 generation source (an integer callback the app wires to its runtime's
@@ -137,8 +137,8 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
 - **Frame loop: register-then-Run.** `app.on_frame(cb); app.run();` —
   the library drives; run() blocks until quit. A consumer-owned
   `frame()` escape hatch may be added later if a real sim needs to own
-  its loop; it would be seam-level, with run() as sugar over it.
-- **Errors: the seam never throws — and it reports itself.**
+  its loop; it would be impl-level, with run() as sugar over it.
+- **Errors: the impl never throws — and it reports itself.**
   Constructors that fail return a null handle; operations return
   bool; the sentence is logged at the refusal site, so checking the
   bool is a consumer's whole error handling. `sv::LastError()` is
@@ -168,16 +168,16 @@ Every gate must be BROKEN once when added, to prove it fires.
 
 ## Roadmap
 
-- **Move 1** (this): constitution, gates, minimal seam, CI matrix.
+- **Move 1** (this): constitution, gates, minimal impl, CI matrix.
 - **Move 2** (done): the walking skeleton — window + run loop,
   Event/Key, host-path Field with the colormap pipeline (committed
   SPIR-V bytecode; native MSL/DXIL emission is a named follow-up),
   step/shot as headless API, hello-window.
 - **Move 3** (done): the founding examples — `ising-cpu` (plain
   arrays + the sync layer; the canary) and `xy-gpu` (Mode B,
-  standalone subproject, the cross-compiler seam-ABI proof) — plus the
+  standalone subproject, the cross-compiler ABI proof) — plus the
   Executor/Channel port and the zero-copy field. Controls are keys
   until the widget move.
-- Then: plots over ImPlot behind the one UI seam, aux windows,
+- Then: plots over ImPlot behind the one UI boundary, aux windows,
   particles, threaded GpuChannel. v1.0 is not a feature: it is the CI
   matrix green on all three platforms with the docs matching reality.

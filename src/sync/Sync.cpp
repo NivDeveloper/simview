@@ -12,7 +12,7 @@
 #include <thread>
 
 namespace sv {
-namespace seam {
+namespace impl {
 
 namespace {
 
@@ -152,5 +152,5 @@ std::uint64_t executor_ticks(Executor ex) {
     return e ? e->ticks.load(std::memory_order_acquire) : 0;
 }
 
-} // namespace seam
+} // namespace impl
 } // namespace sv

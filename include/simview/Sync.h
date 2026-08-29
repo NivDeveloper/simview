@@ -7,7 +7,7 @@
 
 namespace sv {
 
-namespace seam {
+namespace impl {
 
 struct Channel {
     void *p = nullptr;
@@ -39,26 +39,26 @@ std::uint64_t executor_ticks(Executor);
 template <typename T> class Channel {
   public:
     explicit Channel(std::size_t count)
-        : c_(seam::channel_create(count * sizeof(T))), count_(count) {}
+        : c_(impl::channel_create(count * sizeof(T))), count_(count) {}
 
-    ~Channel() { seam::channel_destroy(c_); }
+    ~Channel() { impl::channel_destroy(c_); }
     Channel(const Channel &) = delete;
     Channel &operator=(const Channel &) = delete;
 
     std::span<T> State() {
-        return {static_cast<T *>(seam::channel_state(c_)), count_};
+        return {static_cast<T *>(impl::channel_state(c_)), count_};
     }
 
-    void Publish() { seam::channel_publish(c_); }
+    void Publish() { impl::channel_publish(c_); }
 
     std::span<const T> Latest(std::uint64_t &gen) {
-        const void *d = seam::channel_latest(c_, &gen);
+        const void *d = impl::channel_latest(c_, &gen);
         return d ? std::span<const T>{static_cast<const T *>(d), count_}
                  : std::span<const T>{};
     }
 
   private:
-    seam::Channel c_;
+    impl::Channel c_;
     std::size_t count_;
 };
 
@@ -68,28 +68,28 @@ class Executor {
 
     explicit Executor(std::function<void()> tick)
         : tick_(new std::function<void()>(std::move(tick))),
-          e_(seam::executor_create(
+          e_(impl::executor_create(
               [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
               tick_)) {}
 
     ~Executor() {
-        if (e_) seam::executor_destroy(e_);
+        if (e_) impl::executor_destroy(e_);
         delete tick_;
     }
 
     Executor(const Executor &) = delete;
     Executor &operator=(const Executor &) = delete;
 
-    void Play() { seam::executor_play(e_); }
-    void Pause() { seam::executor_pause(e_); }
-    void Step() { seam::executor_step(e_); }
-    bool Playing() const { return seam::executor_playing(e_); }
-    void SetDelayNs(std::uint64_t ns) { seam::executor_set_delay_ns(e_, ns); }
-    std::uint64_t Ticks() const { return seam::executor_ticks(e_); }
+    void Play() { impl::executor_play(e_); }
+    void Pause() { impl::executor_pause(e_); }
+    void Step() { impl::executor_step(e_); }
+    bool Playing() const { return impl::executor_playing(e_); }
+    void SetDelayNs(std::uint64_t ns) { impl::executor_set_delay_ns(e_, ns); }
+    std::uint64_t Ticks() const { return impl::executor_ticks(e_); }
 
   private:
     std::function<void()> *tick_ = nullptr;
-    seam::Executor e_;
+    impl::Executor e_;
 };
 
 }

@@ -11,7 +11,7 @@ option(SIMVIEW_BUILD_TESTS "Build simview tests" ${PROJECT_IS_TOP_LEVEL})
 find_package(SDL3 REQUIRED CONFIG)
 
 add_library(simview STATIC
-    src/seam/App.cpp
+    src/impl/App.cpp
     src/engine/Draw.cpp
     src/sync/Sync.cpp)
 add_library(simview::simview ALIAS simview)

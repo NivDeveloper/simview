@@ -1,4 +1,4 @@
-// The seam definitions for Types.h, App.h and native.h — thin walls
+// The impl definitions for Types.h, App.h and native.h — thin walls
 // over the engine.
 
 #include "../engine/Engine.h"
@@ -24,7 +24,7 @@ void set_error(std::string msg) {
                  g_error.c_str());
 }
 
-namespace seam {
+namespace impl {
 
 const char *version() { return SIMVIEW_VERSION; }
 const char *last_error() { return g_error.c_str(); }
@@ -293,5 +293,5 @@ bool field_rebind(Field f, SDL_GPUBuffer *buf) {
     return true;
 }
 
-} // namespace seam
+} // namespace impl
 } // namespace sv

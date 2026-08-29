@@ -13,9 +13,9 @@ namespace sv {
 
 struct Event; // simview/Event.h
 
-// The one App state, in seam:: because the seam's opaque `App *`
+// The one App state, in impl:: because the impl's opaque `App *`
 // points here.
-namespace seam {
+namespace impl {
 struct App {
     SDL_GPUDevice *dev = nullptr;
     SDL_Window *win = nullptr; // null when headless
@@ -49,11 +49,11 @@ struct App {
     };
     FieldState field; // w == 0 means "no field yet"
 };
-} // namespace seam
+} // namespace impl
 
 // Draw.cpp: upload-if-dirty then render the field into target — the
 // ONE pass both the window and shot() record.
-void render_field(seam::App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target,
+void render_field(impl::App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target,
                   Uint32 tw, Uint32 th, SDL_GPUTextureFormat);
 
 // The per-thread sentence behind sv::LastError().

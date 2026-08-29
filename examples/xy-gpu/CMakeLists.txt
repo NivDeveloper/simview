@@ -1,8 +1,8 @@
 # STANDALONE subproject: needs tensor's compiler (g++-16 -freflection)
 # while simview builds with the system compiler — configure it
-# separately (see Makefile here). It is also the seam-ABI proof: this
+# separately (see Makefile here). It is also the impl-ABI proof: this
 # g++/libstdc++ consumer links the AppleClang/libc++ libsimview.a,
-# which works because the seam is POD-only by law.
+# which works because the impl is POD-only by law.
 cmake_minimum_required(VERSION 3.24)
 project(xy-gpu LANGUAGES CXX)
 
@@ -22,7 +22,7 @@ add_executable(xy-gpu xy-gpu.cpp)
 target_include_directories(xy-gpu PRIVATE ${SIMVIEW_ROOT}/include)
 # Both C++ runtimes link into this binary: libsimview.a's internals
 # use libc++ (AppleClang built it), this TU uses libstdc++ (g++). The
-# seam's POD-only law is what makes that safe — no std type crosses
+# impl's POD-only law is what makes that safe — no std type crosses
 # between them — and libc++'s inline namespace keeps symbols apart.
 target_link_libraries(xy-gpu PRIVATE
     ${SIMVIEW_ROOT}/build/libsimview.a

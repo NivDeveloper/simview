@@ -19,6 +19,6 @@ struct DrawParams {
 // The pipeline for a given target format, created on demand and cached
 // on the App. Picks SPIR-V when the driver takes it, else MSL source;
 // DXIL is a planned addition (the error names it).
-SDL_GPUGraphicsPipeline *display_pipeline(seam::App *, SDL_GPUTextureFormat);
+SDL_GPUGraphicsPipeline *display_pipeline(impl::App *, SDL_GPUTextureFormat);
 
 } // namespace sv

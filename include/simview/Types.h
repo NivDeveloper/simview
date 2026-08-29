@@ -17,12 +17,12 @@ struct Config {
     bool headless = false;
 };
 
-namespace seam {
+namespace impl {
 const char *version();
 const char *last_error();
 }
 
-inline const char *Version() { return seam::version(); }
-inline const char *LastError() { return seam::last_error(); }
+inline const char *Version() { return impl::version(); }
+inline const char *LastError() { return impl::last_error(); }
 
 }

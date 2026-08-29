@@ -2,7 +2,7 @@
 # library + headers into a scratch prefix, then configure and compile
 # (not link) a consumer whose ONLY include directory is that prefix —
 # whatever compiler this platform defaults to, no SDL anywhere. What it
-# certifies: the seam compiles bare, and the sugar is pure inline
+# certifies: the impl compiles bare, and the sugar is pure inline
 # convenience over it.
 set(PREFIX ${BUILD}/install-check-prefix)
 set(CONSUMER ${BUILD}/install-check-consumer)

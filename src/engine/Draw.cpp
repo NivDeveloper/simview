@@ -27,7 +27,7 @@ SDL_GPUShader *make_shader(SDL_GPUDevice *dev, SDL_GPUShaderStage stage,
 
 } // namespace
 
-SDL_GPUGraphicsPipeline *display_pipeline(seam::App *a, SDL_GPUTextureFormat tf) {
+SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a, SDL_GPUTextureFormat tf) {
     for (const auto &e : a->pipelines)
         if (e.format == tf) return e.pipeline;
 
@@ -79,9 +79,9 @@ SDL_GPUGraphicsPipeline *display_pipeline(seam::App *a, SDL_GPUTextureFormat tf)
 
 namespace sv {
 
-void render_field(seam::App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
+void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
                   Uint32 tw, Uint32 th, SDL_GPUTextureFormat tf) {
-    seam::App::FieldState &f = a->field;
+    impl::App::FieldState &f = a->field;
     if (f.w && f.dirty && !f.external) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{f.staging, 0};

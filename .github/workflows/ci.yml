@@ -1,9 +1,13 @@
 # The rule this enforces (CLAUDE.md): the library AND every example
 # build on all three platforms on every push, and the surface gates
-# run everywhere. Runners have no GPU — hello reports "no device" as
-# an outcome, not a failure; the build and the gates are the substance.
+# run everywhere. Runners have no GPU — the headless checks SKIP with
+# the reason named; the build and the gates are the substance.
 name: CI
 on: [push, pull_request]
+# A newer push supersedes the still-running CI of the ones before it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     strategy:

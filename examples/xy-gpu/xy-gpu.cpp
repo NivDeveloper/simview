@@ -2,7 +2,7 @@
 // drawn zero-copy: simview owns the SDL device, the gpud runtime
 // ADOPTS it, tensor evaluates through the slot dialect, and the
 // fragment shader reads the very buffer the compute wrote — three
-// libraries, every seam named, no copies anywhere.
+// libraries, every boundary named, no copies anywhere.
 //
 // Space pauses, Up/Down move temperature, R reseeds, Esc quits.
 #include "xy.h"
@@ -16,7 +16,7 @@ int main() {
     sv::App app({.title = "simview — xy (tensor on gpud)", .size = {768, 768}});
     if (!app) return 1;
 
-    // The adopt seam: gpud computes on simview's device.
+    // Adoption: gpud computes on simview's device.
     auto dev = gpud::sdl::try_open_on(sv::NativeDevice(app));
     if (!dev) return 1;
     tensor::SlotDevice sdev{*dev};

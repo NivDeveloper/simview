@@ -56,10 +56,10 @@ int main() {
     if (app.Field({.extent = {8, 8}}))
         return std::printf("FAIL: second field was not refused\n"), 1;
     double d[64]{};
-    if (seam::field_update(seam::Field{app.Raw()}, d, DType::f64, 64))
+    if (impl::field_update(impl::Field{app.Raw()}, d, DType::f64, 64))
         return std::printf("FAIL: f64 was not refused\n"), 1;
     float shortv[8]{};
-    if (seam::field_update(seam::Field{app.Raw()}, shortv, DType::f32, 8))
+    if (impl::field_update(impl::Field{app.Raw()}, shortv, DType::f32, 8))
         return std::printf("FAIL: wrong count was not refused\n"), 1;
 
     std::printf("PASS: field checks\n");
