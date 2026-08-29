@@ -1,7 +1,7 @@
 // The 2-D Ising model in plain C++ — no tensor library, no GPU
 // compute — simulated on simview's Executor thread and handed to the
-// window through a Channel. Space pauses, Up/Down move temperature,
-// R reseeds, Esc quits.
+// window through a Channel, with its magnetisation traced beside it.
+// Space pauses, Up/Down move temperature, R reseeds, Esc quits.
 #include <simview/simview.h>
 
 #include <algorithm>
@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <random>
+#include <span>
 #include <vector>
 
 constexpr unsigned L = 256;
@@ -56,10 +57,29 @@ int main() {
 
     sim.Play();
 
+    // The trace grows, so it REALLOCATES — which is exactly why the
+    // series pulls instead of borrowing a span. It is filled here, on
+    // the main thread, so the render thread's pull never races the
+    // Executor.
+    std::vector<float> mag;
+
+    auto trace = app.Plot(
+        {.title = "magnetisation",
+         .x = {.label = "sample", .fit = sv::Fit::Stream},
+         .y = {.label = "m", .min = -1.0, .max = 1.0, .fit = sv::Fit::Fixed}});
+    trace.Line("m", [&] { return std::span<const float>(mag); });
+
     std::uint64_t gen = 0;
     app.OnFrame([&] {
-        if (auto latest = chan.Latest(gen); !latest.empty())
+        if (auto latest = chan.Latest(gen); !latest.empty()) {
             field.Update(latest);
+            float sum = 0.0f;
+            for (float s_ : latest)
+                sum += s_;
+            mag.push_back(sum / float(L * L));
+            if (mag.size() > 4096)
+                mag.erase(mag.begin());
+        }
     });
 
     app.OnKey(sv::Key::Space,

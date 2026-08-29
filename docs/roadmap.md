@@ -69,14 +69,25 @@ until that move lands. Which is why the UI's verification is honest
 about being manual: no runner has a display, and no shot can contain a
 panel.
 
-**2. Plots, and the first type.** The series architecture — `Series`
-POD (kind + source + style), one axis struct, retained handles that
-work in a loop with no destructor tricks — plus ImPlot and `Line`.
+**2. Plots and panels** (shipped). The series architecture — a POD
+carrying kind + source + style, one axis struct, retained handles that
+work in a loop with no destructor tricks — plus ImPlot and `Line`. And
+the widget builder beside it (`Text`/`Separator`/`Slider`/`Checkbox`/
+`Button`, binding by reference), so **no caller writes ImGui**: the
+builder is the API, exactly as the predecessor's was, and the raw door
+is only the escape hatch for what the vocabulary does not model.
 
 **3. The second and third plot types.** Scatter and Heatmap, as the
-PROOF that a type costs three sites. If either costs more, the
-architecture is wrong and this is where we learn it, not after ten
-types.
+PROOF that a type costs three sites. The honest prediction, recorded
+before the work rather than after: **Scatter and Stairs will cost
+three each** (one enum value, one `case` in `emit_series`, one builder
+method). **Heatmap will cost about five** — it has no `(xs, ys, count)`
+form, so it needs rows/cols and a scale range in the descriptor, and
+its colorbar (`ColormapScale`) is an ImGui widget that must sit
+OUTSIDE `BeginPlot`/`EndPlot` with `PushColormap` wrapping both.
+Predicting five and being right beats claiming three and being
+surprised; five for structural reasons rather than eighteen for
+architectural ones is the architecture vindicated.
 
 **4. More than one field, and views in panels.** N scenes rather than
 one field per App, each renderable into a texture and shown in a

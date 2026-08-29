@@ -149,6 +149,49 @@ Three laws, each learned from the predecessor:
   them; `PostEvent` bypasses capture entirely, because the automation
   seam addresses the app and must not depend on invisible UI state.
 
+## Plots
+
+A plot is a panel: `app.Plot({.title = …})` returns a retained handle
+and registers a ui callback, so it docks, tabs and tears out like any
+other. **One panel, one plot** — ImPlot keys item identity by the
+label under the *window's* ID scope, so one plot per window is what
+keeps series names from colliding.
+
+- **A series is a POD** (kind, element type, source, style) and **the
+  scalar is erased once**: `emit_series<T>` switches on kind, and a
+  single line turns `DType` into `T`. A new kind costs one enum value,
+  one case and one builder method; supporting float AND double costs
+  nothing per kind.
+- **Data is borrowed or pulled**, one impl path. A span is zero-copy
+  and must outlive the plot; a callable is asked at draw time, on the
+  render thread, exactly once per series per frame — and **not at all
+  while the panel is collapsed**. Anything that grows or relocates
+  wants the callable: that is the predecessor's stale-pointer failure,
+  and its data race (its sampler thread called the user's function
+  while the main thread mutated the captures) is why the pull happens
+  on the render thread and nowhere else.
+- **Four axis modes, because ImPlot has four behaviours.** `Fit::Data`
+  fits once then hands panning to the user (the default); `Fit::Start`
+  opens at a range you name and still pans; `Fit::Fixed` locks it;
+  `Fit::Stream` refits every frame, which disables panning and costs a
+  full extra pass over every point. Log and symlog scales are one
+  field, not a missing feature.
+- **Identity is the name.** A duplicate series name is refused: ImPlot
+  would merge them into one legend entry, colour and visibility. A
+  duplicate window title is refused: ImGui appends into the existing
+  window.
+- **Removal is a later move, not an oversight.** ImPlot's item pool is
+  immortal within a context, so re-adding a name resurrects its old
+  colour and visibility, and the colormap cursor never rewinds. The
+  only honest reset also wipes every legend toggle in that plot.
+- Panel widgets bind by reference and their button callbacks run while
+  the UI frame is being BUILT — CPU-only, with no command buffer open,
+  so a callback that touches the GPU cannot stomp one. (The
+  predecessor's did, and it needed a deferral queue to survive.)
+- ImPlot has no ini of its own: the panel layout persists, a panned
+  axis does not. And the library still owns no clock — a streaming x
+  axis is the caller's sample index.
+
 ## Verification, and what runs where
 
 Three rungs, deliberately split by where the signal lives:

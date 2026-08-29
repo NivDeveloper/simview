@@ -3,7 +3,6 @@
 // frame, with a panel of controls over it. Drag the panel's title bar
 // to dock it against an edge, or right out of the window into one of
 // its own.
-#include <simview/Ui.h>
 #include <simview/simview.h>
 
 #include <cmath>
@@ -21,9 +20,15 @@ int main() {
     std::vector<float> v(W * H);
     float t = 0.0f;
     float speed = 1.0f;
+    bool running = true;
+
+    app.Panel("controls")
+        .Slider("speed", speed, 0.0f, 4.0f)
+        .Checkbox("running", running);
 
     app.OnFrame([&] {
-        t += 0.02f * speed;
+        if (running)
+            t += 0.02f * speed;
         for (unsigned y = 0; y < H; ++y)
             for (unsigned x = 0; x < W; ++x) {
                 const float fx = float(x) / W, fy = float(y) / H;
@@ -32,15 +37,6 @@ int main() {
                                    std::cos(5.0f * (fx + fy) - 0.7f * t);
             }
         field.Update(v);
-    });
-
-    app.OnUi([&] {
-        ImGui::Begin("plasma");
-        ImGui::SliderFloat("speed", &speed, 0.0f, 4.0f);
-        const sv::Stats s = app.Stats();
-        ImGui::Text("frame %llu", (unsigned long long)s.frames);
-        ImGui::Text("uploads %llu", (unsigned long long)s.uploads);
-        ImGui::End();
     });
 
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });

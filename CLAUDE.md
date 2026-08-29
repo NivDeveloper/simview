@@ -28,7 +28,7 @@ ImGui/ImPlot behind the one UI boundary.
   | who | may include |
   | --- | --- |
   | `include/simview/*.h` (core) | each other + std. Nothing else, ever |
-  | the opt-in doors: `gpud.h`, `Ui.h` | core + std + that stack's ONE SDK-free header (`<gpud/Device.h>`; `<imgui.h>`, later `<implot.h>`). A door speaks ONE stack — naming another's token fails lint. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud, and imgui's headers come from our target) |
+  | the opt-in doors: `gpud.h`, `Ui.h` (escape hatch; no example needs it) | core + std + that stack's ONE SDK-free header (`<gpud/Device.h>`; `<imgui.h>`, later `<implot.h>`). A door speaks ONE stack — naming another's token fails lint. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud, and imgui's headers come from our target) |
   | `src/**` | anything (SDL, later ImGui/ImPlot) — never installed |
   | a core consumer | `<simview/simview.h>` + libsimview; no SDL anywhere |
 
@@ -53,6 +53,16 @@ ImGui/ImPlot behind the one UI boundary.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
+- **The builder is the API; ImGui is not.** Users write
+  `app.Plot(…).Line(…)` and `app.Panel(…).Slider(…)` — no example
+  names an ImGui type, and the core headers cannot (lint rule (b)).
+  `include/simview/Ui.h` remains the opt-in escape hatch for what the
+  vocabulary does not model, because the predecessor having NO hatch
+  is why anything it failed to model was unreachable.
+- **A new series kind costs three sites**: one enum value, one `case`
+  in `emit_series<T>`, one builder method. The scalar is erased once,
+  so float and double cost nothing per kind. If a kind ever costs
+  more, say so in the commit rather than quietly paying it.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
   ImGui composites over it in a second LOAD pass; the dockspace's
   central node is passthru. `ui_on()` is false until a panel is
