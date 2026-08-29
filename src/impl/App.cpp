@@ -20,8 +20,7 @@ thread_local std::string g_error;
 
 void set_error(std::string msg) {
     g_error = std::move(msg);
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "simview: %s",
-                 g_error.c_str());
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "simview: %s", g_error.c_str());
 }
 
 namespace impl {
@@ -62,7 +61,8 @@ App *app_init(const Config &c) {
                                   SDL_WINDOW_RESIZABLE);
         if (!a->win || !SDL_ClaimWindowForGPUDevice(dev, a->win)) {
             set_error(SDL_GetError());
-            if (a->win) SDL_DestroyWindow(a->win);
+            if (a->win)
+                SDL_DestroyWindow(a->win);
             SDL_DestroyGPUDevice(dev);
             SDL_QuitSubSystem(SDL_INIT_VIDEO);
             delete a;
@@ -73,7 +73,8 @@ App *app_init(const Config &c) {
 }
 
 void app_quit(App *a) {
-    if (!a) return;
+    if (!a)
+        return;
     SDL_WaitForGPUIdle(a->dev);
     for (const auto &e : a->pipelines)
         SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
@@ -91,15 +92,18 @@ void app_quit(App *a) {
 }
 
 void app_on_frame(App *a, void (*fn)(void *), void *user) {
-    if (a && fn) a->frame_cbs.push_front({fn, user});
+    if (a && fn)
+        a->frame_cbs.push_front({fn, user});
 }
 
 void app_on_event(App *a, void (*fn)(const Event &, void *), void *user) {
-    if (a && fn) a->event_cbs.push_front({fn, user});
+    if (a && fn)
+        a->event_cbs.push_front({fn, user});
 }
 
 void app_request_quit(App *a) {
-    if (a) a->quit = true;
+    if (a)
+        a->quit = true;
 }
 
 namespace {
@@ -114,11 +118,11 @@ template <typename L, typename F> void in_order(const L &l, F f) {
 void poll(App *a) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_EVENT_QUIT) a->quit = true;
+        if (ev.type == SDL_EVENT_QUIT)
+            a->quit = true;
         if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
-            const Event e{ev.type == SDL_EVENT_KEY_DOWN
-                              ? Event::Type::KeyDown
-                              : Event::Type::KeyUp,
+            const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::KeyDown
+                                                        : Event::Type::KeyUp,
                           std::int32_t(ev.key.scancode), ev.key.repeat};
             in_order(a->event_cbs, [&](const App::Ecb &c) { c.fn(e, c.user); });
         }
@@ -128,7 +132,8 @@ void poll(App *a) {
 } // namespace
 
 void app_run(App *a) {
-    if (!a) return;
+    if (!a)
+        return;
     if (a->headless) {
         SDL_Log("simview: headless app — drive it with Step()/Shot()");
         return;
@@ -137,12 +142,13 @@ void app_run(App *a) {
     while (!a->quit) {
         poll(a);
         in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
-        if (a->quit) break;
+        if (a->quit)
+            break;
 
         SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
         SDL_GPUTexture *swap = nullptr;
-        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, a->win, &swap,
-                                                   nullptr, nullptr) ||
+        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, a->win, &swap, nullptr,
+                                                   nullptr) ||
             !swap) {
             SDL_CancelGPUCommandBuffer(cmd); // minimized: not an error
             continue;
@@ -156,7 +162,8 @@ void app_run(App *a) {
 }
 
 Field field_create(App *a, const FieldDesc &d) {
-    if (!a) return {};
+    if (!a)
+        return {};
     if (a->field.w)
         return set_error("one field per App for now — a second field is a "
                          "planned addition"),
@@ -177,21 +184,24 @@ Field field_create(App *a, const FieldDesc &d) {
     SDL_GPUTransferBuffer *staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
     if (!buf || !staging) {
         set_error(SDL_GetError());
-        if (buf) SDL_ReleaseGPUBuffer(a->dev, buf);
-        if (staging) SDL_ReleaseGPUTransferBuffer(a->dev, staging);
+        if (buf)
+            SDL_ReleaseGPUBuffer(a->dev, buf);
+        if (staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, staging);
         return {};
     }
-    a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
-                buf,        staging,    false};
+    a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo,
+                d.hi,       buf,        staging,       false};
     return Field{a};
 }
 
 bool field_update(Field f, const void *data, DType t, std::size_t count) {
     App *a = static_cast<App *>(f.p);
-    if (!a || !data) return set_error("field_update: null"), false;
+    if (!a || !data)
+        return set_error("field_update: null"), false;
     if (a->field.external)
         return set_error("this field reads a caller-owned buffer — "
-                          "rebind it, do not update it"),
+                         "rebind it, do not update it"),
                false;
     if (t != DType::f32)
         return set_error("fields hold f32 values only for now"), false;
@@ -200,7 +210,8 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
     // cycle=true: per-frame streaming; the frame in flight may still
     // read the previous contents (SDL's sanctioned ring).
     void *map = SDL_MapGPUTransferBuffer(a->dev, a->field.staging, true);
-    if (!map) return set_error(SDL_GetError()), false;
+    if (!map)
+        return set_error(SDL_GetError()), false;
     std::memcpy(map, data, count * 4);
     SDL_UnmapGPUTransferBuffer(a->dev, a->field.staging);
     a->field.dirty = true;
@@ -208,12 +219,14 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
 }
 
 void app_step(App *a) {
-    if (!a) return;
+    if (!a)
+        return;
     in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
 }
 
 bool app_shot(App *a, const char *path) {
-    if (!a || !path) return set_error("shot: null"), false;
+    if (!a || !path)
+        return set_error("shot: null"), false;
     const Uint32 w = a->field.w ? a->field.w * 2 : 512;
     const Uint32 h = a->field.h ? a->field.h * 2 : 512;
 
@@ -232,8 +245,10 @@ bool app_shot(App *a, const char *path) {
     SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(a->dev, &tci);
     if (!tex || !tb) {
         set_error(SDL_GetError());
-        if (tex) SDL_ReleaseGPUTexture(a->dev, tex);
-        if (tb) SDL_ReleaseGPUTransferBuffer(a->dev, tb);
+        if (tex)
+            SDL_ReleaseGPUTexture(a->dev, tex);
+        if (tb)
+            SDL_ReleaseGPUTransferBuffer(a->dev, tb);
         return false;
     }
 
@@ -254,11 +269,11 @@ bool app_shot(App *a, const char *path) {
     SDL_ReleaseGPUFence(a->dev, fe);
 
     void *pixels = SDL_MapGPUTransferBuffer(a->dev, tb, false);
-    SDL_Surface *s = SDL_CreateSurfaceFrom(int(w), int(h),
-                                           SDL_PIXELFORMAT_RGBA32, pixels,
-                                           int(w * 4));
+    SDL_Surface *s = SDL_CreateSurfaceFrom(
+        int(w), int(h), SDL_PIXELFORMAT_RGBA32, pixels, int(w * 4));
     const bool ok = SDL_SaveBMP(s, path);
-    if (!ok) set_error(SDL_GetError());
+    if (!ok)
+        set_error(SDL_GetError());
     SDL_DestroySurface(s);
     SDL_UnmapGPUTransferBuffer(a->dev, tb);
     SDL_ReleaseGPUTransferBuffer(a->dev, tb);
@@ -269,10 +284,12 @@ bool app_shot(App *a, const char *path) {
 SDL_GPUDevice *native_device(App *a) { return a ? a->dev : nullptr; }
 
 Field field_from_buffer(App *a, SDL_GPUBuffer *buf, const FieldDesc &d) {
-    if (!a) return {};
+    if (!a)
+        return {};
     if (a->field.w)
         return set_error("one field per App for now — a second field is a "
-                         "planned addition"), Field{};
+                         "planned addition"),
+               Field{};
     if (d.dtype != DType::f32)
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
@@ -284,10 +301,11 @@ Field field_from_buffer(App *a, SDL_GPUBuffer *buf, const FieldDesc &d) {
 
 bool field_rebind(Field f, SDL_GPUBuffer *buf) {
     App *a = static_cast<App *>(f.p);
-    if (!a || !buf) return set_error("field_rebind: null"), false;
+    if (!a || !buf)
+        return set_error("field_rebind: null"), false;
     if (!a->field.external)
         return set_error("this field owns its buffer — update it, do "
-                          "not rebind it"),
+                         "not rebind it"),
                false;
     a->field.buf = buf;
     return true;

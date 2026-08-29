@@ -73,7 +73,8 @@ class Executor {
               tick_)) {}
 
     ~Executor() {
-        if (e_) impl::executor_destroy(e_);
+        if (e_)
+            impl::executor_destroy(e_);
         delete tick_;
     }
 

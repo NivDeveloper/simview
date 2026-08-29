@@ -106,8 +106,8 @@ struct Sim {
     // float precision never becomes the colormap's problem.
     void rewrap(tensor::SlotDevice &sdev) {
         using namespace tensor;
-        theta = eval(sdev,
-                     theta - math::Floor(theta * (1.0f / two_pi)) * two_pi);
+        theta =
+            eval(sdev, theta - math::Floor(theta * (1.0f / two_pi)) * two_pi);
     }
 
     void step(tensor::SlotDevice &sdev) {

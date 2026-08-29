@@ -9,7 +9,8 @@ constexpr unsigned W = 256, H = 192;
 
 int main() {
     sv::App app({.title = "simview — hello-window", .size = {W * 3, H * 3}});
-    if (!app) return 1;
+    if (!app)
+        return 1;
     auto field = app.Field({.extent = {W, H}, .map = sv::Colormap::Viridis});
 
     std::vector<float> v(W * H);
@@ -20,10 +21,9 @@ int main() {
         for (unsigned y = 0; y < H; ++y)
             for (unsigned x = 0; x < W; ++x) {
                 const float fx = float(x) / W, fy = float(y) / H;
-                v[y * W + x] =
-                    0.5f + 0.25f * std::sin(8.0f * fx + t) +
-                    0.25f * std::sin(7.0f * fy + 1.3f * t) *
-                        std::cos(5.0f * (fx + fy) - 0.7f * t);
+                v[y * W + x] = 0.5f + 0.25f * std::sin(8.0f * fx + t) +
+                               0.25f * std::sin(7.0f * fy + 1.3f * t) *
+                                   std::cos(5.0f * (fx + fy) - 0.7f * t);
             }
         field.Update(v);
     });

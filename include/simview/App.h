@@ -61,7 +61,8 @@ class App {
 
     void OnKey(Key k, std::function<void()> fn) {
         OnEvent([k, fn = std::move(fn)](const Event &e) {
-            if (e.type == Event::Type::KeyDown && !e.repeat && Is(e, k)) fn();
+            if (e.type == Event::Type::KeyDown && !e.repeat && Is(e, k))
+                fn();
         });
     }
 
@@ -76,7 +77,8 @@ class App {
 
   private:
     void reset() {
-        if (a_) impl::app_quit(std::exchange(a_, nullptr));
+        if (a_)
+            impl::app_quit(std::exchange(a_, nullptr));
     }
 
     impl::App *a_ = nullptr;

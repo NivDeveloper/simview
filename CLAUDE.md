@@ -66,6 +66,15 @@ over vendored ImGui/ImPlot behind the one UI boundary.
 | run the hello | `make run` |
 | clean | `make clean` |
 
+Editor tooling: `.clangd` reads the exported compile DB, and — plain
+C++20 — its diagnostics are trustworthy here, unlike the tensor repo;
+`examples/xy-gpu/.clangd` is the carve-out (it consumes tensor's
+reflection headers, so it suppresses like tensor does). `.clang-format`
+is the shared house style (LLVM, 4-space, west const); lint rule (g)
+gates format drift, pinned to clang-format major 20 with a NAMED SKIP
+otherwise, and `include/.clang-format` turns namespace closers off so
+the formatter and the no-comment law (e) cannot fight.
+
 SDL3 comes from a system package or `CMAKE_PREFIX_PATH` (this machine:
 `~/Projects/toolchains/sdl3`; the Makefile defaults it). Configure is
 cached — option changes need `make clean` first.

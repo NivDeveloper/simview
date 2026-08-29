@@ -40,7 +40,8 @@ struct ExecutorImpl {
 } // namespace
 
 Channel channel_create(std::size_t bytes) {
-    if (!bytes) return {};
+    if (!bytes)
+        return {};
     auto *c = new ChannelImpl{bytes, ::operator new(bytes),
                               ::operator new(bytes), ::operator new(bytes)};
     std::memset(c->state, 0, bytes);
@@ -51,7 +52,8 @@ Channel channel_create(std::size_t bytes) {
 
 void channel_destroy(Channel ch) {
     auto *c = static_cast<ChannelImpl *>(ch.p);
-    if (!c) return;
+    if (!c)
+        return;
     ::operator delete(c->state);
     ::operator delete(c->transfer);
     ::operator delete(c->draw);
@@ -65,7 +67,8 @@ void *channel_state(Channel ch) {
 
 void channel_publish(Channel ch) {
     auto *c = static_cast<ChannelImpl *>(ch.p);
-    if (!c) return;
+    if (!c)
+        return;
     std::lock_guard lk(c->m);
     std::swap(c->state, c->transfer);
     c->transfer_gen = c->next_gen++;
@@ -73,7 +76,8 @@ void channel_publish(Channel ch) {
 
 const void *channel_latest(Channel ch, std::uint64_t *gen) {
     auto *c = static_cast<ChannelImpl *>(ch.p);
-    if (!c) return nullptr;
+    if (!c)
+        return nullptr;
     {
         std::lock_guard lk(c->m);
         if (c->transfer_gen > c->draw_gen) {
@@ -81,12 +85,14 @@ const void *channel_latest(Channel ch, std::uint64_t *gen) {
             c->draw_gen = c->transfer_gen;
         }
     }
-    if (gen) *gen = c->draw_gen;
+    if (gen)
+        *gen = c->draw_gen;
     return c->draw_gen ? c->draw : nullptr;
 }
 
 Executor executor_create(void (*tick)(void *), void *user) {
-    if (!tick) return {};
+    if (!tick)
+        return {};
     auto *e = new ExecutorImpl{tick, user};
     e->worker = std::thread([e] {
         using St = ExecutorImpl::St;
@@ -94,8 +100,10 @@ Executor executor_create(void (*tick)(void *), void *user) {
             {
                 std::unique_lock lk(e->m);
                 e->cv.wait(lk, [e] { return e->st != St::Paused; });
-                if (e->st == St::Stopped) return;
-                if (e->st == St::Step) e->st = St::Paused; // one-shot
+                if (e->st == St::Stopped)
+                    return;
+                if (e->st == St::Step)
+                    e->st = St::Paused; // one-shot
             }
             e->tick(e->user);
             e->ticks.fetch_add(1, std::memory_order_release);
@@ -108,7 +116,8 @@ Executor executor_create(void (*tick)(void *), void *user) {
 
 void executor_destroy(Executor ex) {
     auto *e = static_cast<ExecutorImpl *>(ex.p);
-    if (!e) return;
+    if (!e)
+        return;
     {
         std::lock_guard lk(e->m);
         e->st = ExecutorImpl::St::Stopped;
@@ -121,10 +130,12 @@ void executor_destroy(Executor ex) {
 namespace {
 void set_state(Executor ex, ExecutorImpl::St st) {
     auto *e = static_cast<ExecutorImpl *>(ex.p);
-    if (!e) return;
+    if (!e)
+        return;
     {
         std::lock_guard lk(e->m);
-        if (e->st == ExecutorImpl::St::Stopped) return;
+        if (e->st == ExecutorImpl::St::Stopped)
+            return;
         e->st = st;
     }
     e->cv.notify_all();
@@ -137,7 +148,8 @@ void executor_step(Executor ex) { set_state(ex, ExecutorImpl::St::Step); }
 
 bool executor_playing(Executor ex) {
     auto *e = static_cast<ExecutorImpl *>(ex.p);
-    if (!e) return false;
+    if (!e)
+        return false;
     std::lock_guard lk(e->m);
     return e->st == ExecutorImpl::St::Playing;
 }

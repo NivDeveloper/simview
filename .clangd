@@ -1,0 +1,4 @@
+# Plain C++20 — clangd is fully trustworthy here (unlike the tensor
+# repo). The build tree exports the compilation database.
+CompileFlags:
+  CompilationDatabase: build

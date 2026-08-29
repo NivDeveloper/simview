@@ -13,22 +13,27 @@ int main() {
     // Starts Paused: no ticks arrive unbidden.
     Executor ex([] {});
     std::this_thread::sleep_for(50ms);
-    if (ex.Ticks() != 0) return std::printf("FAIL: ticked while paused\n"), 1;
+    if (ex.Ticks() != 0)
+        return std::printf("FAIL: ticked while paused\n"), 1;
 
     // Step is exactly one tick, then Paused again.
     ex.Step();
     std::this_thread::sleep_for(50ms);
-    if (ex.Ticks() != 1) return std::printf("FAIL: step != 1 tick\n"), 1;
-    if (ex.Playing()) return std::printf("FAIL: playing after step\n"), 1;
+    if (ex.Ticks() != 1)
+        return std::printf("FAIL: step != 1 tick\n"), 1;
+    if (ex.Playing())
+        return std::printf("FAIL: playing after step\n"), 1;
 
     // Play advances; pause stops.
     ex.Play();
     std::this_thread::sleep_for(50ms);
     ex.Pause();
     const auto t1 = ex.Ticks();
-    if (t1 < 2) return std::printf("FAIL: play did not advance\n"), 1;
+    if (t1 < 2)
+        return std::printf("FAIL: play did not advance\n"), 1;
     std::this_thread::sleep_for(50ms);
-    if (ex.Ticks() != t1) return std::printf("FAIL: ticked after pause\n"), 1;
+    if (ex.Ticks() != t1)
+        return std::printf("FAIL: ticked after pause\n"), 1;
 
     // The channel: generations strictly increase; no torn reads — the
     // writer fills the whole slab with one value per generation at
@@ -41,7 +46,8 @@ int main() {
         static float v = 0;
         v += 1.0f;
         auto s = ch.State();
-        for (auto &x : s) x = v;
+        for (auto &x : s)
+            x = v;
         ch.Publish();
     });
     writer.Play();
@@ -51,19 +57,28 @@ int main() {
         std::uint64_t g = 0;
         auto s = ch.Latest(g);
         if (!s.empty()) {
-            if (g < last) { torn = true; break; }
+            if (g < last) {
+                torn = true;
+                break;
+            }
             last = g;
             for (auto x : s)
-                if (x != s[0]) { torn = true; break; }
+                if (x != s[0]) {
+                    torn = true;
+                    break;
+                }
         }
         worst_gen = last;
-        if (torn) break;
+        if (torn)
+            break;
     }
     writer.Pause();
-    if (torn) return std::printf("FAIL: torn read / gen regression\n"), 1;
+    if (torn)
+        return std::printf("FAIL: torn read / gen regression\n"), 1;
     if (worst_gen < 100)
         return std::printf("FAIL: writer too slow (%llu gens)\n",
-                           (unsigned long long)worst_gen), 1;
+                           (unsigned long long)worst_gen),
+               1;
 
     std::printf("PASS: sync checks (%llu generations, no tears)\n",
                 (unsigned long long)worst_gen);

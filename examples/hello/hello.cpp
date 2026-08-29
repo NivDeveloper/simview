@@ -5,7 +5,8 @@
 
 int main() {
     sv::App app({.title = "hello", .headless = true});
-    if (!app) return 0;
+    if (!app)
+        return 0;
 
     app.OnFrame([] {});
     app.Step();

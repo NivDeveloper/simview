@@ -1,0 +1,12 @@
+# This subproject consumes tensor's C++26 reflection headers, which no
+# released clang parses — same situation as the tensor repo itself:
+# suppress everything, g++-16 is the source of truth.
+CompileFlags:
+  CompilationDatabase: build
+  Remove:
+    - -freflection
+    - -fconstexpr-ops-limit=*
+  Add:
+    - -ferror-limit=0
+Diagnostics:
+  Suppress: "*"

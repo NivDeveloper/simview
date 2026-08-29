@@ -1,0 +1,4 @@
+# include/ carries no comments (lint rule (e)) - so the namespace
+# closers LLVM style would insert are off here, and only here.
+BasedOnStyle: InheritParentConfig
+FixNamespaceComments: false

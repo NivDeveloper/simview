@@ -21,7 +21,7 @@ int main() {
 
     app.RequestQuit();
     app.RequestQuit(); // idempotent
-    app.Run();          // headless: returns immediately, logged
+    app.Run();         // headless: returns immediately, logged
 
     std::printf("PASS: loop checks\n");
     return 0;

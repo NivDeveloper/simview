@@ -9,6 +9,9 @@
 #       itself or gets renamed until it does
 #   (f) examples never print: a showcase draws, it does not narrate,
 #       and the library reports its own failures
+#   (g) clang-format, pinned to major 20: a missing or mismatched tool
+#       is a NAMED SKIP, never a failure — a format gate failing on
+#       its tool version says nothing about the code
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
@@ -35,6 +38,21 @@ for h in include/simview/*.h; do
         fi
     fi
 done
+
+# (g)
+CF=/opt/homebrew/bin/clang-format
+command -v "$CF" >/dev/null 2>&1 || CF=clang-format
+if command -v "$CF" >/dev/null 2>&1 \
+        && "$CF" --version | grep -q 'version 20\.'; then
+    # shellcheck disable=SC2046
+    if ! "$CF" --dry-run -Werror \
+            $(git ls-files '*.cpp' '*.h' | grep -v bytecode) 2>&1; then
+        echo "LINT: clang-format drift - run clang-format -i on the above"
+        fail=1
+    fi
+else
+    echo "SKIP: clang-format major 20 not found - format gate not run"
+fi
 
 # (f)
 if grep -n 'printf\|std::cout\|std::cerr\|std::print\|puts(\|SDL_Log' \

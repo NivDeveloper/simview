@@ -27,9 +27,11 @@ SDL_GPUShader *make_shader(SDL_GPUDevice *dev, SDL_GPUShaderStage stage,
 
 } // namespace
 
-SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a, SDL_GPUTextureFormat tf) {
+SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a,
+                                          SDL_GPUTextureFormat tf) {
     for (const auto &e : a->pipelines)
-        if (e.format == tf) return e.pipeline;
+        if (e.format == tf)
+            return e.pipeline;
 
     const SDL_GPUShaderFormat have = SDL_GetGPUShaderFormats(a->dev);
     SDL_GPUShader *vs = nullptr;
@@ -48,10 +50,12 @@ SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a, SDL_GPUTextureFormat tf)
     }
     if (!vs || !fs) {
         set_error(std::string("shader creation failed (") +
-                  SDL_GetGPUDeviceDriver(a->dev) + " driver): " +
-                  SDL_GetError());
-        if (vs) SDL_ReleaseGPUShader(a->dev, vs);
-        if (fs) SDL_ReleaseGPUShader(a->dev, fs);
+                  SDL_GetGPUDeviceDriver(a->dev) +
+                  " driver): " + SDL_GetError());
+        if (vs)
+            SDL_ReleaseGPUShader(a->dev, vs);
+        if (fs)
+            SDL_ReleaseGPUShader(a->dev, fs);
         return nullptr;
     }
 
@@ -67,8 +71,7 @@ SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a, SDL_GPUTextureFormat tf)
     SDL_ReleaseGPUShader(a->dev, vs);
     SDL_ReleaseGPUShader(a->dev, fs);
     if (!p) {
-        set_error(std::string("pipeline creation failed: ") +
-                  SDL_GetError());
+        set_error(std::string("pipeline creation failed: ") + SDL_GetError());
         return nullptr;
     }
     a->pipelines.push_back({tf, p});
@@ -79,8 +82,9 @@ SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a, SDL_GPUTextureFormat tf)
 
 namespace sv {
 
-void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
-                  Uint32 tw, Uint32 th, SDL_GPUTextureFormat tf) {
+void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
+                  SDL_GPUTexture *target, Uint32 tw, Uint32 th,
+                  SDL_GPUTextureFormat tf) {
     impl::App::FieldState &f = a->field;
     if (f.w && f.dirty && !f.external) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
@@ -97,8 +101,7 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *targe
     ct.load_op = SDL_GPU_LOADOP_CLEAR;
     ct.store_op = SDL_GPU_STOREOP_STORE;
     SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    SDL_GPUGraphicsPipeline *pipe =
-        f.w ? display_pipeline(a, tf) : nullptr;
+    SDL_GPUGraphicsPipeline *pipe = f.w ? display_pipeline(a, tf) : nullptr;
     if (pipe) {
         // Aspect-fit: scale window uv so the field fills the largest
         // centered rectangle; outside samples paint the bar color.

@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.24)
 project(simview VERSION 0.1.0 LANGUAGES CXX
         DESCRIPTION "A window on a running numerical simulation")
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 option(SIMVIEW_BUILD_EXAMPLES "Build simview examples" ${PROJECT_IS_TOP_LEVEL})
 option(SIMVIEW_BUILD_TESTS "Build simview tests" ${PROJECT_IS_TOP_LEVEL})
 

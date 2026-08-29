@@ -14,11 +14,13 @@
 
 int main() {
     sv::App app({.title = "simview — xy (tensor on gpud)", .size = {768, 768}});
-    if (!app) return 1;
+    if (!app)
+        return 1;
 
     // Adoption: gpud computes on simview's device.
     auto dev = gpud::sdl::try_open_on(sv::NativeDevice(app));
-    if (!dev) return 1;
+    if (!dev)
+        return 1;
     tensor::SlotDevice sdev{*dev};
 
     // The sim state lives resident on the device for the whole run.
@@ -27,15 +29,19 @@ int main() {
 
     auto field = sv::FieldFromBuffer(
         app, gpud::sdl::native_buffer(*tensor::resident_buffer(sim.theta)),
-        {.extent = {xy::L, xy::L}, .map = sv::Colormap::Hue,
-         .lo = 0.0f, .hi = xy::two_pi});
+        {.extent = {xy::L, xy::L},
+         .map = sv::Colormap::Hue,
+         .lo = 0.0f,
+         .hi = xy::two_pi});
 
     bool paused = false;
     std::uint64_t frame = 0;
     app.OnFrame([&] {
-        if (paused) return;
+        if (paused)
+            return;
         sim.step(sdev);
-        if (++frame % 64 == 0) sim.rewrap(sdev);
+        if (++frame % 64 == 0)
+            sim.rewrap(sdev);
         // Residency ping-pongs: rebind the freshest buffer each frame.
         sv::FieldRebind(field, gpud::sdl::native_buffer(
                                    *tensor::resident_buffer(sim.theta)));

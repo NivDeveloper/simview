@@ -1,0 +1,6 @@
+# The house style, shared with the sibling projects: LLVM, 4-space.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 80
+# West const, pinned so no tool ever writes east const into the tree.
+QualifierAlignment: Left

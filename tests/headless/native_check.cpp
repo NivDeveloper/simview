@@ -48,9 +48,8 @@ int main() {
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 
     auto f = FieldFromBuffer(app, buf, {.extent = {W, H}});
-    if (!f) return std::printf("FAIL: FieldFromBuffer (%s)\n",
-                               LastError()),
-                   1;
+    if (!f)
+        return std::printf("FAIL: FieldFromBuffer (%s)\n", LastError()), 1;
     // Update() on an external field must refuse, rebind must accept.
     if (f.Update(v))
         return std::printf("FAIL: update on external not refused\n"), 1;
