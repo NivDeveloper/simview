@@ -7,6 +7,4 @@ add_test(NAME installed_surface
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${CMAKE_SOURCE_DIR}
         -DBUILD=${CMAKE_BINARY_DIR}
-        -DCXX=${CMAKE_CXX_COMPILER}
-        -DSYSROOT=${CMAKE_OSX_SYSROOT}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/check.cmake)

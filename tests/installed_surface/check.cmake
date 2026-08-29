@@ -1,34 +1,34 @@
-# Runs as a CTest script: install, compile the consumer bare, run it.
+# The clean-surface gate, as a generated consumer project: install the
+# library + headers into a scratch prefix, then configure and compile
+# (not link) a consumer whose ONLY include directory is that prefix —
+# whatever compiler this platform defaults to, no SDL anywhere. What it
+# certifies: the seam compiles bare, and the sugar is pure inline
+# convenience over it.
 set(PREFIX ${BUILD}/install-check-prefix)
-file(REMOVE_RECURSE ${PREFIX})
+set(CONSUMER ${BUILD}/install-check-consumer)
+file(REMOVE_RECURSE ${PREFIX} ${CONSUMER})
 
 execute_process(COMMAND ${CMAKE_COMMAND} --install ${BUILD} --prefix ${PREFIX}
-                RESULT_VARIABLE r)
+                --config Release RESULT_VARIABLE r)
 if(NOT r EQUAL 0)
     message(FATAL_ERROR "install failed")
 endif()
 
-# The consumer: ONLY the installed include dir; link the installed
-# archive plus SDL transitively via its absolute path is deliberately
-# ABSENT — a static consumer must link SDL themselves? No: the STATIC
-# simview archive does not embed SDL, so the link line needs it. The
-# gate is about HEADERS, so: compile-only for the surface claim, then
-# a full link WITH the build tree's SDL for the run.
-# CMAKE_OSX_SYSROOT is often EMPTY on Apple (the compiler defaults it
-# during normal builds) — but this gate invokes the compiler bare, so
-# resolve the SDK explicitly via xcrun when nothing was threaded in.
-set(SYSROOT_FLAG "")
-if(NOT SYSROOT AND EXISTS "/usr/bin/xcrun")
-    execute_process(COMMAND /usr/bin/xcrun --show-sdk-path
-                    OUTPUT_VARIABLE SYSROOT OUTPUT_STRIP_TRAILING_WHITESPACE)
+file(WRITE ${CONSUMER}/CMakeLists.txt "
+cmake_minimum_required(VERSION 3.24)
+project(consumer CXX)
+add_library(consumer OBJECT ${SRC}/examples/hello/hello.cpp)
+target_include_directories(consumer PRIVATE ${PREFIX}/include)
+set_target_properties(consumer PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+")
+execute_process(COMMAND ${CMAKE_COMMAND} -S ${CONSUMER} -B ${CONSUMER}/build
+                RESULT_VARIABLE r OUTPUT_QUIET)
+if(NOT r EQUAL 0)
+    message(FATAL_ERROR "consumer configure failed")
 endif()
-if(SYSROOT)
-    set(SYSROOT_FLAG -isysroot ${SYSROOT})
-endif()
-execute_process(
-    COMMAND ${CXX} -std=c++20 -fsyntax-only ${SYSROOT_FLAG}
-            -I${PREFIX}/include ${SRC}/examples/hello/hello.cpp
-    RESULT_VARIABLE r)
+execute_process(COMMAND ${CMAKE_COMMAND} --build ${CONSUMER}/build
+                --config Release RESULT_VARIABLE r)
 if(NOT r EQUAL 0)
     message(FATAL_ERROR "the installed surface does not compile bare — "
                         "a dependency leaked into include/simview")

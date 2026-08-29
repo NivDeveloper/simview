@@ -20,6 +20,13 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install sdl3
 
+      - name: SDL build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y
+             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
+             libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+             libdrm-dev libgbm-dev
+
       - name: SDL3 cache
         if: runner.os != 'macOS'
         id: sdl
@@ -59,6 +66,8 @@ jobs:
 
       - name: run hello
         shell: bash
+        env:
+          SDL_VIDEODRIVER: ${{ runner.os == 'Linux' && 'dummy' || '' }}
         run: |
           ./build/examples/hello/hello 2>/dev/null \
             || ./build/examples/hello/Release/hello.exe
