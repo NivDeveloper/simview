@@ -81,7 +81,7 @@ namespace simview {
 void render_field(App *a, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target,
                   Uint32 tw, Uint32 th, SDL_GPUTextureFormat tf) {
     App::FieldState &f = a->field;
-    if (f.w && f.dirty) {
+    if (f.w && f.dirty && !f.external) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{f.staging, 0};
         const SDL_GPUBufferRegion reg{f.buf, 0, f.w * f.h * 4};

@@ -43,7 +43,8 @@ struct App {
         float lo = 0, hi = 1;
         SDL_GPUBuffer *buf = nullptr;
         SDL_GPUTransferBuffer *staging = nullptr;
-        bool dirty = false; // staging holds a newer grid than buf
+        bool dirty = false;    // staging holds a newer grid than buf
+        bool external = false; // buf is borrowed: no staging, no release
     };
     FieldState field; // w == 0 means "no field yet"
 };

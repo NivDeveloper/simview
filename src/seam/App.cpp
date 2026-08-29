@@ -71,7 +71,8 @@ void app_quit(App *a) {
     SDL_WaitForGPUIdle(a->dev);
     for (const auto &e : a->pipelines)
         SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
-    if (a->field.buf) SDL_ReleaseGPUBuffer(a->dev, a->field.buf);
+    if (a->field.buf && !a->field.external)
+        SDL_ReleaseGPUBuffer(a->dev, a->field.buf);
     if (a->field.staging)
         SDL_ReleaseGPUTransferBuffer(a->dev, a->field.staging);
     if (a->win) {
@@ -182,6 +183,10 @@ Field field_create(App *a, const FieldDesc &d) {
 bool field_update(Field f, const void *data, DType t, std::size_t count) {
     App *a = static_cast<App *>(f.p);
     if (!a || !data) return set_error("field_update: null"), false;
+    if (a->field.external)
+        return set_error("this field reads a caller-owned buffer — "
+                          "rebind it, do not update it"),
+               false;
     if (t != DType::f32)
         return set_error("Move 2 fields hold f32 values only"), false;
     if (count != std::size_t(a->field.w) * a->field.h)
@@ -256,5 +261,29 @@ bool app_shot(App *a, const char *path) {
 }
 
 SDL_GPUDevice *native_device(App *a) { return a ? a->dev : nullptr; }
+
+Field field_from_buffer(App *a, SDL_GPUBuffer *buf, const FieldDesc &d) {
+    if (!a) return {};
+    if (a->field.w)
+        return set_error("Move 3 draws one field per App"), Field{};
+    if (d.dtype != DType::f32)
+        return set_error("fields hold f32 values only"), Field{};
+    if (!d.extent.w || !d.extent.h)
+        return set_error("a field needs a non-zero extent"), Field{};
+    a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
+                buf,        nullptr,    false,         true};
+    return Field{a};
+}
+
+bool field_rebind(Field f, SDL_GPUBuffer *buf) {
+    App *a = static_cast<App *>(f.p);
+    if (!a || !buf) return set_error("field_rebind: null"), false;
+    if (!a->field.external)
+        return set_error("this field owns its buffer — update it, do "
+                          "not rebind it"),
+               false;
+    a->field.buf = buf;
+    return true;
+}
 
 } // namespace simview
