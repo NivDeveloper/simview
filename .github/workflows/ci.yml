@@ -76,8 +76,8 @@ jobs:
       # the checks still SKIP by name — never a silent pass.
       - name: gates (tests + installed surface)
         env:
-          VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' || '' }}
-          VK_DRIVER_FILES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' || '' }}
+          VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.json' || '' }}
+          VK_DRIVER_FILES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.json' || '' }}
           # gpud says why a device did not come up; SDL says what it
           # tried. Cheap, and the only view into a runner we cannot
           # attach a debugger to.
