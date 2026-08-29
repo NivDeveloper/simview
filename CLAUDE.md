@@ -126,6 +126,5 @@ examples/hello/    init headless, report, quit; doubles as the
                    install-check consumer
 tests/installed_surface/   the clean-surface gate
 tools/lint.sh      the hygiene gate
-attic/             out of the build, kept in history (the v0 demo)
 docs/design.md     the architecture record
 ```

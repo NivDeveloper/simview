@@ -4,7 +4,6 @@
 #   (b) SDL_/ImGui/ImPlot tokens are forbidden in the core surface
 #   (c) native.h may NAME SDL types (forward declarations) but must
 #       not INCLUDE anything of SDL's
-#   (d) the attic never re-enters the build
 #   (e) include/ carries no comments: the public surface explains
 #       itself or gets renamed until it does
 #   (f) examples never print: a showcase draws, it does not narrate,
@@ -64,13 +63,6 @@ fi
 # (e)
 if grep -n '//\|/\*' include/simview/*.h; then
     echo "LINT: a comment in include/ — the surface must be self-explanatory"
-    fail=1
-fi
-
-# (d)
-if grep -rn "attic" CMakeLists.txt examples/*/CMakeLists.txt \
-       tests/*/CMakeLists.txt 2>/dev/null; then
-    echo "LINT: the attic is referenced from the build"
     fail=1
 fi
 
