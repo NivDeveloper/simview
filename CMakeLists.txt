@@ -73,6 +73,38 @@ else()
     target_compile_options(simview_imgui PRIVATE -w)
 endif()
 
+# ImPlot rides ImGui's frame and draws into its draw lists — no device
+# of its own. Its own target so the numeric-type define stays scoped to
+# the two TUs that need it.
+FetchContent_Declare(implot
+    GIT_REPOSITORY https://github.com/epezent/implot
+    # v1.0, pinned by hash; the tag proven against imgui 1.92.7-docking
+    GIT_TAG        524f9fcd48d76c13fdf94c5ffbba8787a1ff7e39)
+FetchContent_MakeAvailable(implot)
+
+add_library(simview_implot STATIC
+    ${implot_SOURCE_DIR}/implot.cpp
+    ${implot_SOURCE_DIR}/implot_items.cpp)
+target_include_directories(simview_implot PUBLIC ${implot_SOURCE_DIR})
+# PUBLIC: implot_internal.h includes imgui_internal.h, so imgui's source
+# dir must reach every TU that includes implot's internals.
+target_link_libraries(simview_implot PUBLIC simview_imgui)
+# Two instantiations instead of ten: less to compile, a smaller archive,
+# and the f32/f64 surface decision made physical. This is also why
+# implot_demo.cpp is NOT built — it plots an ImS8 array, which under
+# this list is an undefined reference that would only fire the day
+# somebody linked ShowDemoWindow.
+target_compile_definitions(simview_implot PRIVATE
+    "IMPLOT_CUSTOM_NUMERIC_TYPES=(float)(double)")
+set_target_properties(simview_implot PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_options(simview_implot PRIVATE /w /utf-8)
+else()
+    target_compile_options(simview_implot PRIVATE -w)
+endif()
+
 add_library(simview STATIC
     src/impl/App.cpp
     src/engine/Draw.cpp
@@ -82,7 +114,7 @@ add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_link_libraries(simview PUBLIC gpud::gpud simview_imgui
+target_link_libraries(simview PUBLIC gpud::gpud simview_imgui simview_implot
                               PRIVATE gpud::sdl SDL3::SDL3)
 target_include_directories(simview PRIVATE ${imgui_SOURCE_DIR}/backends)
 target_compile_definitions(simview PRIVATE
@@ -95,7 +127,7 @@ endif()
 
 # Both archives: without simview_imgui the installed library has
 # undefined ImGui symbols and nobody can link it.
-install(TARGETS simview simview_imgui ARCHIVE DESTINATION lib)
+install(TARGETS simview simview_imgui simview_implot ARCHIVE DESTINATION lib)
 install(DIRECTORY include/simview DESTINATION include)
 
 if(SIMVIEW_BUILD_EXAMPLES)

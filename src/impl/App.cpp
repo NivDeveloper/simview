@@ -340,6 +340,8 @@ gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }
 
 ImGuiContext *app_ui_context(App *a) { return a ? a->ui.ctx : nullptr; }
 
+ImPlotContext *app_plot_context(App *a) { return a ? a->ui.plot : nullptr; }
+
 Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
     if (!a)
         return {};

@@ -18,6 +18,14 @@ int main() {
     app.Step();
     CHECK_EQ(ImGui::GetFrameCount(), 0);
 
+    // The layer's own context is current, and headless claims the one
+    // backend flag that keeps its geometry equal to the window's:
+    // without it ImDrawList never splits at 65535 vertices.
+    CHECK(ImGui::GetCurrentContext() == &UiContext(app));
+    CHECK(ImPlot::GetCurrentContext() == &PlotContext(app));
+    CHECK((ImGui::GetIO().BackendFlags &
+           ImGuiBackendFlags_RendererHasVtxOffset) != 0);
+
     int calls = 0, seen = 0;
     app.OnUi([&] {
         ++calls;
@@ -49,9 +57,12 @@ int main() {
         CHECK_EQ(ImGui::GetFrameCount(), 1);
     }
 
-    // The first App's context survived the second's whole lifetime.
-    ImGui::SetCurrentContext(&UiContext(app));
+    // The first App's contexts survived the second's whole lifetime —
+    // ImPlot's included, which its CreateContext does NOT guarantee on
+    // its own (it sets current only when none exists).
     app.Step();
+    CHECK(ImGui::GetCurrentContext() == &UiContext(app));
+    CHECK(ImPlot::GetCurrentContext() == &PlotContext(app));
     CHECK_EQ(calls, 3);
 
     return check::summary("ui");

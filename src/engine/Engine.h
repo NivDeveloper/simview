@@ -13,8 +13,9 @@
 #include <string>
 #include <vector>
 
-// The UI layer's context, opaque here so Draw.cpp never sees ImGui.
+// The UI layer's contexts, opaque here so Draw.cpp never sees them.
 struct ImGuiContext;
+struct ImPlotContext;
 
 namespace sv {
 
@@ -68,6 +69,7 @@ struct App {
     // mis-assigns in silence.
     struct UiState {
         ::ImGuiContext *ctx = nullptr;
+        ::ImPlotContext *plot = nullptr;
         std::string ini;
     };
     UiState ui;

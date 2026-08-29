@@ -9,6 +9,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
+#include <implot.h>
 
 namespace {
 
@@ -54,6 +55,12 @@ void ui_init(impl::App *a, const Config &c) {
     IMGUI_CHECKVERSION();
     a->ui.ctx = ImGui::CreateContext();
     ImGui::SetCurrentContext(a->ui.ctx);
+    // ImPlot's CreateContext sets current only when no context exists
+    // at all — unlike ImGui's — so a second App would otherwise draw
+    // its plots into the first App's context.
+    a->ui.plot = ImPlot::CreateContext();
+    ImPlot::SetCurrentContext(a->ui.plot);
+
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = nullptr; // the layout file is ours to place
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -70,6 +77,13 @@ void ui_init(impl::App *a, const Config &c) {
         int tw = 0, th = 0;
         io.Fonts->GetTexDataAsRGBA32(&pixels, &tw, &th);
         io.Fonts->SetTexID(ImTextureID(1));
+        // The one backend flag headless must claim. Without it
+        // ImDrawList never splits at 65535 vertices and silently
+        // truncates indices, so a headless frame would stop matching
+        // the onscreen one — and matching is the law. Unlike the
+        // viewport flags, this changes only how draw lists are built:
+        // there is no backend function behind it to be missing.
+        io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
         return;
     }
 
@@ -102,6 +116,7 @@ void ui_quit(impl::App *a) {
     if (!a || !a->ui.ctx)
         return;
     ImGui::SetCurrentContext(a->ui.ctx);
+    ImPlot::SetCurrentContext(a->ui.plot);
     if (a->win) {
         ImGui_ImplSDL3_Shutdown();
         ImGui_ImplSDLGPU3_Shutdown();
@@ -112,6 +127,9 @@ void ui_quit(impl::App *a) {
     // default path for an app with no panels.
     if (!a->ui.ini.empty() && ImGui::GetFrameCount() > 0)
         ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
+    // ImPlot's context holds ImGui-derived state: it goes first.
+    ImPlot::DestroyContext(a->ui.plot);
+    a->ui.plot = nullptr;
     ImGui::DestroyContext(a->ui.ctx);
     ImGui::SetCurrentContext(nullptr);
     a->ui.ctx = nullptr;
@@ -119,6 +137,7 @@ void ui_quit(impl::App *a) {
 
 void ui_begin(impl::App *a) {
     ImGui::SetCurrentContext(a->ui.ctx);
+    ImPlot::SetCurrentContext(a->ui.plot);
     if (a->win) {
         ImGui_ImplSDLGPU3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
