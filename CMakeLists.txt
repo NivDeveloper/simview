@@ -108,7 +108,9 @@ endif()
 add_library(simview STATIC
     src/impl/App.cpp
     src/engine/Draw.cpp
+    src/engine/Plots.cpp
     src/engine/Ui.cpp
+    src/impl/Plots.cpp
     src/sync/Sync.cpp)
 add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC

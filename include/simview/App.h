@@ -2,6 +2,8 @@
 
 #include "Event.h"
 #include "Field.h"
+#include "Panel.h"
+#include "Plots.h"
 #include "Types.h"
 
 #include <cstdint>
@@ -95,6 +97,14 @@ class App {
 
     sv::Field Field(const FieldDesc &d) {
         return sv::Field{impl::field_create(a_, d)};
+    }
+
+    sv::Plot Plot(const PlotDesc &d) {
+        return sv::Plot{impl::plot_create(a_, d)};
+    }
+
+    sv::Panel Panel(const char *title) {
+        return sv::Panel{impl::panel_create(a_, title)};
     }
 
     template <class P> sv::Field Field(const P &p, const FieldDesc &d) {

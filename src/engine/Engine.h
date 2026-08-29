@@ -4,11 +4,14 @@
 // The SDL side of the App lives here; public headers never see it.
 
 #include <simview/App.h>
+#include <simview/Panel.h>
+#include <simview/Plots.h>
 
 #include <SDL3/SDL.h>
 #include <gpud/Sdl.h>
 
 #include <forward_list>
+#include <list>
 #include <memory>
 #include <string>
 #include <vector>
@@ -74,8 +77,73 @@ struct App {
     };
     UiState ui;
     std::forward_list<Cb> ui_cbs; // panel callbacks, registration order
+
+    // A series' source is owned here: the sugar handle is a bare
+    // pointer like Field's, so nothing on the user's side could keep a
+    // closure alive. std::list, because these are non-copyable and
+    // their addresses are handed to the ui callbacks.
+    struct SeriesState {
+        std::string name;
+        SeriesKind kind = SeriesKind::Line;
+        DType dtype = DType::f32;
+        SeriesData data{};
+        SeriesData (*src)(void *) = nullptr;
+        void *user = nullptr;
+        void (*free)(void *) = nullptr;
+        SeriesStyle style{};
+
+        SeriesState() = default;
+        SeriesState(const SeriesState &) = delete;
+        SeriesState &operator=(const SeriesState &) = delete;
+        ~SeriesState() {
+            if (free)
+                free(user);
+        }
+    };
+
+    // Labels are COPIED at registration: a const char* from a
+    // temporary std::string would be a dangling read at draw time.
+    struct AxisState {
+        std::string label;
+        AxisDesc desc{};
+    };
+
+    struct PlotState {
+        std::string title;
+        AxisState x, y;
+        std::list<SeriesState> series;
+    };
+    std::list<PlotState> plots;
+
+    struct WidgetState {
+        std::string label;
+        WidgetKind kind = WidgetKind::Text;
+        void *target = nullptr;
+        float min = 0.0f, max = 1.0f;
+        void (*on_click)(void *) = nullptr;
+        void *user = nullptr;
+        void (*free)(void *) = nullptr;
+
+        WidgetState() = default;
+        WidgetState(const WidgetState &) = delete;
+        WidgetState &operator=(const WidgetState &) = delete;
+        ~WidgetState() {
+            if (free)
+                free(user);
+        }
+    };
+
+    struct PanelState {
+        std::string title;
+        std::list<WidgetState> widgets;
+    };
+    std::list<PanelState> panels;
 };
 } // namespace impl
+
+// Plots.cpp: one panel each, drawn from the ui callbacks they register.
+void plot_draw(impl::App::PlotState &);
+void panel_draw(impl::App::PanelState &);
 
 // Draw.cpp: upload-if-dirty then render the field into target — the
 // ONE pass both the window and shot() record.

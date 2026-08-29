@@ -1,0 +1,142 @@
+// Plots and panels without a display: they are ImGui windows drawing
+// into draw lists, so everything but colour and feel is provable here.
+// Tests may speak ImGui — they are not consumers.
+#include "Harness.h"
+
+#include <simview/Ui.h>
+
+#include <cmath>
+#include <string>
+#include <vector>
+
+namespace {
+
+int total_vertices() {
+    const ImDrawData *dd = ImGui::GetDrawData();
+    return dd ? dd->TotalVtxCount : 0;
+}
+
+bool any_vtx_offset() {
+    const ImDrawData *dd = ImGui::GetDrawData();
+    for (int i = 0; dd && i < dd->CmdListsCount; ++i)
+        for (const ImDrawCmd &c : dd->CmdLists[i]->CmdBuffer)
+            if (c.VtxOffset != 0)
+                return true;
+    return false;
+}
+
+// A newly created ImGui window renders NOTHING on its first frame:
+// it is hidden while its content is measured. Anything that measures
+// geometry must step past that frame.
+void settle(sv::App &app) {
+    app.Step();
+    app.Step();
+}
+
+bool refused(const char *needle) {
+    return std::string(sv::LastError()).find(needle) != std::string::npos;
+}
+
+} // namespace
+
+int main() {
+    harness::begin();
+    using namespace sv;
+
+    App app({.headless = true});
+    if (!app)
+        return check::skip("plot", LastError());
+    CHECK(ImPlot::GetCurrentContext() == &PlotContext(app));
+
+    // A plot alone is a panel: it registers its own callback, so the
+    // UI runs with no OnUi anywhere.
+    auto empty = app.Plot({.title = "empty"});
+    CHECK(bool(empty));
+    app.Step();
+    CHECK_EQ(ImGui::GetFrameCount(), 1);
+    settle(app);
+    const int axes_only = total_vertices();
+    CHECK_GT(axes_only, 0);
+
+    // A series adds real geometry, and the pull is asked exactly once
+    // per frame — the guarantee the field's source already makes.
+    std::vector<float> ys(64);
+    for (std::size_t i = 0; i < ys.size(); ++i)
+        ys[i] = std::sin(float(i) * 0.2f);
+    int pulls = 0;
+    auto p =
+        app.Plot({.title = "trace",
+                  .x = {.label = "i"},
+                  .y = {.label = "v", .min = -1, .max = 1, .fit = Fit::Fixed}});
+    CHECK(bool(p));
+    p.Line("pulled", [&] {
+        ++pulls;
+        return std::span<const float>(ys);
+    });
+    app.Step();
+    CHECK_EQ(pulls, 1);
+    app.Step();
+    CHECK_EQ(pulls, 2);
+    settle(app);
+    CHECK_GT(total_vertices(), axes_only);
+
+    // Both element types draw, and a borrowed span needs no closure.
+    std::vector<double> yd(32, 0.25);
+    std::vector<float> xs(64);
+    for (std::size_t i = 0; i < xs.size(); ++i)
+        xs[i] = float(i);
+    const int before_both = total_vertices();
+    p.Line("f64", yd);
+    p.Line("xy", xs, ys);
+    settle(app);
+    CHECK_GT(total_vertices(), before_both);
+
+    // An empty source is not an error — a sim that has produced no
+    // samples yet simply draws nothing.
+    p.Line("empty", [] { return std::span<const float>(); });
+    app.Step();
+    CHECK(bool(p));
+
+    // The refusals. A builder method returns itself so chains read,
+    // so what a refusal changes is the reported sentence.
+    p.Line("pulled", ys);
+    CHECK(refused("already has a series"));
+    CHECK(!app.Plot({.title = "trace"}));
+    CHECK(refused("already the title"));
+    CHECK(!app.Plot(
+        {.title = "bad", .y = {.min = 1, .max = 1, .fit = Fit::Fixed}}));
+    CHECK(refused("min is not below max"));
+    CHECK(!app.Plot({.title = ""}));
+    CHECK(refused("needs a title"));
+
+    // A panel of widgets: no ImGui in the caller's hands.
+    float speed = 1.0f;
+    bool on = true;
+    int clicks = 0;
+    const int before_panel = total_vertices();
+    auto panel = app.Panel("controls");
+    CHECK(bool(panel));
+    panel.Text("a label").Separator().Slider("speed", speed, 0.0f, 4.0f);
+    panel.Checkbox("running", on).Button("reset", [&] { ++clicks; });
+    settle(app);
+    CHECK_GT(total_vertices(), before_panel);
+    CHECK(!app.Panel("controls")); // same window
+    CHECK(!app.Panel(""));
+
+    // A long series must SPLIT rather than wrap its indices: headless
+    // claims RendererHasVtxOffset precisely so its geometry matches
+    // the window's.
+    {
+        App big({.headless = true});
+        std::vector<float> many(100000);
+        for (std::size_t i = 0; i < many.size(); ++i)
+            many[i] = std::sin(float(i) * 0.01f);
+        auto bp = big.Plot({.title = "many"});
+        bp.Line("many", many);
+        settle(big);
+        CHECK_GT(total_vertices(), 65535);
+        CHECK(any_vtx_offset());
+    }
+
+    return check::summary("plot");
+}
