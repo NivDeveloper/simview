@@ -5,6 +5,7 @@
 // Move 1 scope: init/quit and the frame-callback registration; run()
 // drives no frames yet (the window arrives in Move 2).
 
+#include "Event.h"
 #include "Types.h"
 
 #include <forward_list>
@@ -20,10 +21,18 @@ struct App;
 // through the seam; ownership is released exactly once via app_quit.
 App *app_init(const Config &);
 void app_quit(App *);
-// Register a per-frame callback (fires each loop iteration once run()
-// drives frames — Move 2). Callbacks run in registration order.
+// Register a per-frame callback: fires once per loop iteration, in
+// registration order, before the frame renders.
 void app_on_frame(App *, void (*fn)(void *), void *user);
-// Block until quit. Move 1: returns immediately (no window yet).
+// Register an input callback: fires for every key event the library
+// did not consume itself, during run()'s poll phase.
+void app_on_event(App *, void (*fn)(const Event &, void *), void *user);
+// Ask the loop to stop after the current iteration; safe from inside
+// any callback.
+void app_request_quit(App *);
+// Block driving the window's frame loop until quit is requested or the
+// window closes. A headless App returns immediately (drive it with
+// step()/shot() instead — Move 2).
 void app_run(App *);
 
 // ── sugar ───────────────────────────────────────────────────────────
@@ -53,6 +62,21 @@ class AppHandle {
         app_on_frame(a_, [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
                      &cbs_.front());
     }
+    void on_event(std::function<void(const Event &)> fn) {
+        ecbs_.push_front(std::move(fn));
+        app_on_event(a_,
+                     [](const Event &e, void *u) {
+                         (*static_cast<std::function<void(const Event &)> *>(u))(e);
+                     },
+                     &ecbs_.front());
+    }
+    // The common case: one key, one action, on key-down.
+    void on_key(Key k, std::function<void()> fn) {
+        on_event([k, fn = std::move(fn)](const Event &e) {
+            if (e.type == Event::Type::KeyDown && !e.repeat && is(e, k)) fn();
+        });
+    }
+    void request_quit() { app_request_quit(a_); }
     void run() { app_run(a_); }
 
   private:
@@ -62,6 +86,7 @@ class AppHandle {
     App *a_ = nullptr;
     // forward_list: stable addresses for the void* the seam holds.
     std::forward_list<std::function<void()>> cbs_;
+    std::forward_list<std::function<void(const Event &)>> ecbs_;
 };
 
 inline AppHandle init(const Config &c = {}) { return AppHandle{app_init(c)}; }

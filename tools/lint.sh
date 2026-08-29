@@ -13,7 +13,7 @@ for h in include/simview/*.h; do
     base=$(basename "$h")
     # (a): every include is <std-ish> or "sibling.h"
     bad_inc=$(grep -nE '^#include' "$h" | grep -vE '#include <[a-z_]+>' \
-              | grep -vE '#include "(Types|App|Field|Plots|simview)\.h"' || true)
+              | grep -vE '#include "(Types|App|Event|Field|Plots|simview)\.h"' || true)
     if [ -n "$bad_inc" ]; then
         echo "LINT: $base: non-std, non-sibling include:"; echo "$bad_inc"
         fail=1

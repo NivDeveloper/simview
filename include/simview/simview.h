@@ -4,4 +4,5 @@
 // interop carve-out — is opt-in and deliberately NOT included here.
 
 #include "App.h"   // IWYU pragma: export
+#include "Event.h" // IWYU pragma: export
 #include "Types.h" // IWYU pragma: export
