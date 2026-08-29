@@ -4,6 +4,7 @@
 #include "../engine/Engine.h"
 #include "../engine/Ui.h"
 
+#include <simview/Ui.h>
 #include <simview/gpud.h>
 #include <simview/simview.h>
 
@@ -336,6 +337,8 @@ bool app_shot(App *a, const char *path) {
 }
 
 gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }
+
+ImGuiContext *app_ui_context(App *a) { return a ? a->ui.ctx : nullptr; }
 
 Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
     if (!a)

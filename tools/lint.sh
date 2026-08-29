@@ -3,8 +3,9 @@
 #   (a) core public headers include only std and sibling simview headers
 #   (b) SDK tokens (SDL_/ImGui/ImPlot/gpud) are forbidden in the core
 #       surface — only the opt-in doors may speak them
-#   (c) gpud.h may include gpud's SDK-free interface header
-#       <gpud/Device.h> and nothing else foreign — never SDL's
+#   (c) each opt-in door names ONE stack and includes only its
+#       SDK-free interface header: gpud.h -> <gpud/Device.h>,
+#       Ui.h -> <imgui.h> (and <implot.h> when plots land)
 #   (e) include/ carries no comments: the public surface explains
 #       itself or gets renamed until it does
 #   (f) examples never print: a showcase draws, it does not narrate,
@@ -28,26 +29,35 @@ for h in include/simview/*.h; do
     if [ "$base" = "gpud.h" ]; then
         bad_inc=$(echo "$bad_inc" | grep -v '#include <gpud/Device\.h>' || true)
     fi
+    if [ "$base" = "Ui.h" ]; then
+        bad_inc=$(echo "$bad_inc" | grep -vE '#include <(imgui|implot)\.h>' || true)
+    fi
     if [ -n "$bad_inc" ]; then
         echo "LINT: $base: non-std, non-sibling include:"; echo "$bad_inc"
         fail=1
     fi
-    # (b)/(c): SDK tokens
-    if [ "$base" = "gpud.h" ]; then
+    # (b)/(c): SDK tokens — each door speaks ONE stack
+    case "$base" in
+    gpud.h)
         if grep -nE 'SDL_|ImGui|ImPlot' "$h"; then
-            echo "LINT: gpud.h names an SDK token — it speaks gpud only"
+            echo "LINT: gpud.h names another stack's token — it speaks gpud"
             fail=1
         fi
         if grep -nE '#include <gpud/(Sdl|Auto|Mock|Vulkan|Metal|Cuda)' "$h"; then
             echo "LINT: gpud.h includes a gpud backend header — Device.h only"
             fail=1
-        fi
-    else
+        fi ;;
+    Ui.h)
+        if grep -nE 'SDL_|gpud' "$h"; then
+            echo "LINT: Ui.h names another stack's token — it speaks the UI"
+            fail=1
+        fi ;;
+    *)
         if grep -nE 'SDL_|ImGui|ImPlot|gpud' "$h"; then
             echo "LINT: $base names an SDK token — only the doors may"
             fail=1
-        fi
-    fi
+        fi ;;
+    esac
 done
 
 # (g)

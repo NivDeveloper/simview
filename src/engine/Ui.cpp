@@ -23,10 +23,17 @@ void ui_init(impl::App *a, const Config &c) {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     if (!a->win) {
-        // Headless: the context alone. NewFrame needs no backend, so
-        // long as it is given what one would have supplied.
+        // Headless: the context alone, given what a backend would have
+        // supplied — the display metrics, a frame time (the library
+        // owns no clock, so a test's frames are its own), and a built
+        // font atlas, which ImGui otherwise asserts on. The texture id
+        // is a placeholder: nothing samples it because nothing draws.
         io.DisplaySize = ImVec2(float(c.size.w), float(c.size.h));
         io.DeltaTime = 1.0f / 60.0f;
+        unsigned char *pixels = nullptr;
+        int tw = 0, th = 0;
+        io.Fonts->GetTexDataAsRGBA32(&pixels, &tw, &th);
+        io.Fonts->SetTexID(ImTextureID(1));
         return;
     }
 
