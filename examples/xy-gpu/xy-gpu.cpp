@@ -29,10 +29,7 @@ int main() {
 
     auto field = sv::FieldFromBuffer(
         app, gpud::sdl::native_buffer(*tensor::resident_buffer(sim.theta)),
-        {.extent = {L, L},
-         .map = sv::Colormap::Hue,
-         .lo = 0.0f,
-         .hi = two_pi});
+        {.extent = {L, L}, .map = sv::Colormap::Hue, .lo = 0.0f, .hi = two_pi});
 
     bool paused = false;
     std::uint64_t frame = 0;
