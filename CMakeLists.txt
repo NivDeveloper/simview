@@ -31,6 +31,7 @@ install(DIRECTORY include/simview DESTINATION include)
 
 if(SIMVIEW_BUILD_EXAMPLES)
     add_subdirectory(examples/hello)
+    add_subdirectory(examples/hello-window)
 endif()
 if(SIMVIEW_BUILD_TESTS)
     enable_testing()

@@ -3,8 +3,12 @@
 Lightweight cross-platform sim visualization over SDL3. C++20, the
 SYSTEM compiler (AppleClang/gcc/MSVC — deliberately NOT tensor's
 g++-16/reflection world). Design rationale and roadmap: docs/design.md.
-Current state: Move 1 — constitution, gates, minimal seam; no features
-yet (no Field, no window loop; they arrive in Move 2).
+Current state: Move 2 — the walking skeleton: real run() loop,
+Event/Key, the host-path Field (one per App, f32) over committed
+SPIR-V bytecode (shaders/regen.sh; native MSL/DXIL are one named
+follow-up — slang's default MSL emission does not follow SDL's binding
+conventions), app_step/app_shot as the headless drive. Next: Move 3 —
+founding examples + the Executor/HostChannel sync layer.
 
 ## Invariants (do not break)
 

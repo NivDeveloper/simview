@@ -154,9 +154,10 @@ Every gate must be BROKEN once when added, to prove it fires.
 ## Roadmap
 
 - **Move 1** (this): constitution, gates, minimal seam, CI matrix.
-- **Move 2**: the walking skeleton — window + run loop, Event/Key,
-  host-path Field with the colormap pipeline (committed bytecode),
-  hello-window on all platforms.
+- **Move 2** (done): the walking skeleton — window + run loop,
+  Event/Key, host-path Field with the colormap pipeline (committed
+  SPIR-V bytecode; native MSL/DXIL emission is a named follow-up),
+  step/shot as headless API, hello-window.
 - **Move 3**: the founding examples — `ising-cpu` (plain arrays; the
   independence proof and permanent canary) and `xy-gpu` (Mode B on the
   named seams) — plus the Executor/HostChannel port and controls
