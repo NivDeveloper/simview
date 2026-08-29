@@ -52,10 +52,12 @@ int main() {
         if (auto latest = chan.Latest(gen); !latest.empty())
             field.Update(latest);
     });
+
     app.OnKey(sv::Key::Space, [&] { sim.Playing() ? sim.Pause() : sim.Play(); });
     app.OnKey(sv::Key::Up, [&] { T = T.load() + 0.05f; });
     app.OnKey(sv::Key::Down, [&] { T = std::max(0.05f, T.load() - 0.05f); });
     app.OnKey(sv::Key::R, [&] { sim.Pause(); reseed(); sim.Play(); });
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+
     app.Run();
 }

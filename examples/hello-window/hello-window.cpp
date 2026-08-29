@@ -14,6 +14,7 @@ int main() {
 
     std::vector<float> v(W * H);
     float t = 0;
+
     app.OnFrame([&] {
         t += 0.02f;
         for (unsigned y = 0; y < H; ++y)
@@ -26,6 +27,8 @@ int main() {
             }
         field.Update(v);
     });
+
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+
     app.Run();
 }

@@ -36,6 +36,7 @@ class Field {
     explicit Field(seam::Field f) : f_(f) {}
     explicit operator bool() const { return bool(f_); }
     seam::Field Raw() const { return f_; }
+
     bool Update(std::span<const float> v) {
         return seam::field_update(f_, v.data(), DType::f32, v.size());
     }

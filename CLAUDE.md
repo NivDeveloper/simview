@@ -94,6 +94,12 @@ consumer. PODs and enums shared by both strata (`Config`,
 `<simview/simview.h>`; `native.h` is opt-in and never included by
 the umbrella.
 
+**Sugar breathes**: between inline definitions longer than one line
+there is always a blank line; one-liners may pack together.
+**Examples read in chunks**: blank lines separate the logical stages
+(open, state, frame callback, keys, run) — a showcase is read top to
+bottom.
+
 **`include/` carries no comments — not one.** The public surface must
 explain itself; a header that needs prose needs renaming instead.
 Design rationale lives in docs/, implementation commentary in `src/`

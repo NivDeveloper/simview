@@ -40,6 +40,7 @@ template <typename T> class Channel {
   public:
     explicit Channel(std::size_t count)
         : c_(seam::channel_create(count * sizeof(T))), count_(count) {}
+
     ~Channel() { seam::channel_destroy(c_); }
     Channel(const Channel &) = delete;
     Channel &operator=(const Channel &) = delete;
@@ -47,7 +48,9 @@ template <typename T> class Channel {
     std::span<T> State() {
         return {static_cast<T *>(seam::channel_state(c_)), count_};
     }
+
     void Publish() { seam::channel_publish(c_); }
+
     std::span<const T> Latest(std::uint64_t &gen) {
         const void *d = seam::channel_latest(c_, &gen);
         return d ? std::span<const T>{static_cast<const T *>(d), count_}
@@ -62,15 +65,18 @@ template <typename T> class Channel {
 class Executor {
   public:
     Executor() = default;
+
     explicit Executor(std::function<void()> tick)
         : tick_(new std::function<void()>(std::move(tick))),
           e_(seam::executor_create(
               [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
               tick_)) {}
+
     ~Executor() {
         if (e_) seam::executor_destroy(e_);
         delete tick_;
     }
+
     Executor(const Executor &) = delete;
     Executor &operator=(const Executor &) = delete;
 

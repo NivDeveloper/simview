@@ -28,6 +28,7 @@ class App {
     explicit App(const Config &c = {}) : a_(seam::app_init(c)) {}
     explicit App(seam::App *a) : a_(a) {}
     App(App &&o) noexcept : a_(std::exchange(o.a_, nullptr)) {}
+
     App &operator=(App &&o) noexcept {
         if (this != &o) {
             reset();
@@ -35,6 +36,7 @@ class App {
         }
         return *this;
     }
+
     ~App() { reset(); }
 
     explicit operator bool() const { return a_ != nullptr; }
@@ -46,6 +48,7 @@ class App {
             a_, [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
             &cbs_.front());
     }
+
     void OnEvent(std::function<void(const Event &)> fn) {
         ecbs_.push_front(std::move(fn));
         seam::app_on_event(
@@ -55,15 +58,18 @@ class App {
             },
             &ecbs_.front());
     }
+
     void OnKey(Key k, std::function<void()> fn) {
         OnEvent([k, fn = std::move(fn)](const Event &e) {
             if (e.type == Event::Type::KeyDown && !e.repeat && Is(e, k)) fn();
         });
     }
+
     void RequestQuit() { seam::app_request_quit(a_); }
     void Run() { seam::app_run(a_); }
     void Step() { seam::app_step(a_); }
     bool Shot(const char *path) { return seam::app_shot(a_, path); }
+
     sv::Field Field(const FieldDesc &d) {
         return sv::Field{seam::field_create(a_, d)};
     }
@@ -72,6 +78,7 @@ class App {
     void reset() {
         if (a_) seam::app_quit(std::exchange(a_, nullptr));
     }
+
     seam::App *a_ = nullptr;
     std::forward_list<std::function<void()>> cbs_;
     std::forward_list<std::function<void(const Event &)>> ecbs_;

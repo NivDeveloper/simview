@@ -40,11 +40,13 @@ int main() {
         sv::FieldRebind(field, gpud::sdl::native_buffer(
                                    *tensor::resident_buffer(sim.theta)));
     });
+
     app.OnKey(sv::Key::Space, [&] { paused = !paused; });
     app.OnKey(sv::Key::Up, [&] { sim.T = std::min(2.0f, sim.T + 0.05f); });
     app.OnKey(sv::Key::Down, [&] { sim.T = std::max(0.05f, sim.T - 0.05f); });
     app.OnKey(sv::Key::R, [&] { sim.randomize(sdev); });
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+
     app.Run();
     // Teardown order is the lifetime rule: the sim's parked tensors
     // (device handles) die with `sim` before `dev`, and `app` — the
