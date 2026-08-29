@@ -25,10 +25,16 @@ int main() {
     CHECK_EQ(ex.Ticks(), std::uint64_t(1));
     CHECK(!ex.Playing());
 
-    // Play advances; Pause stops.
+    // Play advances; Pause stops. Pause cannot abort a tick already
+    // running — a user's callback is not interruptible — so ONE more
+    // may land after it returns. What the contract promises is that no
+    // NEW tick starts, which is what settling first measures. An
+    // uncapped executor reaches millions of ticks a second, so that
+    // window is wide on a loaded machine.
     ex.Play();
     std::this_thread::sleep_for(50ms);
     ex.Pause();
+    std::this_thread::sleep_for(20ms);
     const auto t1 = ex.Ticks();
     CHECK_GT(t1, std::uint64_t(1));
     std::this_thread::sleep_for(50ms);

@@ -4,7 +4,6 @@
 #include "../engine/Engine.h"
 #include "../engine/Ui.h"
 
-#include <simview/Ui.h>
 #include <simview/gpud.h>
 #include <simview/simview.h>
 
@@ -12,6 +11,9 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
+struct ImGuiContext;
+struct ImPlotContext;
 
 namespace sv {
 

@@ -3,9 +3,10 @@
 #   (a) core public headers include only std and sibling simview headers
 #   (b) SDK tokens (SDL_/ImGui/ImPlot/gpud) are forbidden in the core
 #       surface — only the opt-in doors may speak them
-#   (c) each opt-in door names ONE stack and includes only its
-#       SDK-free interface header: gpud.h -> <gpud/Device.h>,
-#       Ui.h -> <imgui.h> (and <implot.h> when plots land)
+#   (c) the ONE opt-in door, gpud.h, includes only gpud's SDK-free
+#       interface header. No public header names ImGui or ImPlot at
+#       all: the builder is the surface, and the UI stack is an
+#       implementation detail of it
 #   (e) include/ carries no comments: the public surface explains
 #       itself or gets renamed until it does
 #   (f) examples never print: a showcase draws, it does not narrate,
@@ -29,9 +30,6 @@ for h in include/simview/*.h; do
     if [ "$base" = "gpud.h" ]; then
         bad_inc=$(echo "$bad_inc" | grep -v '#include <gpud/Device\.h>' || true)
     fi
-    if [ "$base" = "Ui.h" ]; then
-        bad_inc=$(echo "$bad_inc" | grep -vE '#include <(imgui|implot)\.h>' || true)
-    fi
     if [ -n "$bad_inc" ]; then
         echo "LINT: $base: non-std, non-sibling include:"; echo "$bad_inc"
         fail=1
@@ -45,11 +43,6 @@ for h in include/simview/*.h; do
         fi
         if grep -nE '#include <gpud/(Sdl|Auto|Mock|Vulkan|Metal|Cuda)' "$h"; then
             echo "LINT: gpud.h includes a gpud backend header — Device.h only"
-            fail=1
-        fi ;;
-    Ui.h)
-        if grep -nE 'SDL_|gpud' "$h"; then
-            echo "LINT: Ui.h names another stack's token — it speaks the UI"
             fail=1
         fi ;;
     *)

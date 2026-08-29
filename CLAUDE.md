@@ -28,7 +28,7 @@ ImGui/ImPlot behind the one UI boundary.
   | who | may include |
   | --- | --- |
   | `include/simview/*.h` (core) | each other + std. Nothing else, ever |
-  | the opt-in doors: `gpud.h`, `Ui.h` (escape hatch; no example needs it) | core + std + that stack's ONE SDK-free header (`<gpud/Device.h>`; `<imgui.h>`, later `<implot.h>`). A door speaks ONE stack — naming another's token fails lint. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud, and imgui's headers come from our target) |
+  | the one opt-in door, `gpud.h` | core + std + `<gpud/Device.h>`. No public header names ImGui or ImPlot. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud) |
   | `src/**` | anything (SDL, later ImGui/ImPlot) — never installed |
   | a core consumer | `<simview/simview.h>` + libsimview; no SDL anywhere |
 
@@ -53,12 +53,12 @@ ImGui/ImPlot behind the one UI boundary.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
-- **The builder is the API; ImGui is not.** Users write
-  `app.Plot(…).Line(…)` and `app.Panel(…).Slider(…)` — no example
-  names an ImGui type, and the core headers cannot (lint rule (b)).
-  `include/simview/Ui.h` remains the opt-in escape hatch for what the
-  vocabulary does not model, because the predecessor having NO hatch
-  is why anything it failed to model was unreachable.
+- **The builder is the API, and ImGui is not on the surface AT ALL.**
+  Users write `app.Plot(…).Line(…)` and `app.Panel(…).Slider(…)`; no
+  public header names ImGui or ImPlot, and lint fails on the token in
+  any of them. The UI stack is an implementation detail of the
+  builder, not a door. If raw access is ever needed it comes back as a
+  deliberate decision with a reason, not as a leftover.
 - **A new series kind costs three sites**: one enum value, one `case`
   in `emit_series<T>`, one builder method. The scalar is erased once,
   so float and double cost nothing per kind. If a kind ever costs
@@ -200,7 +200,7 @@ Design rationale lives in docs/, implementation commentary in `src/`
 
 ```
 include/simview/   the installed surface: simview.h (umbrella),
-                   Types.h, App.h, gpud.h (the one door)
+                   Types.h, App.h, Plots.h, Panel.h, gpud.h (the door)
 third_party/       vendored deps, one dir each, PIN + LICENSE
                    required (README.md is the contract; exempt from
                    the format gate, never from the warning flags)

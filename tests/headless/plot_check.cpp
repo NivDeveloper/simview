@@ -3,7 +3,10 @@
 // Tests may speak ImGui — they are not consumers.
 #include "Harness.h"
 
-#include <simview/Ui.h>
+#include "Internals.h"
+
+#include <imgui.h>
+#include <implot.h>
 
 #include <cmath>
 #include <string>
@@ -46,7 +49,7 @@ int main() {
     App app({.headless = true});
     if (!app)
         return check::skip("plot", LastError());
-    CHECK(ImPlot::GetCurrentContext() == &PlotContext(app));
+    CHECK(ImPlot::GetCurrentContext() == sv::impl::app_plot_context(app.Raw()));
 
     // A plot alone is a panel: it registers its own callback, so the
     // UI runs with no OnUi anywhere.

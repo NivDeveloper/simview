@@ -92,7 +92,7 @@ only after SDL's cross-thread command-buffer rules are pinned).
 | dep | policy |
 | --- | --- |
 | SDL3 | PRIVATE (engine-only); no public header names it at all |
-| Dear ImGui (+ ImPlot later) | FetchContent, pinned by hash in the root CMakeLists exactly as gpud is; built as `simview_imgui` with warnings silenced at the target. The UI layer is not optional to the engine; the opt-in door is how a CONSUMER reaches it |
+| Dear ImGui + ImPlot | FetchContent, pinned by hash exactly as gpud is; built as `simview_imgui`/`simview_implot` with warnings silenced at the target. PRIVATE in every sense that matters: they are how the builder is implemented, and **no public header names them** |
 | tensor | absent, forever — its data arrives, its types never do |
 | gpud | the substrate: the ENGINE builds on it (gpud::sdl owns device bring-up; linked PRIVATE, gpud::gpud PUBLIC for the door's include dirs, FetchContent-pinned by hash). The opt-in door `gpud.h` speaks its vocabulary; the core never names it |
 | shader toolchain | absent for consumers: internal shaders ship as committed bytecode (SPIR-V/MSL/DXIL); `shaders/regen.sh` is dev-only |
@@ -252,6 +252,10 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
   the library drives; run() blocks until quit. A consumer-owned
   `frame()` escape hatch may be added later if a real sim needs to own
   its loop; it would be impl-level, with run() as sugar over it.
+- **Pause does not abort a tick in flight.** A user's callback is not
+  interruptible, so one more tick may complete after `Pause()` returns;
+  what the executor promises is that no NEW tick starts. Anything
+  measuring tick counts across a pause must let the in-flight one land.
 - **Errors: the impl never throws — and it reports itself.**
   Constructors that fail return a null handle; operations return
   bool; the sentence is logged at the refusal site, so checking the
