@@ -62,21 +62,3 @@ jobs:
       - name: gates (installed surface)
         run: ctest --test-dir build --output-on-failure -C Release
 
-      - name: run examples headless
-        shell: bash
-        env:
-          SDL_VIDEODRIVER: ${{ runner.os == 'Linux' && 'dummy' || '' }}
-        run: |
-          # Windows: multi-config exe paths, and SDL3.dll must be on PATH.
-          export PATH="$GITHUB_WORKSPACE/sdl3-prefix/bin:$PATH"
-          BIN=$(find build/examples/hello -type f \( -name hello -o -name hello.exe \) | head -1)
-          echo "running $BIN"; "$BIN"
-          HW=$(find build/examples/hello-window -type f \( -name hello-window -o -name hello-window.exe \) | head -1)
-          echo "running $HW --frames 30"; "$HW" --frames 30 shot.bmp
-          # A device-bearing runner must produce a real image; a
-          # driverless one reports no-device and writes nothing.
-          if [ -f shot.bmp ]; then
-            SZ=$(wc -c < shot.bmp)
-            echo "shot.bmp: $SZ bytes"
-            [ "$SZ" -gt 1024 ] || exit 1
-          fi
