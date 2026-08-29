@@ -7,6 +7,7 @@
 
 #include <forward_list>
 #include <string>
+#include <vector>
 
 namespace simview {
 
@@ -29,6 +30,11 @@ struct App {
     };
     std::forward_list<Cb> frame_cbs; // registration order at run()
     std::forward_list<Ecb> event_cbs;
+    struct PipelineEntry {
+        SDL_GPUTextureFormat format;
+        SDL_GPUGraphicsPipeline *pipeline;
+    };
+    std::vector<PipelineEntry> pipelines; // one per target format
 };
 
 // The per-thread sentence behind simview::last_error().

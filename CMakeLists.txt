@@ -11,7 +11,8 @@ option(SIMVIEW_BUILD_TESTS "Build simview tests" ${PROJECT_IS_TOP_LEVEL})
 find_package(SDL3 REQUIRED CONFIG)
 
 add_library(simview STATIC
-    src/seam/App.cpp)
+    src/seam/App.cpp
+    src/engine/Draw.cpp)
 add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

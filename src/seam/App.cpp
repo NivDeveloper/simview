@@ -67,6 +67,8 @@ App *app_init(const Config &c) {
 void app_quit(App *a) {
     if (!a) return;
     SDL_WaitForGPUIdle(a->dev);
+    for (const auto &e : a->pipelines)
+        SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
     if (a->win) {
         SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
         SDL_DestroyWindow(a->win);
