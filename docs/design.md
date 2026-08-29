@@ -138,9 +138,11 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
   the library drives; run() blocks until quit. A consumer-owned
   `frame()` escape hatch may be added later if a real sim needs to own
   its loop; it would be seam-level, with run() as sugar over it.
-- **Errors: the seam never throws.** Constructors that fail return a
-  null handle; operations return bool; `sv::LastError()` gives
-  the sentence (SDL's own convention — the engine wraps it anyway).
+- **Errors: the seam never throws — and it reports itself.**
+  Constructors that fail return a null handle; operations return
+  bool; the sentence is logged at the refusal site, so checking the
+  bool is a consumer's whole error handling. `sv::LastError()` is
+  the programmatic twin for tests and tooling, never a requirement.
 - **Headless is first-class.** Every view renders offscreen
   byte-identically to onscreen; `--shot`-style offscreen capture is
   API, not a debug hack — the pixel tests and eyeless verification

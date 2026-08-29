@@ -1,22 +1,12 @@
-// The founding consumer: core surface only, headless, CI-runnable
-// anywhere. "No device" on a driverless runner is a REPORTED outcome,
-// not a failure — the build and the surface are what this proves.
+// The founding consumer: core surface only, no window, buildable
+// anywhere. On a driverless machine the App is simply false — the
+// library has already said why on its own log.
 #include <simview/simview.h>
 
-#include <cstdio>
-
 int main() {
-    std::printf("simview %s\n", sv::Version());
     sv::App app({.title = "hello", .headless = true});
-    if (!app) {
-        std::printf("no GPU device on this machine: %s\n",
-                    sv::LastError());
-        return 0;
-    }
-    bool fired = false;
-    app.OnFrame([&] { fired = true; });
-    app.Run(); // headless: returns immediately
-    std::printf("device open, run() returned, frame fired: %s\n",
-                fired ? "yes" : "not yet (Move 2)");
+    if (!app) return 0;
+    app.OnFrame([] {});
+    app.Step();
     return 0;
 }

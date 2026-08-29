@@ -37,14 +37,19 @@ over vendored ImGui/ImPlot behind the one UI seam.
   seam as pointer+stride or (native.h) `SDL_GPUBuffer *`. Internal
   shaders are committed bytecode for all three formats; regeneration
   is a dev-only script.
-- **The seam never throws.** Null handle / `false` + `LastError()`.
+- **The seam never throws — and it reports itself.** A refusal is a
+  null handle / `false`, with its sentence logged at the refusal site
+  (SDL's error log). `LastError()` is programmatic access for tests
+  and tooling; a consumer never NEEDS it, and examples never call it.
 - **Headless is first-class.** Every view must render offscreen
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
 - **Examples are showcases, tests carry the verification.** No argv
   test modes, no probes in examples/ — that machinery lives in
-  tests/headless/. An example with extra toolchain needs (xy-gpu:
+  tests/headless/. And a showcase never prints — no stdout, no logs
+  (`tools/lint.sh` rule (f)); its error handling is checking the
+  bool, because the library already said why. An example with extra toolchain needs (xy-gpu:
   g++-16 -freflection) is a STANDALONE subproject that gates itself
   loudly; CI builds every in-tree example.
 - No hardcoded toolchain paths; no `-march=native`; no globals — an

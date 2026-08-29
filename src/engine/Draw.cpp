@@ -3,6 +3,8 @@
 #include "../draw/bytecode/display_fsmain_spirv.h"
 #include "../draw/bytecode/display_vsmain_spirv.h"
 
+#include <string>
+
 #include <simview/simview.h>
 
 namespace sv {
@@ -42,13 +44,12 @@ SDL_GPUGraphicsPipeline *display_pipeline(seam::App *a, SDL_GPUTextureFormat tf)
     } else {
         set_error("this driver does not take SPIR-V shaders — native "
                   "MSL and DXIL bytecode are a planned addition");
-        SDL_Log("simview: %s", seam::last_error());
         return nullptr;
     }
     if (!vs || !fs) {
-        set_error(SDL_GetError());
-        SDL_Log("simview: shader creation failed (%s driver): %s",
-                SDL_GetGPUDeviceDriver(a->dev), seam::last_error());
+        set_error(std::string("shader creation failed (") +
+                  SDL_GetGPUDeviceDriver(a->dev) + " driver): " +
+                  SDL_GetError());
         if (vs) SDL_ReleaseGPUShader(a->dev, vs);
         if (fs) SDL_ReleaseGPUShader(a->dev, fs);
         return nullptr;
@@ -66,8 +67,8 @@ SDL_GPUGraphicsPipeline *display_pipeline(seam::App *a, SDL_GPUTextureFormat tf)
     SDL_ReleaseGPUShader(a->dev, vs);
     SDL_ReleaseGPUShader(a->dev, fs);
     if (!p) {
-        set_error(SDL_GetError());
-        SDL_Log("simview: pipeline creation failed: %s", seam::last_error());
+        set_error(std::string("pipeline creation failed: ") +
+                  SDL_GetError());
         return nullptr;
     }
     a->pipelines.push_back({tf, p});

@@ -7,6 +7,8 @@
 #   (d) the attic never re-enters the build
 #   (e) include/ carries no comments: the public surface explains
 #       itself or gets renamed until it does
+#   (f) examples never print: a showcase draws, it does not narrate,
+#       and the library reports its own failures
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
@@ -33,6 +35,13 @@ for h in include/simview/*.h; do
         fi
     fi
 done
+
+# (f)
+if grep -n 'printf\|std::cout\|std::cerr\|std::print\|puts(\|SDL_Log' \
+        examples/*/*.cpp examples/*/*.h 2>/dev/null; then
+    echo "LINT: an example prints — showcases draw, the library reports"
+    fail=1
+fi
 
 # (e)
 if grep -n '//\|/\*' include/simview/*.h; then

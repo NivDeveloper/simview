@@ -18,7 +18,11 @@ namespace {
 thread_local std::string g_error;
 } // namespace
 
-void set_error(std::string msg) { g_error = std::move(msg); }
+void set_error(std::string msg) {
+    g_error = std::move(msg);
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "simview: %s",
+                 g_error.c_str());
+}
 
 namespace seam {
 
@@ -154,11 +158,11 @@ void app_run(App *a) {
 Field field_create(App *a, const FieldDesc &d) {
     if (!a) return {};
     if (a->field.w)
-        return set_error("Move 2 draws one field per App - a second "
-                         "field_create is a later move"),
+        return set_error("one field per App for now — a second field is a "
+                         "planned addition"),
                Field{};
     if (d.dtype != DType::f32)
-        return set_error("Move 2 fields hold f32 values only"), Field{};
+        return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
         return set_error("a field needs a non-zero extent"), Field{};
 
@@ -190,7 +194,7 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
                           "rebind it, do not update it"),
                false;
     if (t != DType::f32)
-        return set_error("Move 2 fields hold f32 values only"), false;
+        return set_error("fields hold f32 values only for now"), false;
     if (count != std::size_t(a->field.w) * a->field.h)
         return set_error("field_update: count must equal w*h"), false;
     // cycle=true: per-frame streaming; the frame in flight may still
@@ -267,9 +271,10 @@ SDL_GPUDevice *native_device(App *a) { return a ? a->dev : nullptr; }
 Field field_from_buffer(App *a, SDL_GPUBuffer *buf, const FieldDesc &d) {
     if (!a) return {};
     if (a->field.w)
-        return set_error("Move 3 draws one field per App"), Field{};
+        return set_error("one field per App for now — a second field is a "
+                         "planned addition"), Field{};
     if (d.dtype != DType::f32)
-        return set_error("fields hold f32 values only"), Field{};
+        return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
         return set_error("a field needs a non-zero extent"), Field{};
     a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
