@@ -1,6 +1,6 @@
 # The standalone build: tensor requires g++-16 -freflection, so this
-# example configures apart from the main tree (which must be built
-# first: `make` at the repo root).
+# example configures apart and builds EVERYTHING — simview included —
+# with that one compiler.
 .DEFAULT_GOAL := all
 ifeq ($(origin CXX),default)
 CXX := /opt/homebrew/bin/g++-16

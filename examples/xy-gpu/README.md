@@ -1,16 +1,15 @@
-# xy-gpu — Mode B, every boundary named
+# xy-gpu — the stack on one device
 
-The 2-D XY model computed by the [tensor] library on the GPU (gpud's
-SDL backend, adopted onto simview's own device) and drawn zero-copy:
-the fragment shader reads the very buffer the compute wrote. Three
-libraries meet only here; none includes tensor, and gpud is the
-interchange the stack shares.
+The 2-D XY model computed by the [tensor] library on the GPU and
+drawn zero-copy: simview owns the gpud device, tensor evaluates on it
+through `SlotDevice`, and the field pulls the freshest resident
+buffer at every draw through gpud's `source_of` protocol — three
+libraries, one device, no copies, and no per-frame glue.
 
-Standalone subproject: tensor needs `g++-16 -freflection`, simview
-builds with the system compiler — so this configures apart (build the
-repo root first, then `make` here; network on first configure). Both
-C++ runtimes coexist in the binary — libsimview's internals are
-libc++, this TU is libstdc++ — which is safe precisely because the
-impl layer is POD-only.
+Standalone subproject: tensor needs `g++-16 -freflection`, so this
+configures apart (`make` here; network on first configure) and builds
+everything — simview included — with that one compiler. One toolchain,
+one C++ runtime: gpud's virtual interface is not a stable ABI across
+standard libraries.
 
 [tensor]: https://github.com/NivDeveloper/tensor

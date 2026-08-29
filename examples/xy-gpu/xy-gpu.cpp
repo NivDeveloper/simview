@@ -10,15 +10,13 @@
 // device; a frame never copies it to the host.
 //
 // Space pauses, Up/Down move temperature, R reseeds, Esc quits.
-#include <simview/native.h>
+#include <simview/gpud.h>
 #include <simview/simview.h>
 
 #include <Tensor/Gen.h>
 #include <Tensor/Gpu.h>
 #include <Tensor/Math.h>
 #include <Tensor/Tensor.h>
-
-#include <gpud/Sdl.h>
 
 #include <algorithm>
 #include <cmath>
@@ -124,20 +122,20 @@ int main() {
     if (!app)
         return 1;
 
-    // Adoption: gpud computes on simview's device.
-    auto dev = gpud::sdl::try_open_on(sv::NativeDevice(app));
-    if (!dev)
-        return 1;
-    tensor::SlotDevice sdev{*dev};
+    tensor::SlotDevice sdev{sv::Device(app)};
 
     // The state, resident on the device for the whole run.
     Mask colour = checkerboard(sdev);
     Field theta = random_angles(sdev);
     float T = 0.4f;
 
-    auto field = sv::FieldFromBuffer(
-        app, gpud::sdl::native_buffer(*tensor::resident_buffer(theta)),
+    // One registration; the engine pulls the freshest resident buffer
+    // at every draw, however often eval re-parks theta.
+    auto field = app.Field(
+        theta,
         {.extent = {L, L}, .map = sv::Colormap::Hue, .lo = 0.0f, .hi = two_pi});
+    if (!field)
+        return 1;
 
     bool paused = false;
     std::uint64_t frame = 0;
@@ -147,9 +145,6 @@ int main() {
         step(sdev, theta, colour, T);
         if (++frame % 64 == 0)
             rewrap(sdev, theta);
-        // Residency ping-pongs: rebind the freshest buffer each frame.
-        sv::FieldRebind(
-            field, gpud::sdl::native_buffer(*tensor::resident_buffer(theta)));
     });
 
     app.OnKey(sv::Key::Space, [&] { paused = !paused; });
@@ -159,7 +154,7 @@ int main() {
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
-    // Teardown is the lifetime rule: the parked tensors die before
-    // sdev and dev, and app — the device's owner — goes last, in
-    // reverse declaration order.
+    // Teardown is the lifetime rule: the parked tensors (the field's
+    // pull source points into theta) die before app — the device's
+    // owner — in reverse declaration order.
 }
