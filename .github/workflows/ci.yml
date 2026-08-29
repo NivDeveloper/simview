@@ -59,16 +59,27 @@ jobs:
           [ "$RUNNER_OS" != "macOS" ] && PP="$GITHUB_WORKSPACE/sdl3-prefix"
           CMAKE_PREFIX_PATH="$PP" cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Vulkan ICDs present (Linux)
-        if: runner.os == 'Linux'
-        run: ls -la /usr/share/vulkan/icd.d/ || echo "no ICD directory"
-
       - name: build library + every example
         run: cmake --build build -j 4 --config Release
 
       - name: lint (surface hygiene)
         shell: bash
         run: sh tools/lint.sh
+
+      # A runner has no display, so SDL_INIT_VIDEO needs the dummy
+      # driver before it can bring a GPU device up at all. ctest hides
+      # a skipping test's output, so run one check directly first: its
+      # own sentence says why, at the cost of a few milliseconds.
+      - name: device probe (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.json
+          SDL_VIDEODRIVER: dummy
+          GPUD_LOG: "1"
+        run: |
+          ls -la /usr/share/vulkan/icd.d/ || true
+          ./build/tests/headless/gpud_check || true
 
       # Lavapipe (in mesa-vulkan-drivers) is a software Vulkan device,
       # so the Linux leg actually DRAWS: the shot checks assert pixels,
@@ -78,6 +89,7 @@ jobs:
         env:
           VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.json' || '' }}
           VK_DRIVER_FILES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.json' || '' }}
+          SDL_VIDEODRIVER: ${{ runner.os == 'Linux' && 'dummy' || '' }}
           # gpud says why a device did not come up; SDL says what it
           # tried. Cheap, and the only view into a runner we cannot
           # attach a debugger to.
