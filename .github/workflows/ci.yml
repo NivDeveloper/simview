@@ -69,5 +69,8 @@ jobs:
         env:
           SDL_VIDEODRIVER: ${{ runner.os == 'Linux' && 'dummy' || '' }}
         run: |
-          ./build/examples/hello/hello 2>/dev/null \
-            || ./build/examples/hello/Release/hello.exe
+          # Windows: multi-config exe path, and SDL3.dll must be on PATH.
+          export PATH="$GITHUB_WORKSPACE/sdl3-prefix/bin:$PATH"
+          BIN=$(find build/examples/hello -type f \( -name hello -o -name hello.exe \) | head -1)
+          echo "running $BIN"
+          "$BIN"
