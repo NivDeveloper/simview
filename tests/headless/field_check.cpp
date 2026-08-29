@@ -23,6 +23,9 @@ int fail(const char *what) {
 } // namespace
 
 int main() {
+    // Unbuffered: a test killed by a timeout must still have
+    // said how far it got.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     using namespace sv;
     const char *tmp = std::getenv("TMPDIR");
     const std::string dir = tmp ? tmp : ".";

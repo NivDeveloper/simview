@@ -73,6 +73,11 @@ jobs:
       - name: gates (tests + installed surface)
         env:
           VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' || '' }}
+          # gpud says why a device did not come up; SDL says what it
+          # tried. Cheap, and the only view into a runner we cannot
+          # attach a debugger to.
+          GPUD_LOG: "1"
+          SDL_LOGGING: "1"
         # --timeout names the hanging test instead of stalling the job.
         run: ctest --test-dir build --output-on-failure -C Release --timeout 120
 

@@ -14,6 +14,9 @@
 #include <vector>
 
 int main() {
+    // Unbuffered: a test killed by a timeout must still have
+    // said how far it got.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     using namespace sv;
     App app({.headless = true});
     if (!app)

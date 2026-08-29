@@ -10,6 +10,9 @@ using namespace sv;
 using namespace std::chrono_literals;
 
 int main() {
+    // Unbuffered: a test killed by a timeout must still have
+    // said how far it got.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     // Starts Paused: no ticks arrive unbidden.
     Executor ex([] {});
     std::this_thread::sleep_for(50ms);
