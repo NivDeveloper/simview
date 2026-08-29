@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
 #include <vector>
 
 namespace sv {
@@ -32,38 +31,28 @@ App *app_init(const Config &c) {
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
         return set_error(SDL_GetError()), nullptr;
 
-    // The device creator owns the Vulkan-loader hint: SDL dlopens the
-    // loader by bare name and misses /usr/local/lib on macOS.
-    if (!SDL_GetHint(SDL_HINT_VULKAN_LIBRARY))
-        for (const char *p : {"/usr/local/lib/libvulkan.1.dylib",
-                              "/opt/homebrew/lib/libvulkan.1.dylib"})
-            if (std::filesystem::exists(p)) {
-                SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, p);
-                break;
-            }
-
-    // SPIR-V only for now: it is the one format whose emitted binding
-    // layout provably matches SDL's conventions. Native Metal (MSL)
-    // and D3D12 (DXIL) need convention-correct emission — one planned
-    // follow-up; on macOS SDL serves SPIR-V via its Vulkan driver.
-    SDL_GPUDevice *dev =
-        SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
-    if (!dev) {
-        set_error(SDL_GetError());
+    // gpud owns device bring-up — the Vulkan-loader hint, the SPIR-V
+    // format choice (the one format whose emitted binding layout
+    // provably matches SDL's conventions; native MSL/DXIL are a
+    // planned follow-up) — and the engine borrows the native handle.
+    auto g = gpud::sdl::try_open();
+    if (!g) {
+        set_error("no GPU device (gpud sdl backend; GPUD_LOG=1 says why)");
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return nullptr;
     }
     App *a = new App;
-    a->dev = dev;
+    a->gdev = std::move(g);
+    a->dev = gpud::sdl::native_device(*a->gdev);
     a->headless = c.headless;
     if (!c.headless) {
         a->win = SDL_CreateWindow(c.title, int(c.size.w), int(c.size.h),
                                   SDL_WINDOW_RESIZABLE);
-        if (!a->win || !SDL_ClaimWindowForGPUDevice(dev, a->win)) {
+        if (!a->win || !SDL_ClaimWindowForGPUDevice(a->dev, a->win)) {
             set_error(SDL_GetError());
             if (a->win)
                 SDL_DestroyWindow(a->win);
-            SDL_DestroyGPUDevice(dev);
+            a->gdev.reset();
             SDL_QuitSubSystem(SDL_INIT_VIDEO);
             delete a;
             return nullptr;
@@ -86,7 +75,9 @@ void app_quit(App *a) {
         SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
         SDL_DestroyWindow(a->win);
     }
-    SDL_DestroyGPUDevice(a->dev);
+    // gpud's ~Device waits idle, destroys the SDL device and quits its
+    // own subsystem ref; ours pairs with app_init's InitSubSystem.
+    a->gdev.reset();
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
     delete a;
 }

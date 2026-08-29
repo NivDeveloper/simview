@@ -4,8 +4,10 @@
 // The SDL side of the App lives here; public headers never see it.
 
 #include <SDL3/SDL.h>
+#include <gpud/Sdl.h>
 
 #include <forward_list>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -17,6 +19,9 @@ struct Event; // simview/Event.h
 // points here.
 namespace impl {
 struct App {
+    // The device is gpud's; dev is its borrowed native handle, valid
+    // until gdev.reset().
+    std::unique_ptr<gpud::Device> gdev;
     SDL_GPUDevice *dev = nullptr;
     SDL_Window *win = nullptr; // null when headless
     bool headless = false;
@@ -45,7 +50,9 @@ struct App {
         SDL_GPUBuffer *buf = nullptr;
         SDL_GPUTransferBuffer *staging = nullptr;
         bool dirty = false;    // staging holds a newer grid than buf
-        bool external = false; // buf is borrowed: no staging, no release
+        bool external = false; // buf resolves from src: no staging, no release
+        // The pull source an external field re-asks at every draw.
+        gpud::BufferSource src{};
     };
     FieldState field; // w == 0 means "no field yet"
 };
