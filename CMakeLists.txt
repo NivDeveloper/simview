@@ -33,15 +33,58 @@ FetchContent_Declare(gpud
     GIT_TAG        8011d0216cae4ed8b24a120760edcf71cbb98c12)
 FetchContent_MakeAvailable(gpud)
 
+# Dear ImGui is the UI layer: the dockspace, the panels, and — through
+# the official SDL3 + SDL_GPU backends — docking and multi-viewport,
+# which the predecessor hand-built ~600 lines to replace because its
+# custom renderer could not host them. Pinned by hash after SDL3 is
+# found, since the backends need it.
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui
+    # v1.92.7-docking (IMGUI_HAS_DOCK + IMGUI_HAS_VIEWPORT)
+    GIT_TAG        7d2273672596f2a2fc4d5f20c52ec1d3cb6cd2c3)
+FetchContent_MakeAvailable(imgui) # upstream ships no CMakeLists: populate only
+
+# Its own target so the warning flags are silenced HERE, deliberately
+# and visibly, rather than by editing upstream's sources. imgui_demo is
+# built on purpose: ShowDemoWindow is the rig that makes docking and
+# tear-out verifiable by hand, and an unreferenced object never enters
+# a link.
+add_library(simview_imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp)
+# PUBLIC imgui.h (the door speaks it), PRIVATE the backends: a consumer
+# never sees an SDL type through us.
+target_include_directories(simview_imgui PUBLIC ${imgui_SOURCE_DIR})
+target_include_directories(simview_imgui PRIVATE ${imgui_SOURCE_DIR}/backends)
+target_link_libraries(simview_imgui PRIVATE SDL3::SDL3)
+set_target_properties(simview_imgui PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    # /utf-8: imgui's sources carry UTF-8 literals MSVC otherwise
+    # mis-decodes, and /w would have hidden the warning that says so.
+    target_compile_options(simview_imgui PRIVATE /w /utf-8)
+else()
+    target_compile_options(simview_imgui PRIVATE -w)
+endif()
+
 add_library(simview STATIC
     src/impl/App.cpp
     src/engine/Draw.cpp
+    src/engine/Ui.cpp
     src/sync/Sync.cpp)
 add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_link_libraries(simview PUBLIC gpud::gpud PRIVATE gpud::sdl SDL3::SDL3)
+target_link_libraries(simview PUBLIC gpud::gpud simview_imgui
+                              PRIVATE gpud::sdl SDL3::SDL3)
+target_include_directories(simview PRIVATE ${imgui_SOURCE_DIR}/backends)
 target_compile_definitions(simview PRIVATE
     SIMVIEW_VERSION="${PROJECT_VERSION}")
 set_target_properties(simview PROPERTIES
@@ -50,7 +93,9 @@ if(NOT MSVC)
     target_compile_options(simview PRIVATE -Wall -Wextra)
 endif()
 
-install(TARGETS simview ARCHIVE DESTINATION lib)
+# Both archives: without simview_imgui the installed library has
+# undefined ImGui symbols and nobody can link it.
+install(TARGETS simview simview_imgui ARCHIVE DESTINATION lib)
 install(DIRECTORY include/simview DESTINATION include)
 
 if(SIMVIEW_BUILD_EXAMPLES)

@@ -1,8 +1,13 @@
 # third_party — vendored dependencies
 
-What lands here: sources simview builds directly (Dear ImGui, ImPlot,
-ImPlot3D when they arrive), vendored rather than fetched so a consumer
-needs no package and a CI runner no network beyond the checkout.
+What lands here: sources simview builds directly and COPIES IN.
+
+Dear ImGui and ImPlot are not among them. After reading the
+predecessor — which began with a vendored ImGui tree and deliberately
+moved to a pinned FetchContent — they arrive the way gpud does: a hash
+pin in the root CMakeLists, one place, no 40k lines in a repo whose
+library is a thousand. The rules below stand for anything genuinely
+copied in, and this directory stays empty until something is.
 
 Four rules, gated by `tools/lint.sh` rule (h):
 

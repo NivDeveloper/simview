@@ -28,6 +28,7 @@ void app_request_quit(App *);
 void app_run(App *);
 void app_step(App *);
 bool app_shot(App *, const char *bmp_path);
+void app_on_ui(App *, void (*fn)(void *), void *user);
 void app_post_event(App *, const Event &);
 Stats app_stats(App *);
 
@@ -80,6 +81,13 @@ class App {
     void Run() { impl::app_run(a_); }
     void Step() { impl::app_step(a_); }
     bool Shot(const char *path) { return impl::app_shot(a_, path); }
+
+    void OnUi(std::function<void()> fn) {
+        cbs_.push_front(std::move(fn));
+        impl::app_on_ui(
+            a_, [](void *u) { (*static_cast<std::function<void()> *>(u))(); },
+            &cbs_.front());
+    }
 
     void PostEvent(const Event &e) { impl::app_post_event(a_, e); }
 

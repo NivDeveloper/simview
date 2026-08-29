@@ -2,6 +2,7 @@
 // over the engine.
 
 #include "../engine/Engine.h"
+#include "../engine/Ui.h"
 
 #include <simview/gpud.h>
 #include <simview/simview.h>
@@ -58,6 +59,7 @@ App *app_init(const Config &c) {
             return nullptr;
         }
     }
+    ui_init(a, c);
     return a;
 }
 
@@ -65,6 +67,10 @@ void app_quit(App *a) {
     if (!a)
         return;
     SDL_WaitForGPUIdle(a->dev);
+    // Before the device dies: the renderer backend holds pipelines and
+    // buffers on it, and the platform backend holds the torn-out
+    // windows.
+    ui_quit(a);
     for (const auto &e : a->pipelines)
         SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
     if (a->field.buf && !a->field.external)
@@ -92,6 +98,11 @@ void app_on_event(App *a, void (*fn)(const Event &, void *), void *user) {
         a->event_cbs.push_front({fn, user});
 }
 
+void app_on_ui(App *a, void (*fn)(void *), void *user) {
+    if (a && fn)
+        a->ui_cbs.push_front({fn, user});
+}
+
 void app_request_quit(App *a) {
     if (a)
         a->quit = true;
@@ -116,12 +127,22 @@ void deliver_posted(App *a) {
 }
 
 void poll(App *a) {
-    deliver_posted(a);
+    deliver_posted(a); // the automation seam is never gated by the UI
+    const bool ui = ui_on(a);
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
+        const bool typing = ui && ui_event(a, ev);
         if (ev.type == SDL_EVENT_QUIT)
             a->quit = true;
+        // Once a panel is torn out, this window is no longer the last
+        // one, so closing it stops producing SDL_EVENT_QUIT — and the
+        // app would run on with only a floating panel to show for it.
+        if (ev.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && a->win &&
+            ev.window.windowID == SDL_GetWindowID(a->win))
+            a->quit = true;
         if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
+            if (typing)
+                continue; // a panel has the keyboard
             const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::KeyDown
                                                         : Event::Type::KeyUp,
                           std::int32_t(ev.key.scancode), ev.key.repeat};
@@ -146,19 +167,34 @@ void app_run(App *a) {
         if (a->quit)
             break;
 
+        const bool ui = ui_on(a);
+        if (ui) {
+            ui_begin(a);
+            in_order(a->ui_cbs, [](const App::Cb &c) { c.fn(c.user); });
+            ui_end(a);
+        }
+
         SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
         SDL_GPUTexture *swap = nullptr;
-        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, a->win, &swap, nullptr,
-                                                   nullptr) ||
-            !swap) {
-            SDL_CancelGPUCommandBuffer(cmd); // minimized: not an error
-            continue;
+        const bool have = SDL_WaitAndAcquireGPUSwapchainTexture(
+                              cmd, a->win, &swap, nullptr, nullptr) &&
+                          swap;
+        if (have) {
+            int tw = 0, th = 0;
+            SDL_GetWindowSizeInPixels(a->win, &tw, &th);
+            render_field(a, cmd, swap, Uint32(tw), Uint32(th),
+                         SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
+            if (ui)
+                ui_draw(a, cmd, swap);
         }
-        int tw = 0, th = 0;
-        SDL_GetWindowSizeInPixels(a->win, &tw, &th);
-        render_field(a, cmd, swap, Uint32(tw), Uint32(th),
-                     SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
-        SDL_SubmitGPUCommandBuffer(cmd);
+        // Outside the acquire: a torn-out panel is its own window and
+        // must keep presenting while this one is minimized.
+        if (ui)
+            ui_viewports(a);
+        if (have)
+            SDL_SubmitGPUCommandBuffer(cmd);
+        else
+            SDL_CancelGPUCommandBuffer(cmd); // minimized: not an error
     }
 }
 
@@ -225,6 +261,14 @@ void app_step(App *a) {
         return;
     deliver_posted(a);
     in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+    // A headless frame builds the UI too: the panels run, their
+    // geometry exists, and nothing is drawn — which is what makes the
+    // callbacks testable without a display.
+    if (ui_on(a)) {
+        ui_begin(a);
+        in_order(a->ui_cbs, [](const App::Cb &c) { c.fn(c.user); });
+        ui_end(a);
+    }
 }
 
 void app_post_event(App *a, const Event &e) {

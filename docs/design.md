@@ -92,7 +92,7 @@ only after SDL's cross-thread command-buffer rules are pinned).
 | dep | policy |
 | --- | --- |
 | SDL3 | PRIVATE (engine-only); no public header names it at all |
-| Dear ImGui + ImPlot (+ ImPlot3D) | vendored under `third_party/`, pinned by commit with LICENSE beside it (lint rule (h)), PRIVATE; one opt-in escape hatch for custom panels, explicitly version-locking |
+| Dear ImGui (+ ImPlot later) | FetchContent, pinned by hash in the root CMakeLists exactly as gpud is; built as `simview_imgui` with warnings silenced at the target. The UI layer is not optional to the engine; the opt-in door is how a CONSUMER reaches it |
 | tensor | absent, forever — its data arrives, its types never do |
 | gpud | the substrate: the ENGINE builds on it (gpud::sdl owns device bring-up; linked PRIVATE, gpud::gpud PUBLIC for the door's include dirs, FetchContent-pinned by hash). The opt-in door `gpud.h` speaks its vocabulary; the core never names it |
 | shader toolchain | absent for consumers: internal shaders ship as committed bytecode (SPIR-V/MSL/DXIL); `shaders/regen.sh` is dev-only |

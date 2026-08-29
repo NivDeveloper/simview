@@ -13,6 +13,9 @@
 #include <string>
 #include <vector>
 
+// The UI layer's context, opaque here so Draw.cpp never sees ImGui.
+struct ImGuiContext;
+
 namespace sv {
 
 // The one App state, in impl:: because the impl's opaque `App *`
@@ -59,6 +62,16 @@ struct App {
         gpud::BufferSource src{};
     };
     FieldState field; // w == 0 means "no field yet"
+
+    // The UI layer. Appended last on purpose: FieldState's aggregate
+    // initialisers are positional, so a member inserted above them
+    // mis-assigns in silence.
+    struct UiState {
+        ::ImGuiContext *ctx = nullptr;
+        std::string ini;
+    };
+    UiState ui;
+    std::forward_list<Cb> ui_cbs; // panel callbacks, registration order
 };
 } // namespace impl
 
