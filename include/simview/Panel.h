@@ -54,13 +54,12 @@ class Panel {
     Panel &Separator() { return add(impl::WidgetKind::Separator, "", nullptr); }
 
     Panel &Slider(const char *label, float &value, float min, float max) {
-        impl::WidgetDesc d;
-        d.label = label;
-        d.kind = impl::WidgetKind::Slider;
-        d.target = &value;
-        d.min = min;
-        d.max = max;
-        impl::panel_widget(p_, d);
+        impl::panel_widget(p_,
+                           impl::WidgetDesc{.label = label,
+                                            .kind = impl::WidgetKind::Slider,
+                                            .target = &value,
+                                            .min = min,
+                                            .max = max});
         return *this;
     }
 
@@ -69,23 +68,20 @@ class Panel {
     }
 
     template <class F> Panel &Button(const char *label, F on_click) {
-        impl::WidgetDesc d;
-        d.label = label;
-        d.kind = impl::WidgetKind::Button;
-        d.user = new F(std::move(on_click));
-        d.on_click = [](void *u) { (*static_cast<F *>(u))(); };
-        d.free = [](void *u) { delete static_cast<F *>(u); };
-        impl::panel_widget(p_, d);
+        impl::panel_widget(
+            p_, impl::WidgetDesc{
+                    .label = label,
+                    .kind = impl::WidgetKind::Button,
+                    .on_click = [](void *u) { (*static_cast<F *>(u))(); },
+                    .user = new F(std::move(on_click)),
+                    .free = [](void *u) { delete static_cast<F *>(u); }});
         return *this;
     }
 
   private:
     Panel &add(impl::WidgetKind k, const char *label, void *target) {
-        impl::WidgetDesc d;
-        d.label = label;
-        d.kind = k;
-        d.target = target;
-        impl::panel_widget(p_, d);
+        impl::panel_widget(
+            p_, impl::WidgetDesc{.label = label, .kind = k, .target = target});
         return *this;
     }
 

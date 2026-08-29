@@ -116,44 +116,52 @@ class Plot {
     Plot &borrowed(impl::SeriesKind k, const char *name, const void *x,
                    const void *y, std::size_t n, DType dt,
                    const SeriesStyle &s) {
-        impl::SeriesDesc d;
-        d.name = name;
-        d.kind = k;
-        d.dtype = dt;
-        d.data = {x, y, n};
-        d.style = s;
-        impl::plot_series(p_, d);
+        impl::plot_series(p_, impl::SeriesDesc{.name = name,
+                                               .kind = k,
+                                               .dtype = dt,
+                                               .data = {x, y, n},
+                                               .style = s});
         return *this;
     }
 
     template <class F>
     Plot &pulled(impl::SeriesKind k, const char *name, F pull,
                  const SeriesStyle &s) {
-        using Ret = std::invoke_result_t<F>;
-        impl::SeriesDesc d;
-        d.name = name;
-        d.kind = k;
-        d.style = s;
-        d.user = new F(std::move(pull));
-        d.free = [](void *u) { delete static_cast<F *>(u); };
-        if constexpr (std::ranges::contiguous_range<std::remove_cvref_t<Ret>>) {
-            using T = std::ranges::range_value_t<std::remove_cvref_t<Ret>>;
-            d.dtype = series_dtype<T>();
-            d.src = [](void *u) {
-                decltype(auto) r = (*static_cast<F *>(u))();
-                return impl::SeriesData{nullptr, std::ranges::data(r),
-                                        std::ranges::size(r)};
-            };
+        using Ret = std::remove_cvref_t<std::invoke_result_t<F>>;
+        if constexpr (std::ranges::contiguous_range<Ret>) {
+            impl::plot_series(
+                p_,
+                impl::SeriesDesc{
+                    .name = name,
+                    .kind = k,
+                    .dtype = series_dtype<std::ranges::range_value_t<Ret>>(),
+                    .src =
+                        [](void *u) {
+                            decltype(auto) r = (*static_cast<F *>(u))();
+                            return impl::SeriesData{nullptr,
+                                                    std::ranges::data(r),
+                                                    std::ranges::size(r)};
+                        },
+                    .user = new F(std::move(pull)),
+                    .free = [](void *u) { delete static_cast<F *>(u); },
+                    .style = s});
         } else {
-            using T = typename std::remove_cvref_t<Ret>::value_type;
-            d.dtype = series_dtype<T>();
-            d.src = [](void *u) {
-                decltype(auto) r = (*static_cast<F *>(u))();
-                return impl::SeriesData{r.x.data(), r.y.data(),
-                                        std::min(r.x.size(), r.y.size())};
-            };
+            impl::plot_series(
+                p_, impl::SeriesDesc{
+                        .name = name,
+                        .kind = k,
+                        .dtype = series_dtype<typename Ret::value_type>(),
+                        .src =
+                            [](void *u) {
+                                decltype(auto) r = (*static_cast<F *>(u))();
+                                return impl::SeriesData{
+                                    r.x.data(), r.y.data(),
+                                    std::min(r.x.size(), r.y.size())};
+                            },
+                        .user = new F(std::move(pull)),
+                        .free = [](void *u) { delete static_cast<F *>(u); },
+                        .style = s});
         }
-        impl::plot_series(p_, d);
         return *this;
     }
 

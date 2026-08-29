@@ -185,6 +185,11 @@ consumer. PODs and enums shared by both strata (`Config`,
 `<simview/simview.h>`; `gpud.h` is opt-in and never included by
 the umbrella.
 
+**Build a descriptor with designated initialisers**, never a default
+construction followed by a run of assignments: `Desc{.a = x, .b = y}`
+says what the value IS in one expression, and a field that is meant to
+keep its default is then visibly absent rather than merely forgotten.
+
 **Sugar breathes**: between inline definitions longer than one line
 there is always a blank line; one-liners may pack together.
 **Examples read in chunks**: blank lines separate the logical stages
