@@ -118,6 +118,8 @@ class App {
         return Scene().Particles(d);
     }
 
+    sv::Lines Lines(const LinesDesc &d = {}) { return Scene().Lines(d); }
+
     App &SceneRange(const Range2 &r) {
         Scene().Range(r);
         return *this;
@@ -134,6 +136,10 @@ class App {
     template <class P>
     sv::Particles Particles(const P &p, const ParticlesDesc &d = {}) {
         return Scene().Particles(p, d);
+    }
+
+    template <class P> sv::Lines Lines(const P &p, const LinesDesc &d = {}) {
+        return Scene().Lines(p, d);
     }
 
   private:

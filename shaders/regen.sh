@@ -9,7 +9,7 @@ set -eu
 cd "$(dirname "$0")"
 SLANGC=${SLANGC:-$(command -v slangc || echo /usr/local/bin/slangc)}
 [ -x "$SLANGC" ] || { echo "regen: slangc not found"; exit 1; }
-OUT=../src/draw/bytecode
+OUT=../src/scene/bytecode
 mkdir -p "$OUT"
 
 emit() { # source-name, array-name, file

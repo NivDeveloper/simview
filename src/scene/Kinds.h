@@ -89,6 +89,7 @@ struct KindOps {
 
 extern const KindOps kFieldOps;
 extern const KindOps kParticlesOps;
+extern const KindOps kLinesOps;
 
 // The pipeline for a kind AND a target format, created on demand and
 // cached on the App. Keyed on both: matching format alone would hand
