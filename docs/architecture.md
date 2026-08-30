@@ -99,7 +99,15 @@ struct SceneItem { App *app; const KindOps *ops; void *state; };
 ```
 
 A new kind becomes one file plus one table entry plus a shader, with
-zero edits to existing functions. The table is chosen over virtual
+zero edits to existing engine functions. **That claim was measured,
+not asserted**: `Lines` was added after the table, and nothing in
+`Scene.cpp`, `Pipelines.cpp`, `Field.cpp`, `Particles.cpp`, `Frame.cpp`
+or `Device.cpp` changed. The honest other half: a kind still costs
+about 55 lines of PUBLIC header across three files — its `Desc`, its
+handle class, two `sv::Scene` methods and two `App` forwarders —
+because `sv::Scene` is the one place a kind is spelled for the user.
+The engine claim holds exactly; the surface claim was never made and
+does not. The table is chosen over virtual
 inheritance because it is **data**: it carries the shader bytecode and
 blend state too, which is what removes the branching from
 `pipeline_for` that virtuals alone would leave behind. The virtual-call
@@ -254,7 +262,7 @@ symptom to hardcode.
 | pass | change | why then |
 | --- | --- | --- |
 | 1 | `tests/` fold + `Palette.h`; `sv::probe` + its gate; the Presenter port and one frame order | **Shipped.** Clears the ground, then puts the loop a user runs under the harness |
-| 2 | Scene kinds → the ops table | Unblocks 3-D kinds; 13 branch sites become 0 |
+| 2 | Scene kinds → the ops table; `src/` folded by layer; `Lines` as the measurement | **Shipped.** 13 branch sites became 0, `SceneItem` 160 → 24 B; the third kind cost zero engine edits and ~55 surface lines |
 | 3 | Fold `src/` by layer; split `App.cpp` along the seams already in it | Mostly falls out of pass 1 and 2 |
 | 4 | Compose `impl::App` from subsystem states | Falls out of pass 3 |
 | 5 | `Sync` to `include/simview/sync/`; lint learns subfolders | Independent; sets the precedent for `scene/` |

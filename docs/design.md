@@ -169,9 +169,11 @@ changed), begins ONE render pass, and draws each item through
   alignment between a field and the points over it is structural
   rather than coincidental. `SceneRange` names it explicitly when
   there is no field to inherit from.
-- **A new scene kind costs its three sites PLUS a pipeline and a
-  shader** — irreducible, and worth saying so nobody expects the
-  series-level cheapness a plot kind has. The three sites are one
+- **A new scene kind is one file plus a shader, and nothing in the
+  engine learns it arrived** — measured by adding `Lines` after the
+  kinds became data (`docs/architecture.md`). What it still costs is
+  the public surface, ~55 lines: `sv::Scene` is the one place a kind
+  is spelled for the user. Before the ops table the three sites were one
   `impl::*_create(Scene, …)`, one `case` in `item_draw`, and one
   method on `sv::Scene`. **`sv::Scene` is the one place a kind is
   spelled for the user**: `App` and `View` both hand one out, so
