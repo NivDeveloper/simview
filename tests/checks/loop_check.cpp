@@ -2,7 +2,9 @@
 // registration order and delivers posted events, quit is idempotent,
 // and a headless Run returns rather than blocking.
 #include "harness/Harness.h"
+#include "probe/Probe.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -60,6 +62,20 @@ int main() {
     CHECK_EQ(app.Stats().frames, std::uint64_t(2));
     CHECK_EQ(app.Stats().pipelines,
              std::uint64_t(1)); // one format, one pipeline
+
+    // The frame flips every tracked Sync ONCE, before its callbacks:
+    // a Publish before a Step is what that Step's callbacks see.
+    // Tracked twice, counted once.
+    Sync<int> s;
+    impl::scene_track(app.Scene().Raw(), s.Gate());
+    impl::scene_track(app.Scene().Raw(), s.Gate());
+    CHECK_EQ(probe::gate_count(app.Raw()), std::size_t(1));
+    s.Publish();
+    std::uint64_t seen = 0;
+    app.OnFrame([&] { seen = s.Generation(); });
+    app.Step();
+    CHECK_EQ(seen, std::uint64_t(1));
+    CHECK_EQ(s.Generation(), std::uint64_t(1));
 
     app.RequestQuit();
     app.RequestQuit(); // idempotent

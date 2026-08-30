@@ -6,6 +6,19 @@
 #include <simview/simview.h>
 
 namespace sv {
+namespace {
+
+// The flip is the FIRST thing a frame does: every tracked Sync moves
+// shown onto current once, so the callbacks, the panels and the scene
+// all read one generation. One call per entry path (run, step, shot),
+// never inside frame_build or frame_render — a frame that flipped
+// twice would build its panels on one generation and draw another.
+void frame_sync(impl::App *a) {
+    for (impl::SyncGate g : a->gates)
+        impl::sync_gate_flip(g);
+}
+
+} // namespace
 
 void frame_build(impl::App *a) {
     // Before the UI frame: a draw list must never record a texture
@@ -133,6 +146,7 @@ void app_run(App *a) {
     a->platform.quit = false;
     while (!a->platform.quit) {
         poll(a);
+        frame_sync(a);
         in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
         // A frame callback may quit; nothing after this point should
         // run when it did.
@@ -148,6 +162,7 @@ void app_step(App *a) {
     if (!a)
         return;
     deliver_posted(a);
+    frame_sync(a);
     in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
     // A headless frame builds the UI too: the panels run, their
     // geometry exists, and nothing is drawn — which is what makes the
@@ -200,7 +215,11 @@ bool app_shot(App *a, const char *path) {
     // The same frame app_run draws, into a texture instead of a
     // window. The order lives in frame_render, once — the readback
     // included, because it has to be recorded after the drawing and
-    // before the submit.
+    // before the submit. A composited shot reuses the draw data the
+    // last Step built, so it shows what THAT frame flipped to; a plain
+    // shot is a frame of its own and flips like one.
+    if (!composited)
+        frame_sync(a);
     ShotTarget st{a, tex, tb, w, h, ti.format};
     frame_render(a, shot_presenter(&st));
 

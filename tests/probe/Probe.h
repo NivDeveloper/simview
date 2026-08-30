@@ -13,6 +13,8 @@
 
 #include <simview/Types.h>
 
+#include <cstddef>
+
 struct ImGuiContext;
 struct ImPlotContext;
 struct ImPlot3DContext;
@@ -27,6 +29,10 @@ ImPlot3DContext *plot3d_context(impl::App *);
 // The size a view's texture currently holds — how a check asks
 // whether the panel's room reached the render target.
 Extent2 view_extent(impl::App *, const char *title);
+
+// How many Syncs the frame flips — one per Sync however many scenes
+// draw it.
+std::size_t gate_count(impl::App *);
 
 } // namespace probe
 } // namespace sv

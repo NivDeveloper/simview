@@ -4,6 +4,7 @@
 #include "scene/Field.h"
 #include "scene/Lines.h"
 #include "scene/Particles.h"
+#include "sync/Sync.h"
 
 namespace sv {
 
@@ -20,6 +21,7 @@ namespace impl {
 template <class> inline constexpr bool no_door = false;
 
 void scene_range(Scene, const Range2 &);
+void scene_track(Scene, SyncGate);
 Scene app_scene(App *);
 Scene view_create(App *, const ViewDesc &);
 

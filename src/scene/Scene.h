@@ -13,6 +13,7 @@
 
 #include <simview/App.h>
 #include <simview/Scene.h>
+#include <simview/sync/Sync.h>
 
 #include <SDL3/SDL.h>
 #include <gpud/Sdl.h>
@@ -39,6 +40,7 @@ struct SceneState {
     SDL_GPUDevice *dev = nullptr;
     Stats *stats = nullptr;
     std::vector<PipelineEntry> *pipelines = nullptr;
+    std::vector<SyncGate> *gates = nullptr; // the App's, flipped per frame
     std::list<SceneItem> items;
     // The range every item maps into. Unset means: the first item with
     // a natural grid, in cells, so a lattice and the points over it

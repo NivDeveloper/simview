@@ -32,6 +32,7 @@ App *app_init(const Config &c) {
     a->scene.dev = pl.dev;
     a->scene.stats = &a->stats;
     a->scene.pipelines = &a->pipelines;
+    a->scene.gates = &a->gates;
     if (!c.headless) {
         pl.win = SDL_CreateWindow(c.title, int(c.size.w), int(c.size.h),
                                   SDL_WINDOW_RESIZABLE);
@@ -64,6 +65,9 @@ void app_quit(App *a) {
         scene_release(v.scene);
         target_release(pl.dev, v.target);
     }
+    for (SyncGate g : a->gates)
+        sync_gate_release(g);
+    a->gates.clear();
     if (pl.win) {
         SDL_ReleaseWindowFromGPUDevice(pl.dev, pl.win);
         SDL_DestroyWindow(pl.win);

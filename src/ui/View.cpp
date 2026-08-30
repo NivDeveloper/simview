@@ -34,6 +34,7 @@ Scene view_create(App *a, const ViewDesc &d) {
     v.scene.dev = a->platform.dev;
     v.scene.stats = &a->stats;
     v.scene.pipelines = &a->pipelines;
+    v.scene.gates = &a->gates;
     a->ui.cbs.push_front(
         {[](void *u) { view_draw(*static_cast<View *>(u)); }, &v});
     return Scene{&v.scene};

@@ -126,5 +126,20 @@ void scene_range(Scene s, const Range2 &r) {
         sc->range = r;
 }
 
+// Track a Sync for the per-frame flip. The list is the App's, so a Sync
+// drawn in two scenes is tracked once; the registry holds its own
+// reference, so a Sync that dies first leaves a dead gate, not a
+// dangling one.
+void scene_track(Scene s, SyncGate g) {
+    SceneState *sc = static_cast<SceneState *>(s.p);
+    if (!sc || !sc->gates || !g)
+        return;
+    for (SyncGate have : *sc->gates)
+        if (have.p == g.p)
+            return;
+    sync_gate_retain(g);
+    sc->gates->push_back(g);
+}
+
 } // namespace impl
 } // namespace sv
