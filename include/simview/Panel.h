@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.h"
+#include "sync/Sync.h"
 
 #include <concepts>
 #include <cstdint>
@@ -18,7 +19,8 @@ enum class WidgetKind : std::int32_t {
     Button,
     Slider,
     Checkbox,
-    Value
+    Value,
+    Transport
 };
 
 struct Panel {
@@ -92,6 +94,10 @@ class Panel {
                 .user = new F(std::move(pull)),
                 .free = [](void *u) { delete static_cast<F *>(u); }});
         return *this;
+    }
+
+    Panel &Transport(Executor &sim) {
+        return add(impl::WidgetKind::Transport, "", sim.Raw().p);
     }
 
     template <class F> Panel &Button(const char *label, F on_click) {

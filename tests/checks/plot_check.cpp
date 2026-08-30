@@ -385,6 +385,28 @@ int main() {
         }
     }
 
+    // The transport: app.Controls(sim) is a panel led by a widget that
+    // READS the Executor. Its buttons are eyes-only like every button;
+    // what a headless check can pin is that the panel builds geometry
+    // and that it reflects state — the label it draws is computed from
+    // executor_playing, so a running sim and a paused one differ.
+    {
+        App ac({.headless = true});
+        if (ac) {
+            Executor sim([] {});
+            auto ctl = ac.Controls(sim);
+            REQUIRE(bool(ctl));
+            ctl.Slider("chained", *new float(0.0f), 0.0f, 1.0f);
+            settle(ac);
+            CHECK_GT(total_vertices(), 0);
+            // The transport refuses to exist with nothing to drive.
+            CHECK(!impl::panel_widget(
+                ac.Panel("bare").Raw(),
+                impl::WidgetDesc{.kind = impl::WidgetKind::Transport}));
+            CHECK(refused("needs an Executor"));
+        }
+    }
+
     {
         App big({.headless = true});
         std::vector<float> many(100000);

@@ -132,6 +132,10 @@ class App {
         return sv::Panel{impl::panel_create(a_, title)};
     }
 
+    sv::Panel Controls(Executor &sim, const char *title = "controls") {
+        return Panel(title).Transport(sim);
+    }
+
     template <class P> sv::Field Field(const P &p, const FieldDesc &d) {
         return Scene().Field(p, d);
     }

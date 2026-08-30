@@ -18,6 +18,8 @@
 #include <implot.h>
 #include <implot3d.h>
 
+#include <simview/sync/Sync.h>
+
 #include <algorithm>
 #include <climits>
 #include <cstdio>
@@ -361,6 +363,69 @@ void panel_draw(impl::PanelState &p) {
         case impl::WidgetKind::Checkbox:
             ImGui::Checkbox(w.label.c_str(), static_cast<bool *>(w.target));
             break;
+        case impl::WidgetKind::Transport: {
+            // Every control READS the Executor's state and WRITES it
+            // back through the any-thread impl functions. There is no
+            // shadow, so the panel, the keys and the code cannot
+            // disagree about what the sim is doing. The clicks run
+            // during the UI build, CPU-only, like every button.
+            const impl::Executor ex{w.target};
+            const bool playing = impl::executor_playing(ex);
+            if (ImGui::Button(playing ? "||" : ">"))
+                playing ? impl::executor_pause(ex) : impl::executor_play(ex);
+            ImGui::SameLine();
+            if (ImGui::Button(">|"))
+                impl::executor_advance(ex, 1);
+            ImGui::SameLine();
+            // "Run N": the jump vklib could not have, because only an
+            // Executor that counts can promise EXACTLY N.
+            static int run_n = 100;
+            ImGui::SetNextItemWidth(72.0f);
+            ImGui::InputInt("##n", &run_n, 0, 0);
+            ImGui::SameLine();
+            if (ImGui::Button(">>") && run_n > 0)
+                impl::executor_advance(ex, std::uint64_t(run_n));
+            ImGui::SameLine();
+            if (ImGui::Button("restart"))
+                impl::executor_restart(ex);
+
+            const Tick t = impl::executor_tick(ex);
+            ImGui::Text("n = %llu   t = %.4g   %.1f /s",
+                        static_cast<unsigned long long>(t.n), t.time,
+                        impl::executor_rate(ex));
+
+            // Speed: vklib's four presets, PLUS the slider it never
+            // exposed — a preset list was the thing users could not
+            // get past.
+            static constexpr struct {
+                const char *label;
+                std::uint64_t ns;
+            } kPresets[] = {{"uncapped", 0},
+                            {"60 /s", 16'666'667},
+                            {"10 /s", 100'000'000},
+                            {"1 /s", 1'000'000'000}};
+            const std::uint64_t cur = impl::executor_delay_ns(ex);
+            int idx = -1;
+            for (int i = 0; i < 4; ++i)
+                if (kPresets[i].ns == cur)
+                    idx = i;
+            ImGui::SetNextItemWidth(110.0f);
+            if (ImGui::BeginCombo("##speed",
+                                  idx >= 0 ? kPresets[idx].label : "custom")) {
+                for (int i = 0; i < 4; ++i)
+                    if (ImGui::Selectable(kPresets[i].label, i == idx))
+                        impl::executor_set_delay_ns(ex, kPresets[i].ns);
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            // Log slider over 0..1 s: a delay is a ratio, not a sum.
+            float ms = float(cur) / 1e6f;
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::SliderFloat("##delay", &ms, 0.0f, 1000.0f, "%.1f ms",
+                                   ImGuiSliderFlags_Logarithmic))
+                impl::executor_set_delay_ns(ex, std::uint64_t(ms * 1e6f));
+            break;
+        }
         case impl::WidgetKind::Value: {
             // Bound or pulled, the same duality a series has.
             const double v = w.value ? w.value(w.user)

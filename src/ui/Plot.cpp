@@ -217,6 +217,11 @@ bool panel_widget(Panel p, const WidgetDesc &d) {
             d.free(d.user);
         return set_error("a checkbox needs a value to toggle"), false;
     }
+    if (d.kind == WidgetKind::Transport && !d.target) {
+        if (d.free)
+            d.free(d.user);
+        return set_error("a transport needs an Executor to drive"), false;
+    }
     if (d.kind == WidgetKind::Value && !d.target && !d.value) {
         if (d.free)
             d.free(d.user);
