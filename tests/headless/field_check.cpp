@@ -48,7 +48,18 @@ int main() {
     App app({.headless = true});
     auto f1 = app.Field({.extent = {8, 8}});
     CHECK(bool(f1));
-    CHECK(!app.Field({.extent = {8, 8}})); // one field per App
+
+    // A scene is a LIST: a second field is another item, and both
+    // draw into the one pass.
+    auto f2 = app.Field({.extent = {8, 8}});
+    CHECK(bool(f2));
+    std::vector<float> small(64, 0.5f);
+    CHECK(f1.Update(small));
+    CHECK(f2.Update(small));
+    Bmp two;
+    CHECK(harness::shot(app, "two", two));
+    CHECK_EQ(app.Stats().draws, std::uint64_t(2));
+    CHECK_EQ(app.Stats().frames, std::uint64_t(1)); // a frame, not a field
     double d[64]{};
     CHECK(!impl::field_update(impl::Field{app.Raw()}, d, DType::f64, 64));
     float shortv[8]{};

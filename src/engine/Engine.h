@@ -53,7 +53,10 @@ struct App {
     };
     std::vector<PipelineEntry> pipelines; // one per target format
 
-    // Move 2: at most one field; the window is the field.
+    // What a scene is made of. One kind today; the switch in
+    // item_draw is where a second one lands.
+    enum class ItemKind : std::int32_t { Field };
+
     struct FieldState {
         Uint32 w = 0, h = 0;
         Sint32 cmap = 0;
@@ -65,7 +68,20 @@ struct App {
         // The pull source an external field re-asks at every draw.
         gpud::BufferSource src{};
     };
-    FieldState field; // w == 0 means "no field yet"
+    // An item knows its App because an upload needs the device.
+    struct SceneItem {
+        App *app = nullptr;
+        ItemKind kind = ItemKind::Field;
+        FieldState field{};
+    };
+
+    // The scene: what is drawn to a target, in registration order.
+    // std::list because items are non-copyable in spirit and their
+    // addresses are handed out as Field handles.
+    struct SceneState {
+        std::list<SceneItem> items;
+    };
+    SceneState scene;
 
     // The UI layer. Appended last on purpose: FieldState's aggregate
     // initialisers are positional, so a member inserted above them
@@ -144,14 +160,15 @@ struct App {
 };
 } // namespace impl
 
+// Draw.cpp: prepare every item, then ONE pass — the clear belongs to
+// the scene, not to an item, or only the first item could composite.
+void scene_draw(impl::App::SceneState &, SDL_GPUCommandBuffer *,
+                SDL_GPUTexture *target, Uint32 tw, Uint32 th,
+                SDL_GPUTextureFormat);
+
 // Plots.cpp: one panel each, drawn from the ui callbacks they register.
 void plot_draw(impl::App::PlotState &);
 void panel_draw(impl::App::PanelState &);
-
-// Draw.cpp: upload-if-dirty then render the field into target — the
-// ONE pass both the window and shot() record.
-void render_field(impl::App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target,
-                  Uint32 tw, Uint32 th, SDL_GPUTextureFormat);
 
 // The per-thread sentence behind sv::LastError().
 void set_error(std::string msg);

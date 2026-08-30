@@ -76,10 +76,12 @@ void app_quit(App *a) {
     ui_quit(a);
     for (const auto &e : a->pipelines)
         SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
-    if (a->field.buf && !a->field.external)
-        SDL_ReleaseGPUBuffer(a->dev, a->field.buf);
-    if (a->field.staging)
-        SDL_ReleaseGPUTransferBuffer(a->dev, a->field.staging);
+    for (App::SceneItem &it : a->scene.items) {
+        if (it.field.buf && !it.field.external)
+            SDL_ReleaseGPUBuffer(a->dev, it.field.buf);
+        if (it.field.staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, it.field.staging);
+    }
     if (a->win) {
         SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
         SDL_DestroyWindow(a->win);
@@ -185,8 +187,9 @@ void app_run(App *a) {
         if (have) {
             int tw = 0, th = 0;
             SDL_GetWindowSizeInPixels(a->win, &tw, &th);
-            render_field(a, cmd, swap, Uint32(tw), Uint32(th),
-                         SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
+            ++a->stats.frames;
+            scene_draw(a->scene, cmd, swap, Uint32(tw), Uint32(th),
+                       SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
             if (ui)
                 ui_draw(a, cmd, swap);
         }
@@ -204,10 +207,6 @@ void app_run(App *a) {
 Field field_create(App *a, const FieldDesc &d) {
     if (!a)
         return {};
-    if (a->field.w)
-        return set_error("one field per App for now — a second field is a "
-                         "planned addition"),
-               Field{};
     if (d.dtype != DType::f32)
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
@@ -230,32 +229,36 @@ Field field_create(App *a, const FieldDesc &d) {
             SDL_ReleaseGPUTransferBuffer(a->dev, staging);
         return {};
     }
-    a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo,
+    App::SceneItem &it = a->scene.items.emplace_back();
+    it.app = a;
+    it.kind = App::ItemKind::Field;
+    it.field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo,
                 d.hi,       buf,        staging,       false};
-    return Field{a};
+    return Field{&it};
 }
 
 bool field_update(Field f, const void *data, DType t, std::size_t count) {
-    App *a = static_cast<App *>(f.p);
-    if (!a || !data)
+    App::SceneItem *it = static_cast<App::SceneItem *>(f.p);
+    if (!it || !data)
         return set_error("field_update: null"), false;
-    if (a->field.external)
+    App *a = it->app;
+    if (it->field.external)
         return set_error("this field reads a caller-owned source, "
                          "re-resolved each frame — update the producer, "
                          "not the field"),
                false;
     if (t != DType::f32)
         return set_error("fields hold f32 values only for now"), false;
-    if (count != std::size_t(a->field.w) * a->field.h)
+    if (count != std::size_t(it->field.w) * it->field.h)
         return set_error("field_update: count must equal w*h"), false;
     // cycle=true: per-frame streaming; the frame in flight may still
     // read the previous contents (SDL's sanctioned ring).
-    void *map = SDL_MapGPUTransferBuffer(a->dev, a->field.staging, true);
+    void *map = SDL_MapGPUTransferBuffer(a->dev, it->field.staging, true);
     if (!map)
         return set_error(SDL_GetError()), false;
     std::memcpy(map, data, count * 4);
-    SDL_UnmapGPUTransferBuffer(a->dev, a->field.staging);
-    a->field.dirty = true;
+    SDL_UnmapGPUTransferBuffer(a->dev, it->field.staging);
+    it->field.dirty = true;
     return true;
 }
 
@@ -284,8 +287,15 @@ Stats app_stats(App *a) { return a ? a->stats : Stats{}; }
 bool app_shot(App *a, const char *path) {
     if (!a || !path)
         return set_error("shot: null"), false;
-    const Uint32 w = a->field.w ? a->field.w * 2 : 512;
-    const Uint32 h = a->field.h ? a->field.h * 2 : 512;
+    // Sized from the first field so the shot carries no letterbox
+    // bars; 512 square when the scene has none.
+    Uint32 w = 512, h = 512;
+    for (const App::SceneItem &it : a->scene.items)
+        if (it.kind == App::ItemKind::Field && it.field.w) {
+            w = it.field.w * 2;
+            h = it.field.h * 2;
+            break;
+        }
 
     SDL_GPUTextureCreateInfo ti{};
     ti.type = SDL_GPU_TEXTURETYPE_2D;
@@ -310,7 +320,8 @@ bool app_shot(App *a, const char *path) {
     }
 
     SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
-    render_field(a, cmd, tex, w, h, ti.format);
+    ++a->stats.frames;
+    scene_draw(a->scene, cmd, tex, w, h, ti.format);
     SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTextureRegion reg{};
     reg.texture = tex;
@@ -351,18 +362,17 @@ Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
         return set_error("a field needs a source that can answer — the "
                          "BufferSource's fn is null"),
                Field{};
-    if (a->field.w)
-        return set_error("one field per App for now — a second field is a "
-                         "planned addition"),
-               Field{};
     if (d.dtype != DType::f32)
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
         return set_error("a field needs a non-zero extent"), Field{};
-    a->field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
+    App::SceneItem &it = a->scene.items.emplace_back();
+    it.app = a;
+    it.kind = App::ItemKind::Field;
+    it.field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
                 nullptr,    nullptr,    false,         true};
-    a->field.src = src;
-    return Field{a};
+    it.field.src = src;
+    return Field{&it};
 }
 
 } // namespace impl

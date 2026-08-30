@@ -79,17 +79,14 @@ SDL_GPUGraphicsPipeline *display_pipeline(impl::App *a,
     return p;
 }
 
-} // namespace sv
+namespace {
 
-namespace sv {
-
-void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
-                  SDL_GPUTexture *target, Uint32 tw, Uint32 th,
-                  SDL_GPUTextureFormat tf) {
-    ++a->stats.frames;
-    impl::App::FieldState &f = a->field;
+// Everything an item needs done with no render pass open: the pull
+// that asks a source which buffer holds the data now, and the upload
+// of anything the host has changed.
+void item_prepare(impl::App::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
+    impl::App::FieldState &f = it.field;
     if (f.external) {
-        // The pull: ask the source which buffer holds the data NOW.
         gpud::Buffer *b = f.src.current();
         f.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
     }
@@ -100,33 +97,41 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
         SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
         SDL_EndGPUCopyPass(cp);
         f.dirty = false;
-        ++a->stats.uploads;
+        ++it.app->stats.uploads;
     }
+}
 
-    SDL_GPUColorTargetInfo ct{};
-    ct.texture = target;
-    ct.clear_color = {0.09f, 0.09f, 0.10f, 1.0f};
-    ct.load_op = SDL_GPU_LOADOP_CLEAR;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    SDL_GPUGraphicsPipeline *pipe =
-        (f.w && f.buf) ? display_pipeline(a, tf) : nullptr;
-    if (pipe) {
-        // Aspect-fit: scale window uv so the field fills the largest
+// One item into an already-open pass. The switch is the whole cost of
+// a new scene kind, beside its pipeline and shader.
+void item_draw(impl::App::SceneItem &it, SDL_GPUCommandBuffer *cmd,
+               SDL_GPURenderPass *pass, Uint32 tw, Uint32 th,
+               SDL_GPUTextureFormat tf) {
+    impl::App *a = it.app;
+    switch (it.kind) {
+    case impl::App::ItemKind::Field: {
+        impl::App::FieldState &f = it.field;
+        if (!f.w || !f.buf)
+            return;
+        SDL_GPUGraphicsPipeline *pipe = display_pipeline(a, tf);
+        if (!pipe)
+            return;
+
+        // Aspect-fit: scale target uv so the field fills the largest
         // centered rectangle; outside samples paint the bar color.
         const float wa = float(tw) / float(th);
         const float fa = float(f.w) / float(f.h);
+        float sx = 1.0f, sy = 1.0f;
+        if (wa > fa)
+            sx = wa / fa; // target wider: bars left/right
+        else
+            sy = fa / wa; // target taller: bars top/bottom
+
         DrawParams p{};
         p.w = f.w;
         p.h = f.h;
         p.cmap = f.cmap;
         p.lo = f.lo;
         p.hi = f.hi;
-        float sx = 1.0f, sy = 1.0f;
-        if (wa > fa)
-            sx = wa / fa; // window wider: bars left/right
-        else
-            sy = fa / wa; // window taller: bars top/bottom
         p.uvscale[0] = sx;
         p.uvscale[1] = sy;
         p.uvoff[0] = (1.0f - sx) * 0.5f;
@@ -136,7 +141,29 @@ void render_field(impl::App *a, SDL_GPUCommandBuffer *cmd,
         SDL_BindGPUFragmentStorageBuffers(pass, 0, &f.buf, 1);
         SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
         ++a->stats.draws;
+        break;
     }
+    }
+}
+
+} // namespace
+
+void scene_draw(impl::App::SceneState &sc, SDL_GPUCommandBuffer *cmd,
+                SDL_GPUTexture *target, Uint32 tw, Uint32 th,
+                SDL_GPUTextureFormat tf) {
+    for (impl::App::SceneItem &it : sc.items)
+        item_prepare(it, cmd);
+
+    // The clear belongs to the SCENE. An item that cleared would erase
+    // whatever the item before it drew.
+    SDL_GPUColorTargetInfo ct{};
+    ct.texture = target;
+    ct.clear_color = {0.09f, 0.09f, 0.10f, 1.0f};
+    ct.load_op = SDL_GPU_LOADOP_CLEAR;
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    for (impl::App::SceneItem &it : sc.items)
+        item_draw(it, cmd, pass, tw, th, tf);
     SDL_EndGPURenderPass(pass);
 }
 

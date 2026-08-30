@@ -35,8 +35,7 @@ int main() {
     auto f = app.Field(src, {.extent = {W, H}});
     REQUIRE(bool(f));
 
-    CHECK(!f.Update(v));                        // pulled, not pushed
-    CHECK(!app.Field(src, {.extent = {W, H}})); // one field per App
+    CHECK(!f.Update(v)); // pulled, not pushed
 
     Bmp img;
     CHECK(harness::shot(app, "gpud", img));
