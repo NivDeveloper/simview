@@ -2,7 +2,7 @@
 // and the Channel's generation and tearing guarantees.
 #include "harness/Check.h"
 
-#include <simview/Sync.h>
+#include <simview/sync/Sync.h>
 
 #include <chrono>
 #include <cstdio>

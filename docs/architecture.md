@@ -199,18 +199,22 @@ src/
 `shaders/*.slang` stays at the repo root as a source; its generated
 bytecode lives beside the code that includes it.
 
-**`include/` stays flat for now.** Ten headers is grep-able and
-splitting it is churn. The rule: a subfolder when one group reaches
-four headers. `Sync` moves to `include/simview/sync/` first — it is an
-Executor/Channel concurrency layer with no dependency on simview and no
-use *by* simview, so the subfolder says what it is. That move requires
-`tools/lint.sh` rule (a) to learn about subfolders: its include
-whitelist is a flat filename alternation and its loop is
-`include/simview/*.h`. `scene/` will follow when a third kind lands.
+**`include/` has two subfolders.** `sync/Sync.h` — an
+Executor/Channel concurrency layer with no dependency on simview and
+no use *by* simview, so the folder says what it is. And `scene/`, one
+header per kind: a kind's public half (its `Desc`, its handle, its
+sugar class) is one file there, and `Scene.h` holds only what every
+kind shares — `Range2`, the `Scene` builder, `no_door`. The kind
+headers depend on `Types.h` alone; `impl::Scene`, the ADL anchor that
+finds `*_from_source` at instantiation, lives there and not in
+`Scene.h`, which is why the split has no cycle.
 
-One surface inconsistency to fix with the ops table: `Field` is a scene
-kind with its own header while `Particles` lives inside `Scene.h`. A
-third kind has no obvious home until those agree.
+Teaching `tools/lint.sh` about subfolders was the real work. Its
+include whitelist was a flat basename alternation (one hard failure)
+and both its header loop and its no-comments rule globbed
+`include/simview/*.h` non-recursively — so a subfolder header was
+never visited and the gate kept saying "clean". Two silent holes,
+both proven closed by breaking them.
 
 ## The test boundary
 
@@ -265,8 +269,8 @@ symptom to hardcode.
 | 2 | Scene kinds → the ops table; `src/` folded by layer; `Lines` as the measurement | **Shipped.** 13 branch sites became 0, `SceneItem` 160 → 24 B; the third kind cost zero engine edits and ~55 surface lines |
 | 3 | Fold `src/` by layer; split `App.cpp` along the seams already in it | Mostly falls out of pass 1 and 2 |
 | 4 | Compose `impl::App` from subsystem states | Falls out of pass 3 |
-| 5 | `Sync` to `include/simview/sync/`; lint learns subfolders | Independent; sets the precedent for `scene/` |
-| 6 | `include/` subfolders | When a group reaches four headers |
+| 5 | `Sync` to `include/simview/sync/`; `scene/` per kind; lint learns subfolders | **Shipped.** Two silent lint holes found and closed |
+| 6 | `include/` subfolders | Folded into 5 |
 
 Passes 1, 3 and 4 are behaviour-preserving refactors. The suite can now
 police them by pixels, which it could not before the harness existed —

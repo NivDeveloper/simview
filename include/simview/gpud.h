@@ -1,8 +1,6 @@
 #pragma once
 
 #include "App.h"
-#include "Field.h"
-#include "Scene.h"
 
 #include <gpud/Device.h>
 

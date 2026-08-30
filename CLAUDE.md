@@ -36,7 +36,7 @@ more than one window.
 
   | who | may include |
   | --- | --- |
-  | `include/simview/*.h` (core) | each other + std. Nothing else, ever |
+  | `include/simview/**/*.h` (core) | each other + std. Nothing else, ever. Subfolders (`scene/`, `sync/`) are part of the surface and lint walks them |
   | the one opt-in door, `gpud.h` | core + std + `<gpud/Device.h>`. No public header names ImGui or ImPlot. Door consumers take simview via add_subdirectory/FetchContent (the installed prefix carries no gpud) |
   | `src/**` | anything (SDL, later ImGui/ImPlot) — never installed |
   | a core consumer | `<simview/simview.h>` + libsimview; no SDL anywhere |
@@ -231,8 +231,9 @@ Design rationale lives in docs/, implementation commentary in `src/`
 
 ```
 include/simview/   the installed surface: simview.h (umbrella),
-                   Types.h, App.h, Field.h, Scene.h, Plots.h, Panel.h,
-                   Event.h, Sync.h, gpud.h (the door)
+                   Types.h, App.h, Scene.h, Plots.h, Panel.h, Event.h,
+                   gpud.h (the door); scene/{Field,Particles,Lines}.h
+                   — a kind's public half is ONE file here; sync/Sync.h
 third_party/       vendored deps, one dir each, PIN + LICENSE
                    required (README.md is the contract; exempt from
                    the format gate, never from the warning flags)

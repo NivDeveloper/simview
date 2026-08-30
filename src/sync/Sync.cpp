@@ -2,7 +2,7 @@
 // swap pair sits under a mutex, fine at per-frame rates; the wait-free
 // refinement waits for a measurement that wants it.
 
-#include <simview/Sync.h>
+#include <simview/sync/Sync.h>
 
 #include <atomic>
 #include <chrono>

@@ -22,11 +22,11 @@ set -eu
 cd "$(dirname "$0")/.."
 fail=0
 
-for h in include/simview/*.h; do
+for h in $(find include/simview -name "*.h" | sort); do
     base=$(basename "$h")
     # (a): every include is <std-ish> or "sibling.h"
     bad_inc=$(grep -nE '^#include' "$h" | grep -vE '#include <[a-z_]+>' \
-              | grep -vE '#include "(Types|App|Event|Field|Panel|Plots|Scene|Sync|simview)\.h"' || true)
+              | grep -vE '#include "(\.\./)?((scene|sync)/)?(Types|App|Event|Field|Panel|Plots|Scene|Sync|Particles|Lines|simview)\.h"' || true)
     if [ "$base" = "gpud.h" ]; then
         bad_inc=$(echo "$bad_inc" | grep -v '#include <gpud/Device\.h>' || true)
     fi
@@ -100,7 +100,7 @@ if grep -n 'printf\|std::cout\|std::cerr\|std::print\|puts(\|SDL_Log' \
 fi
 
 # (e)
-if grep -n '//\|/\*' include/simview/*.h; then
+if grep -rn '//\|/\*' --include='*.h' include/simview; then
     echo "LINT: a comment in include/ — the surface must be self-explanatory"
     fail=1
 fi
