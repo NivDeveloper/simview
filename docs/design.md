@@ -214,6 +214,13 @@ the target.
   not a photograph; the default linear filter smears cell edges the
   moment the panel is not an exact multiple of the grid. The callback
   puts the sampler back, so text stays smooth.
+- **A view is two things, in two layers.** The texture is scene's
+  (`RenderTarget`: resized to a requested size, drawn into, knows
+  nothing of panels); the title and the panel are ui's (`View`). The
+  want/resize channel runs one way — ui writes the request, scene
+  honours it next frame — which is what lets the scene layer never
+  learn what a panel is. Found while dissolving the god header: the
+  old `ViewState` was one struct read by four layers.
 - **The pipeline cache is keyed on (kind, format)**. Format alone would
   hand one kind another's pipeline: a picture rather than an error.
 - **Uniforms are per STAGE.** A block bound in the vertex set is not

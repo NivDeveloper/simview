@@ -150,19 +150,49 @@ L4  app        the frame over the Presenter port   L1 L2 L3
 L5  doors      gpud.h                              public vocabulary
 ```
 
-`App` **composes** rather than contains:
+`App` **composes** rather than contains — `src/core/App.h`, 40 lines:
 
 ```cpp
-struct App { Platform platform; Scene scene; Ui ui; Input input; Stats stats; };
+struct App {
+    Platform platform;   Input input;   Stats stats;
+    std::vector<PipelineEntry> pipelines;
+    SceneState scene;    UiState ui;
+    std::list<View> views;  std::list<PlotState> plots;  std::list<PanelState> panels;
+};
 ```
 
-with each member's type declared in its own layer's header, so
-`scene/Scene.h` never learns what a plot is. Today `impl::App` holds 12
-nested types in one 239-line header that every translation unit
-includes. There is **no build-time argument** for changing that — the
-library is five TUs and touching the header costs 1.3 s against 1.2 s
-for touching one source. It is a coupling and comprehension problem,
-and it is why folding `src/` by stratum does not isolate anything.
+Each member's type is declared in its own layer's header, so a layer
+includes only what is below it and `App.h` is the one place that sees
+all of them. It replaced a 228-line header holding 11 nested types
+that every TU included. There was **no build-time argument** for the
+change — touching that header cost 1.3 s against 1.2 s for one source
+— and it was made anyway, because reading the old header for the plan
+found it had been **hiding six layering violations**. A single opaque
+`App *` lets any layer reach any state; the violations were invisible
+until the types were separated, and two were structural:
+
+- `views_resize`/`views_draw` lived in `scene/` but iterated a
+  UI-owned `ViewState`, with `want_w`/`want_h` written by ui and read
+  by scene — "ui calls into scene, never the reverse", inverted.
+  Resolved by a split: a scene-owned `RenderTarget` (a texture resized
+  to a requested size and drawn into, knowing nothing of panels) and a
+  ui-owned `View`. ui writes `target.want_*`; scene never reads a ui
+  type.
+- `it.app->stats.draws` at six sites in three kind files forced
+  `SceneItem` to hold the full `App`. It now holds a device, a
+  `Stats *` and the pipeline cache — what a kind actually asks of the
+  world — and `src/scene/` includes nothing from `ui/` or `App.h`.
+
+Lint rule (j) enforces the DAG: `scene/` and the platform *state*
+headers may name nothing from `ui/` and never `core/App.h`. The
+`.cpp` files that orchestrate a frame or a lifecycle are L4 by
+content and may.
+
+Two things stayed deliberately small. `Platform` declares `gdev`
+before `dev` because `dev` is borrowed from it and destruction is
+reverse order — the one place member order is load-bearing, with the
+comment above the two adjacent fields. And `headless` is gone: three
+spellings of one fact became `win == nullptr`.
 
 ## The target `src/` layout
 
@@ -175,7 +205,8 @@ same name, three places to edit for one feature.
 
 ```
 src/
-  core/      Engine.h                  the shared App state (provisional — pass 4)
+  core/      App.h                     the composed App — the one union
+             Callbacks.h Error.h       shared by two layers, so below both
              Error.cpp                 set_error, last_error, version
   platform/  Device.cpp                gpud/SDL bring-up, window, lifecycle
              Frame.cpp                 frame_build, frame_render, the presenters,
@@ -267,8 +298,8 @@ symptom to hardcode.
 | --- | --- | --- |
 | 1 | `tests/` fold + `Palette.h`; `sv::probe` + its gate; the Presenter port and one frame order | **Shipped.** Clears the ground, then puts the loop a user runs under the harness |
 | 2 | Scene kinds → the ops table; `src/` folded by layer; `Lines` as the measurement | **Shipped.** 13 branch sites became 0, `SceneItem` 160 → 24 B; the third kind cost zero engine edits and ~55 surface lines |
-| 3 | Fold `src/` by layer; split `App.cpp` along the seams already in it | Mostly falls out of pass 1 and 2 |
-| 4 | Compose `impl::App` from subsystem states | Falls out of pass 3 |
+| 3 | Fold `src/` by layer; split `App.cpp` along the seams already in it | **Shipped** in pass 2 |
+| 4 | Compose `impl::App` from subsystem states | **Shipped.** 228 → 40 lines; six hidden violations found, two structural, all resolved; lint rule (j) enforces the DAG |
 | 5 | `Sync` to `include/simview/sync/`; `scene/` per kind; lint learns subfolders | **Shipped.** Two silent lint holes found and closed |
 | 6 | `include/` subfolders | Folded into 5 |
 

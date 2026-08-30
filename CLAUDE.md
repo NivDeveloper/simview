@@ -241,8 +241,9 @@ src/               folded by LAYER, not by stratum (the namespace
                    already carries that): core/ platform/ scene/ ui/
                    door/ sync/ testing/. A feature is one folder;
                    its exported and internal halves are files in it
-src/core/Engine.h  the shared state — still a god header, dissolves
-                   in pass 4 (docs/architecture.md)
+src/core/App.h     the composed App: each member's type from its own
+                   layer's header. Lint rule (j) is the DAG: scene/
+                   and the platform state headers never name ui/
 src/scene/         a kind is ONE file: state, uniform block, shaders,
                    KindOps, and its exported functions. Nothing else
                    names a kind
