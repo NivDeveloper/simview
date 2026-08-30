@@ -185,7 +185,17 @@ A view is a scene whose target is a texture instead of the swapchain,
 shown by a panel that docks, tabs and tears out like any other. It is
 the SECOND arrangement, not a replacement: `app.Field(…)` still draws
 straight to the window with panels floating over it (ising-cpu), and
-`app.View({…}).Field(…)` frames the scene in the UI (gas).
+`app.View({…})` puts one in a panel. `gas` does both at once — real
+space in the window, the same particles in phase space in a view —
+which is the arrangement that earns the passthru central node: a
+window whose scene is empty is a window doing nothing.
+
+Each view's scene carries **its own range**, so the two need not share
+coordinates: gas draws the same points at (x, y) in one and at
+(y, v_y) in the other. A range may reach below zero, which is what
+makes a phase-space axis expressible, and `field_check` pins that —
+a scene that fell back to the unit square would put every point off
+the target.
 
 - **The texture is sized from what the panel had room for LAST
   frame**, and resized before the next UI frame is built — because a

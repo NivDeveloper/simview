@@ -16,7 +16,8 @@ behind one boundary that no public header names and whose include
 directories are PRIVATE to this build: plots, panels and views are
 builders. Examples:
 ising-cpu (plain arrays + the sync layer; the independence canary),
-gas (a view, a plot and a panel — the fully framed layout) and xy-gpu
+gas (the scene in the window AND a second scene in a view — both
+arrangements at once) and xy-gpu
 (the pull model, a standalone subproject). Next: 3-D scene kinds, and
 more than one window.
 

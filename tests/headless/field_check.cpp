@@ -94,5 +94,29 @@ int main() {
         CHECK(!app2.Particles({.radius = 0.0f}));
     }
 
+    // A named range may reach below zero — a phase-space plot is the
+    // case. If the scene refused it and fell back to the unit square,
+    // every one of these points would land far off the target and the
+    // shot would be nothing but the clear colour.
+    {
+        App app3({.headless = true});
+        if (app3) {
+            app3.SceneRange({0.0, -80.0, 100.0, 80.0});
+            auto cloud = app3.Particles(
+                {.color = {1.0f, 1.0f, 1.0f, 1.0f}, .radius = 6.0f});
+            REQUIRE(bool(cloud));
+            const float pts[] = {50.0f, -70.0f, 50.0f, 70.0f, 20.0f, 0.0f};
+            CHECK(cloud.Update(pts));
+
+            Bmp img;
+            CHECK(harness::shot(app3, "phase", img));
+            if (!img.px.empty()) {
+                const Bmp::Box box = img.content({23, 23, 26});
+                CHECK(!box.empty);
+                CHECK_GT(box.h(), img.h / 2);
+            }
+        }
+    }
+
     return check::summary("field");
 }
