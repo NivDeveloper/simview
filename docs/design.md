@@ -209,7 +209,7 @@ changed), begins ONE render pass, and draws each item through
 A view is a scene whose target is a texture instead of the swapchain,
 shown by a panel that docks, tabs and tears out like any other. It is
 the SECOND arrangement, not a replacement: `app.Field(…)` still draws
-straight to the window with panels floating over it (ising-cpu), and
+straight to the window with panels floating over it (ising, gas), and
 `app.View({…})` puts one in a panel. `gas` does both at once — real
 space in the window, the same particles in phase space in a view —
 which is the arrangement that earns the passthru central node: a

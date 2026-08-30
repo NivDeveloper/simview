@@ -116,7 +116,7 @@ zero readback.
 `Tick` the body reads and never fabricates — and from that one fact
 `app.Controls(sim)` gives play/pause, advance one, advance N, restart,
 the clock, the rate and a speed slider in one line, with no shadow
-state anywhere. ising-cpu lost its reconcile loop, its `running` bool,
+state anywhere. The Ising example lost its reconcile loop, its `running` bool,
 its `reseed_wanted` flag and its hand-rolled restart.
 
 ## Non-goals

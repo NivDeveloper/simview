@@ -49,6 +49,7 @@ tsan:
 # it from rotting when the door changes.
 flagship: all
 	$(MAKE) -C examples/xy-gpu
+	$(MAKE) -C examples/ising
 
 clean:
 	rm -rf build build-san build-tsan
