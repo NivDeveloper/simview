@@ -4,6 +4,11 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             view_check)
     add_executable(${t} ${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
+    # Tests may speak the UI stack; consumers may not. Granting the
+    # include path HERE is what makes that a decision rather than a
+    # side effect of how the library links its archives.
+    target_include_directories(${t} PRIVATE
+        ${imgui_SOURCE_DIR} ${implot_SOURCE_DIR})
     set_target_properties(${t} PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     if(NOT MSVC)

@@ -57,10 +57,13 @@ add_library(simview_imgui STATIC
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp)
-# PUBLIC imgui.h (the door speaks it), PRIVATE the backends: a consumer
-# never sees an SDL type through us.
-target_include_directories(simview_imgui PUBLIC ${imgui_SOURCE_DIR})
-target_include_directories(simview_imgui PRIVATE ${imgui_SOURCE_DIR}/backends)
+# Every include directory PRIVATE. The archives link PUBLIC — a static
+# consumer needs their symbols — but no public header names ImGui, so
+# nothing outside this build should be able to reach its headers
+# either. A PUBLIC include dir here would hand every in-tree consumer
+# an #include <imgui.h> that works.
+target_include_directories(simview_imgui PRIVATE
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(simview_imgui PRIVATE SDL3::SDL3)
 set_target_properties(simview_imgui PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
@@ -85,9 +88,11 @@ FetchContent_MakeAvailable(implot)
 add_library(simview_implot STATIC
     ${implot_SOURCE_DIR}/implot.cpp
     ${implot_SOURCE_DIR}/implot_items.cpp)
-target_include_directories(simview_implot PUBLIC ${implot_SOURCE_DIR})
-# PUBLIC: implot_internal.h includes imgui_internal.h, so imgui's source
-# dir must reach every TU that includes implot's internals.
+# implot_internal.h includes imgui_internal.h, so imgui's source dir
+# has to reach these TUs — named here rather than inherited, so the
+# dependency is where it is used.
+target_include_directories(simview_implot PRIVATE
+    ${implot_SOURCE_DIR} ${imgui_SOURCE_DIR})
 target_link_libraries(simview_implot PUBLIC simview_imgui)
 # Two instantiations instead of ten: less to compile, a smaller archive,
 # and the f32/f64 surface decision made physical. This is also why
@@ -118,7 +123,8 @@ target_include_directories(simview PUBLIC
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(simview PUBLIC gpud::gpud simview_imgui simview_implot
                               PRIVATE gpud::sdl SDL3::SDL3)
-target_include_directories(simview PRIVATE ${imgui_SOURCE_DIR}/backends)
+target_include_directories(simview PRIVATE
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR})
 target_compile_definitions(simview PRIVATE
     SIMVIEW_VERSION="${PROJECT_VERSION}")
 set_target_properties(simview PROPERTIES

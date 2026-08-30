@@ -92,7 +92,7 @@ only after SDL's cross-thread command-buffer rules are pinned).
 | dep | policy |
 | --- | --- |
 | SDL3 | PRIVATE (engine-only); no public header names it at all |
-| Dear ImGui + ImPlot | FetchContent, pinned by hash exactly as gpud is; built as `simview_imgui`/`simview_implot` with warnings silenced at the target. PRIVATE in every sense that matters: they are how the builder is implemented, and **no public header names them** |
+| Dear ImGui + ImPlot | FetchContent, pinned by hash exactly as gpud is — nothing lands in `third_party/`, which stays empty and says why; built as `simview_imgui`/`simview_implot` with warnings silenced at the target. PRIVATE in every sense that matters: no public header names them, and **their include directories are PRIVATE too**, so `#include <imgui.h>` does not compile in a consumer. The archives still link PUBLIC — a static consumer needs their symbols — which is why the include side has to be denied separately from the link side |
 | tensor | absent, forever — its data arrives, its types never do |
 | gpud | the substrate: the ENGINE builds on it (gpud::sdl owns device bring-up; linked PRIVATE, gpud::gpud PUBLIC for the door's include dirs, FetchContent-pinned by hash). The opt-in door `gpud.h` speaks its vocabulary; the core never names it |
 | shader toolchain | absent for consumers: internal shaders ship as committed bytecode (SPIR-V/MSL/DXIL); `shaders/regen.sh` is dev-only |

@@ -10,8 +10,11 @@ the pull-model field (app.Field(producer, desc) resolves gpud's
 source_of protocol by ADL; the engine re-asks the source at every
 draw, so rebind does not exist — `app.Particles(producer)` is the
 same protocol for a point cloud, whose count comes from the buffer's
-size). The UI is vendored ImGui + ImPlot behind one boundary that no
-public header names: plots, panels and views are builders. Examples:
+size). The UI is ImGui + ImPlot, hash-pinned through FetchContent
+exactly as gpud is (third_party/ stays EMPTY — its README says why),
+behind one boundary that no public header names and whose include
+directories are PRIVATE to this build: plots, panels and views are
+builders. Examples:
 ising-cpu (plain arrays + the sync layer; the independence canary),
 gas (a view, a plot and a panel — the fully framed layout) and xy-gpu
 (the pull model, a standalone subproject). Next: 3-D scene kinds, and
