@@ -8,7 +8,7 @@
 // axes are configured, SetupFinish draws the line, and only then are
 // the sources asked.
 
-#include "Engine.h"
+#include "../core/Engine.h"
 
 #include <imgui.h>
 #include <implot.h>

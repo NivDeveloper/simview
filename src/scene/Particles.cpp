@@ -3,7 +3,7 @@
 // bindings in the opposite stages, which is why nothing about the
 // draw could be hoisted out of the kind.
 
-#include "../engine/Engine.h"
+#include "../core/Engine.h"
 
 #include "bytecode/particles_fsmain_spirv.h"
 #include "bytecode/particles_vsmain_spirv.h"

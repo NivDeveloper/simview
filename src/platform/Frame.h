@@ -14,7 +14,7 @@
 // another, and a test may supply a third; the sequence is written
 // once against the port and every caller obeys it.
 
-#include "Engine.h"
+#include "../core/Engine.h"
 
 namespace sv {
 

@@ -5,7 +5,7 @@
 // the cell it belongs to; and the two-phase order, because a copy pass
 // cannot be nested inside a render pass.
 
-#include "../engine/Engine.h"
+#include "../core/Engine.h"
 
 #include <string>
 

@@ -111,15 +111,19 @@ else()
 endif()
 
 add_library(simview STATIC
-    src/impl/App.cpp
+    src/core/Error.cpp
+    src/platform/Device.cpp
+    src/platform/Frame.cpp
+    src/platform/Input.cpp
     src/scene/Field.cpp
     src/scene/Particles.cpp
     src/scene/Pipelines.cpp
     src/scene/Scene.cpp
-    src/engine/Frame.cpp
-    src/engine/Plots.cpp
-    src/engine/Ui.cpp
-    src/impl/Plots.cpp
+    src/ui/Context.cpp
+    src/ui/Plot.cpp
+    src/ui/PlotDraw.cpp
+    src/ui/View.cpp
+    src/door/Gpud.cpp
     src/sync/Sync.cpp)
 add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC

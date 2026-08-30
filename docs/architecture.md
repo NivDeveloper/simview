@@ -158,34 +158,38 @@ and it is why folding `src/` by stratum does not isolate anything.
 
 ## The target `src/` layout
 
-Fold by subsystem, because that is the axis of change. The two strata
-are files *within* a subsystem, since that axis is already carried by
-the namespace and enforced by lint — folding by it as well re-encodes
-one axis while cutting across the other. Today that produces
+Folded by subsystem, because that is the axis of change. The two
+strata are files *within* a subsystem, since that axis is already
+carried by the namespace and enforced by lint — folding by it as well
+re-encoded one axis while cutting across the other. It used to produce
 `src/impl/Plots.cpp` and `src/engine/Plots.cpp`: two files with the
 same name, three places to edit for one feature.
 
 ```
 src/
-  core/      Error.cpp                 set_error, last_error, version
-  platform/  Device.cpp                gpud/SDL bring-up, window, swapchain
-             Frame.cpp                 frame_build, frame_render, presenters
+  core/      Engine.h                  the shared App state (provisional — pass 4)
+             Error.cpp                 set_error, last_error, version
+  platform/  Device.cpp                gpud/SDL bring-up, window, lifecycle
+             Frame.cpp                 frame_build, frame_render, the presenters,
+                                       and app_run / app_step / app_shot
              Input.cpp                 poll, posted events, delivery
-  scene/     Scene.h                   SceneState/SceneItem
-             Field.cpp Particles.cpp   one file per kind
-             Pipelines.cpp             the (kind, format) cache
-             bytecode/                 generated, beside its only consumer
-  ui/        Ui.h                      UiState
-             Context.cpp               ImGui/ImPlot lifecycle, dockspace, viewports
-             Panel.cpp Plot.cpp View.cpp
+  scene/     Kinds.h                   KindOps, Shader, Blend, Placement
+             Scene.cpp                 scene_draw, the range, views, release
+             Field.cpp Particles.cpp   one file per kind: state, uniforms,
+                                       shaders, ops, exported functions
+             Pipelines.cpp             the (kind, format) cache, kind-agnostic
+             bytecode/                 generated, beside its only includers
+  ui/        Ui.h                      the ImGui layer's internal surface
+             Context.cpp               lifecycle, dockspace, viewports, view panel
+             Plot.cpp PlotDraw.cpp     plots and panels: registration / drawing
+             View.cpp                  view registration
   door/      Gpud.cpp
   sync/      Sync.cpp
   testing/   Probe.cpp                 never installed — see below
 ```
 
 `shaders/*.slang` stays at the repo root as a source; its generated
-bytecode moves beside the code that includes it. Today `src/draw/`
-exists solely to hold generated output for a folder two levels away.
+bytecode lives beside the code that includes it.
 
 **`include/` stays flat for now.** Ten headers is grep-able and
 splitting it is churn. The rule: a subfolder when one group reaches

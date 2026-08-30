@@ -6,7 +6,7 @@
 // float over the scene or frame it depending only on where the user
 // drags them.
 
-#include "Engine.h"
+#include "../core/Engine.h"
 
 namespace sv {
 

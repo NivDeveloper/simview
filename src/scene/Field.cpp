@@ -2,7 +2,7 @@
 // its ops table, and the three exported functions a user reaches it
 // through. Nothing outside this file knows a FieldState exists.
 
-#include "../engine/Engine.h"
+#include "../core/Engine.h"
 
 #include "bytecode/display_fsmain_spirv.h"
 #include "bytecode/display_vsmain_spirv.h"
@@ -65,8 +65,7 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     FieldState &f = state_of(it);
     if (!f.w || !f.buf)
         return;
-    SDL_GPUGraphicsPipeline *pipe =
-        pipeline_for(it.app, &kFieldOps, at.format);
+    SDL_GPUGraphicsPipeline *pipe = pipeline_for(it.app, &kFieldOps, at.format);
     if (!pipe)
         return;
 

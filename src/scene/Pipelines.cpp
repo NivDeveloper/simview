@@ -3,7 +3,7 @@
 // KindOps, which is what removed the four ternaries this file used to
 // carry.
 
-#include "../engine/Engine.h"
+#include "../core/Engine.h"
 
 #include <string>
 

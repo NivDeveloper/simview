@@ -236,13 +236,19 @@ include/simview/   the installed surface: simview.h (umbrella),
 third_party/       vendored deps, one dir each, PIN + LICENSE
                    required (README.md is the contract; exempt from
                    the format gate, never from the warning flags)
-src/impl/          exported function definitions, one .cpp per header
-src/engine/        the SDL side — internal headers live here, never
-                   installed
-examples/hello/    init headless, report, quit; doubles as the
-                   install-check consumer
+src/               folded by LAYER, not by stratum (the namespace
+                   already carries that): core/ platform/ scene/ ui/
+                   door/ sync/ testing/. A feature is one folder;
+                   its exported and internal halves are files in it
+src/core/Engine.h  the shared state — still a god header, dissolves
+                   in pass 4 (docs/architecture.md)
+src/scene/         a kind is ONE file: state, uniform block, shaders,
+                   KindOps, and its exported functions. Nothing else
+                   names a kind
 src/testing/       sv::probe — the ONLY test-only code, in its own
                    never-installed archive (lint rule (i))
+examples/hello/    init headless, report, quit; doubles as the
+                   install-check consumer
 tests/harness/     the assertion and image vocabulary (Check, Bmp,
                    Harness, Palette)
 tests/fakes/       backends a display would otherwise be needed for

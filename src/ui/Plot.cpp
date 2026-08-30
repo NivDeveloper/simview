@@ -6,7 +6,7 @@
 // temporary std::string would otherwise be a dangling read at draw
 // time, days later, in a different thread of the frame.
 
-#include "../engine/Engine.h"
+#include "../core/Engine.h"
 
 #include <simview/simview.h>
 

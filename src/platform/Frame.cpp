@@ -1,6 +1,9 @@
 #include "Frame.h"
 
-#include "Ui.h"
+#include "../ui/Ui.h"
+#include "Input.h"
+
+#include <simview/simview.h>
 
 namespace sv {
 
@@ -117,4 +120,105 @@ Presenter shot_presenter(ShotTarget *s) {
     return {shot_acquire, shot_finish, s->app && !s->app->win, s};
 }
 
+namespace impl {
+
+void app_run(App *a) {
+    if (!a)
+        return;
+    if (a->headless) {
+        SDL_Log("simview: headless app — drive it with Step()/Shot()");
+        return;
+    }
+    a->quit = false;
+    while (!a->quit) {
+        poll(a);
+        in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+        // A frame callback may quit; nothing after this point should
+        // run when it did.
+        if (a->quit)
+            break;
+
+        frame_build(a);
+        frame_render(a, swapchain_presenter(a));
+    }
+}
+
+void app_step(App *a) {
+    if (!a)
+        return;
+    deliver_posted(a);
+    in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+    // A headless frame builds the UI too: the panels run, their
+    // geometry exists, and nothing is drawn — which is what makes the
+    // callbacks testable without a display. It does NOT render, which
+    // is why a Step counts no frame.
+    frame_build(a);
+}
+
+bool app_shot(App *a, const char *path) {
+    if (!a || !path)
+        return set_error("shot: null"), false;
+    // Sized from the first field so the shot carries no letterbox
+    // bars; 512 square when the scene has none. A COMPOSITED shot is
+    // the exception: it must match what the UI frame was laid out
+    // for, because that is what ImGui's projection assumes.
+    Uint32 w = 512, h = 512;
+    const bool composited = !a->win && ui_on(a);
+    if (composited) {
+        w = a->ui_size.w;
+        h = a->ui_size.h;
+    } else if (Extent2 g{}; scene_grid(a->scene, &g)) {
+        // At least two pixels a cell, so a lattice is legible.
+        w = g.w * 2;
+        h = g.h * 2;
+    }
+
+    SDL_GPUTextureCreateInfo ti{};
+    ti.type = SDL_GPU_TEXTURETYPE_2D;
+    ti.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    ti.width = w;
+    ti.height = h;
+    ti.layer_count_or_depth = 1;
+    ti.num_levels = 1;
+    SDL_GPUTexture *tex = SDL_CreateGPUTexture(a->dev, &ti);
+    SDL_GPUTransferBufferCreateInfo tci{};
+    tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    tci.size = w * h * 4;
+    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+    if (!tex || !tb) {
+        set_error(SDL_GetError());
+        if (tex)
+            SDL_ReleaseGPUTexture(a->dev, tex);
+        if (tb)
+            SDL_ReleaseGPUTransferBuffer(a->dev, tb);
+        return false;
+    }
+
+    // The same frame app_run draws, into a texture instead of a
+    // window. The order lives in frame_render, once — the readback
+    // included, because it has to be recorded after the drawing and
+    // before the submit.
+    ShotTarget st{a, tex, tb, w, h, ti.format};
+    frame_render(a, shot_presenter(&st));
+
+    void *pixels = SDL_MapGPUTransferBuffer(a->dev, tb, false);
+    bool ok = pixels != nullptr;
+    if (!ok) {
+        set_error(SDL_GetError());
+    } else {
+        SDL_Surface *s = SDL_CreateSurfaceFrom(
+            int(w), int(h), SDL_PIXELFORMAT_RGBA32, pixels, int(w * 4));
+        ok = s && SDL_SaveBMP(s, path);
+        if (!ok)
+            set_error(SDL_GetError());
+        SDL_DestroySurface(s);
+        SDL_UnmapGPUTransferBuffer(a->dev, tb);
+    }
+    SDL_ReleaseGPUTransferBuffer(a->dev, tb);
+    SDL_ReleaseGPUTexture(a->dev, tex);
+    return ok;
+}
+
+} // namespace impl
 } // namespace sv

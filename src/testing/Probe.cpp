@@ -12,7 +12,7 @@
 // never sv::impl. One grep answers what exists only for tests, and
 // tools/lint.sh refuses the namespace anywhere but here and tests/.
 
-#include "../engine/Engine.h"
+#include "../core/Engine.h"
 
 #include "../../tests/probe/Probe.h"
 
