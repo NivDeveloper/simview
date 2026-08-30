@@ -8,9 +8,17 @@ PREFIX ?= $(HOME)/Projects/toolchains/sdl3
 build/CMakeCache.txt:
 	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-.PHONY: all test lint install-check run san tsan flagship clean
+.PHONY: all test lint install-check run debug san tsan flagship clean
 all: build/CMakeCache.txt
 	cmake --build build -j $(JOBS)
+
+# -O0 -g, its own tree: the checks and the in-tree examples steppable.
+# The GPU examples have their own (make -C examples/ising debug).
+build-debug/CMakeCache.txt:
+	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
+
+debug: build-debug/CMakeCache.txt
+	cmake --build build-debug -j $(JOBS)
 
 test: all
 	ctest --test-dir build --output-on-failure
@@ -53,4 +61,4 @@ flagship: all
 	$(MAKE) -C examples/ising
 
 clean:
-	rm -rf build build-san build-tsan
+	rm -rf build build-debug build-san build-tsan

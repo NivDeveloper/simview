@@ -1,0 +1,11 @@
+{
+  // Xcode's lldb SIGILLs at `target create` on this OS — even on a
+  // trivial AppleClang binary — and CodeLLDB's bundled lldb does too.
+  // Homebrew LLVM 22's lldb-dap works for both compilers, so every
+  // debug entry runs through it.
+  "dap": {
+    "CodeLLDB": {
+      "binary": "/opt/homebrew/opt/llvm/bin/lldb-dap"
+    }
+  }
+}

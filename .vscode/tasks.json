@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build ising (Debug)",
+      "type": "shell",
+      "command": "make",
+      "args": ["-C", "examples/ising", "debug"],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "build xy-gpu (Debug)",
+      "type": "shell",
+      "command": "make",
+      "args": ["-C", "examples/xy-gpu", "debug"],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "build simview (Debug)",
+      "type": "shell",
+      "command": "make",
+      "args": ["debug"],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+// Zed: `debugger: start` (F4) lists these; the adapter binary is
+// overridden to LLVM 22's lldb-dap in .zed/settings.json. The two
+// initCommands on the g++-16 entries shadow lldb's hardcoded
+// unique_ptr formatter, which crashes on a GCC DWARF type it cannot
+// parse; without them the Variables pane kills the session.
+[
+  {
+    "label": "ising — tensor on gpud (Debug)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/examples/ising/build-debug/ising",
+    "cwd": "$ZED_WORKTREE_ROOT/examples/ising",
+    "initCommands": [
+      "settings set target.enable-synthetic-value false",
+      "type summary add --summary-string \"{unique_ptr}\" -x \"^std::unique_ptr<\""
+    ],
+    "build": { "command": "make", "args": ["-C", "examples/ising", "debug"] }
+  },
+  {
+    "label": "xy-gpu — tensor on gpud (Debug)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/examples/xy-gpu/build-debug/xy-gpu",
+    "cwd": "$ZED_WORKTREE_ROOT/examples/xy-gpu",
+    "initCommands": [
+      "settings set target.enable-synthetic-value false",
+      "type summary add --summary-string \"{unique_ptr}\" -x \"^std::unique_ptr<\""
+    ],
+    "build": { "command": "make", "args": ["-C", "examples/xy-gpu", "debug"] }
+  },
+  {
+    "label": "ising-cpu (Debug)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build-debug/examples/ising-cpu/ising-cpu",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": { "command": "make", "args": ["debug"] }
+  },
+  {
+    "label": "gas (Debug)",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build-debug/examples/gas/gas",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "build": { "command": "make", "args": ["debug"] }
+  }
+]

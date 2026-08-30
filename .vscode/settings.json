@@ -1,0 +1,3 @@
+{
+  "lldb-dap.executable-path": "/opt/homebrew/opt/llvm/bin/lldb-dap"
+}

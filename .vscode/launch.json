@@ -1,0 +1,41 @@
+{
+  // Needs the "LLDB DAP" extension (llvm-vs-code-extensions.lldb-dap);
+  // cpptools' lldb-mi rides Xcode's LLDB, which crashes on this OS.
+  // The initCommands on the g++-16 entries shadow lldb's hardcoded
+  // unique_ptr formatter, which crashes on a GCC DWARF type.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ising — tensor on gpud (Debug)",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/ising/build-debug/ising",
+      "cwd": "${workspaceFolder}/examples/ising",
+      "initCommands": [
+        "settings set target.enable-synthetic-value false",
+        "type summary add --summary-string \"{unique_ptr}\" -x \"^std::unique_ptr<\""
+      ],
+      "preLaunchTask": "build ising (Debug)"
+    },
+    {
+      "name": "xy-gpu — tensor on gpud (Debug)",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/xy-gpu/build-debug/xy-gpu",
+      "cwd": "${workspaceFolder}/examples/xy-gpu",
+      "initCommands": [
+        "settings set target.enable-synthetic-value false",
+        "type summary add --summary-string \"{unique_ptr}\" -x \"^std::unique_ptr<\""
+      ],
+      "preLaunchTask": "build xy-gpu (Debug)"
+    },
+    {
+      "name": "ising-cpu (Debug)",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/build-debug/examples/ising-cpu/ising-cpu",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build simview (Debug)"
+    }
+  ]
+}
