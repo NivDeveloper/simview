@@ -28,6 +28,8 @@ struct Particles {
     explicit operator bool() const { return p != nullptr; }
 };
 
+template <class> inline constexpr bool no_door = false;
+
 Particles particles_create(Scene, const ParticlesDesc &);
 bool particles_update(Particles, const float *xy, std::size_t count);
 void scene_range(Scene, const Range2 &);
@@ -74,18 +76,34 @@ class Scene {
     }
 
     template <class P> sv::Field Field(const P &p, const FieldDesc &d) {
-        if constexpr (requires { source_of(p); })
+        if constexpr (requires { field_from_source(s_, source_of(p), d); })
             return sv::Field{field_from_source(s_, source_of(p), d)};
-        else
+        else if constexpr (requires { field_from_source(s_, p, d); })
             return sv::Field{field_from_source(s_, p, d)};
+        else
+            static_assert(impl::no_door<P>,
+                          "drawing a producer that keeps its data on the "
+                          "device is opt-in, and this file has not included "
+                          "the door header that enables it (docs/design.md, "
+                          "\"Integration with sims\"). If it has, then this "
+                          "type is not one of that door's buffer sources and "
+                          "declares no source_of.");
     }
 
     template <class P>
     sv::Particles Particles(const P &p, const ParticlesDesc &d = {}) {
-        if constexpr (requires { source_of(p); })
+        if constexpr (requires { particles_from_source(s_, source_of(p), d); })
             return sv::Particles{particles_from_source(s_, source_of(p), d)};
-        else
+        else if constexpr (requires { particles_from_source(s_, p, d); })
             return sv::Particles{particles_from_source(s_, p, d)};
+        else
+            static_assert(impl::no_door<P>,
+                          "drawing a producer that keeps its data on the "
+                          "device is opt-in, and this file has not included "
+                          "the door header that enables it (docs/design.md, "
+                          "\"Integration with sims\"). If it has, then this "
+                          "type is not one of that door's buffer sources and "
+                          "declares no source_of.");
     }
 
   private:
