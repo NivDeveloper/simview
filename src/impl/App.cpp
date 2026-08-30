@@ -199,14 +199,23 @@ void app_run(App *a) {
             if (ui)
                 ui_draw(a, cmd, swap);
         }
-        // Outside the acquire: a torn-out panel is its own window and
-        // must keep presenting while this one is minimized.
-        if (ui)
-            ui_viewports(a);
+        // SUBMIT FIRST, then the torn-out windows. Each secondary
+        // viewport records and submits a command buffer of its own,
+        // and what it samples includes the view textures THIS buffer
+        // wrote — so this buffer has to be on the queue before those
+        // run. Upstream's example renders viewports first, and is
+        // right to: its secondary windows sample nothing the main
+        // buffer produced. Ours do.
+        //
+        // Still outside the acquire, because a torn-out panel is its
+        // own window and must keep presenting while this one is
+        // minimized.
         if (have)
             SDL_SubmitGPUCommandBuffer(cmd);
         else
             SDL_CancelGPUCommandBuffer(cmd); // minimized: not an error
+        if (ui)
+            ui_viewports(a);
     }
 }
 
@@ -340,12 +349,11 @@ bool app_shot(App *a, const char *path) {
     ++a->stats.frames;
     views_draw(a, cmd);
     scene_draw(a->scene, cmd, tex, w, h, ti.format);
-    // A headless shot is the COMPOSITED frame, viewports included:
-    // what a test can see must be what the window shows.
-    if (composited) {
+    // A headless shot is the COMPOSITED frame: what a test can see
+    // must be what the window shows. Viewports come after the submit
+    // below, for the same reason app_run does it that way.
+    if (composited)
         ui_draw(a, cmd, tex);
-        ui_viewports(a);
-    }
     SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTextureRegion reg{};
     reg.texture = tex;
@@ -359,6 +367,9 @@ bool app_shot(App *a, const char *path) {
     SDL_GPUFence *fe = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     SDL_WaitForGPUFences(a->dev, true, &fe, 1);
     SDL_ReleaseGPUFence(a->dev, fe);
+    // Submitted: the torn-out windows may now sample what it wrote.
+    if (composited)
+        ui_viewports(a);
 
     void *pixels = SDL_MapGPUTransferBuffer(a->dev, tb, false);
     SDL_Surface *s = SDL_CreateSurfaceFrom(

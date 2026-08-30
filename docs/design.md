@@ -221,6 +221,34 @@ the target.
   draw silently produces nothing while every counter says it happened.
   Values a fragment stage needs travel through the varying.
 
+## Torn-out panels
+
+A panel dragged off the window becomes an ImGui *secondary viewport*:
+its own OS window, its own swapchain, and — this is the part that
+matters — **its own command buffer, recorded and submitted inside
+`Renderer_RenderWindow`**.
+
+- **The frame's main command buffer is submitted BEFORE the viewports
+  render.** A secondary viewport samples the view textures the main
+  buffer wrote, so the main buffer has to be on the queue first.
+  Upstream's example renders viewports before submitting, and is
+  right to for its own case: its secondary windows sample nothing the
+  main buffer produced. Ours do, which makes the ordering ours to
+  get right.
+- **The symptom this produces is invisible except on resize.** On an
+  ordinary frame the view's texture still holds the previous frame's
+  content, so sampling it early gives a stale image nobody notices.
+  On the frame after a resize the texture was just created and holds
+  nothing, so the panel shows undefined memory — magenta, on the
+  driver where it was found.
+- `views_resize` runs before the UI frame is BUILT, for the matching
+  reason: a draw list records a texture handle, and releasing a
+  texture the built frame points at is a use-after-free.
+
+`tests/headless/viewport_check.cpp` covers the arrangements a panel
+passes through, and `tests/headless/Viewports.h` is what makes them
+reachable without a display.
+
 ## Plots
 
 A plot is a panel: `app.Plot({.title = …})` returns a retained handle
