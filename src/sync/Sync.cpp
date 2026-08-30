@@ -279,6 +279,14 @@ double executor_rate(Executor ex) {
     if (!e)
         return 0.0;
     std::lock_guard lk(e->m);
+    // Prune against NOW, not only when a tick arrives: a paused
+    // executor stops adding timestamps, and without this the stale
+    // window would report the old rate forever. Measured — it read 76
+    // after a pause before this line existed.
+    const auto now = std::chrono::steady_clock::now();
+    while (!e->recent.empty() &&
+           now - e->recent.front() > std::chrono::seconds(1))
+        e->recent.pop_front();
     if (e->recent.size() < 2)
         return 0.0;
     const auto span = e->recent.back() - e->recent.front();

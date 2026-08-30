@@ -82,16 +82,22 @@ int main() {
     CHECK(timed.Restarted());
     CHECK(!timed.Restarted());
 
-    // Rate is achieved ticks per second, measured: a body throttled to
-    // ~100/s reads near 100, and a paused one decays to zero.
+    // Rate is achieved ticks per second, MEASURED. What can be pinned
+    // on any machine: a paced executor reads positive and never above
+    // the theoretical ceiling of 1/delay (sleep_for is a minimum, so a
+    // loaded CI runner may oversleep badly — a first version asked for
+    // ~100/s under a 10 ms delay and a macOS runner delivered 23). And
+    // once paused, the window drains to zero.
     Executor paced([] {});
-    paced.SetDelayNs(10'000'000); // 10 ms
+    paced.SetDelayNs(10'000'000); // 10 ms -> at most 100/s
     paced.Play();
     std::this_thread::sleep_for(600ms);
     const double r = paced.Rate();
     paced.Pause();
-    CHECK_GT(r, 50.0);
-    CHECK_LT(r, 150.0);
+    CHECK_GT(r, 0.0);
+    CHECK_LT(r, 110.0);
+    std::this_thread::sleep_for(1100ms); // past the one-second window
+    CHECK_EQ(paced.Rate(), 0.0);
 
     // The channel: generations never go backwards and a reader never
     // sees a half-written slab — the writer fills the whole slab with
