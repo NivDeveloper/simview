@@ -3,7 +3,7 @@ target_link_libraries(hello PRIVATE simview::simview)
 set_target_properties(hello PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(NOT MSVC)
-    target_compile_options(hello PRIVATE -Wall -Wextra)
+    target_compile_options(hello PRIVATE ${SIMVIEW_WARNINGS})
 endif()
 
 # Windows loads DLLs by name at startup; a missing SDL3.dll raises a

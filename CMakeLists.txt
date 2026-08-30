@@ -12,6 +12,17 @@ if(SIMVIEW_SANITIZE)
     add_link_options(-fsanitize=${SIMVIEW_SANITIZE})
 endif()
 
+# The warning set every simview target uses. -Wreorder-init-list is
+# an ERROR on clang because clang ACCEPTS out-of-order designators as
+# an extension while GCC and MSVC refuse them: a designator written
+# out of declaration order passed the macOS gate and broke CI on both
+# other platforms. Promoting it makes the local gate refuse what CI
+# refuses.
+set(SIMVIEW_WARNINGS -Wall -Wextra)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    list(APPEND SIMVIEW_WARNINGS -Werror=reorder-init-list)
+endif()
+
 option(SIMVIEW_BUILD_EXAMPLES "Build simview examples" ${PROJECT_IS_TOP_LEVEL})
 option(SIMVIEW_BUILD_TESTS "Build simview tests" ${PROJECT_IS_TOP_LEVEL})
 
@@ -172,7 +183,7 @@ target_compile_definitions(simview PRIVATE
 set_target_properties(simview PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(NOT MSVC)
-    target_compile_options(simview PRIVATE -Wall -Wextra)
+    target_compile_options(simview PRIVATE ${SIMVIEW_WARNINGS})
 endif()
 
 # Both archives: without simview_imgui the installed library has

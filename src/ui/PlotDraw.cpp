@@ -140,6 +140,14 @@ double emit_series(const impl::SeriesState &s, const impl::SeriesData &d,
                             ImPlotPoint(s.bounds.x0, s.bounds.y0),
                             ImPlotPoint(s.bounds.x1, s.bounds.y1), spec);
         return 0.0;
+    case impl::SeriesKind::Line3:
+    case impl::SeriesKind::Scatter3:
+    case impl::SeriesKind::Surface:
+    case impl::SeriesKind::Mesh:
+        // A 3D kind cannot reach the 2D emitter: plot_series refuses
+        // the family mismatch first. Listed so -Wswitch stays a real
+        // signal for the next kind that IS forgotten.
+        return 0.0;
     }
     return 0.0;
 }

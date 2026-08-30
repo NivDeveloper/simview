@@ -191,7 +191,7 @@ int main() {
     // cold-to-hot gradient across the shot. Swapping rows and cols
     // would break it, which is the point.
     {
-        App hm({.headless = true, .size = {400, 300}});
+        App hm({.size = {400, 300}, .headless = true});
         constexpr std::size_t R = 4, C = 8;
         std::vector<float> grid(R * C);
         for (std::size_t r = 0; r < R; ++r)

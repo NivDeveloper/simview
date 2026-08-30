@@ -29,7 +29,7 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
     set_target_properties(${t} PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     if(NOT MSVC)
-        target_compile_options(${t} PRIVATE -Wall -Wextra)
+        target_compile_options(${t} PRIVATE ${SIMVIEW_WARNINGS})
     endif()
 
     # Windows resolves DLL imports at LOAD time, and a missing SDL3.dll

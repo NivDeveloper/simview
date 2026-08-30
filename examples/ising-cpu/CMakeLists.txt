@@ -3,7 +3,7 @@ target_link_libraries(ising-cpu PRIVATE simview::simview)
 set_target_properties(ising-cpu PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(NOT MSVC)
-    target_compile_options(ising-cpu PRIVATE -Wall -Wextra)
+    target_compile_options(ising-cpu PRIVATE ${SIMVIEW_WARNINGS})
 endif()
 
 # Windows loads DLLs by name at startup; a missing SDL3.dll raises a
