@@ -22,7 +22,9 @@ particles in the window itself, the same particles in phase space in
 a panel, a live histogram and the controls — both arrangements at
 once), and `xy-gpu` (a GPU sim drawn zero-copy through the
 gpud door, a standalone subproject: one device, a pull-model field,
-no per-frame glue). Verification lives in tests/, never in examples.
+no per-frame glue), and `plots` (the gallery: one panel per series
+kind, all fifteen — eleven 2D and the four 3D — so each can be
+looked at). Verification lives in tests/, never in examples.
 
 Next: 3-D scene kinds, and more than one window.
 
