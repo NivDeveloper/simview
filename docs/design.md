@@ -104,8 +104,8 @@ The composition principle: gpud is the GPU interchange the sibling
 projects share — one device, opened by simview THROUGH gpud, computed
 on by producers (tensor) that export gpud vocabulary, and NOBODY
 imports tensor. The interchange type is gpud's BufferSource: a
-producer implements `source_of(const P &)` (found by ADL), a field
-binds it once, and the engine PULLS current() at every draw — the
+producer implements `source_of(const P &)` (found by ADL), a scene
+item binds it once, and the engine PULLS current() at every draw — the
 moving residency of a value-semantics producer costs no per-frame
 glue and no API that scales with vis types.
 
@@ -114,11 +114,17 @@ glue and no API that scales with vis types.
   and it does not matter (a 256² float field is ~15 MB/s at 60 fps).
 - **Mode B (opt-in): zero-copy, one shared device.** simview owns
   the gpud device (`sv::Device(app)` hands it to the compute
-  runtime); `app.Field(producer, desc)` registers the pull source
-  once and no per-frame call exists. Opting into `gpud.h` IS opting
-  into gpud, explicitly. Producers die before the App — the one
-  lifetime rule of the glue (the field's source points into the
-  producer object).
+  runtime); `app.Field(producer, desc)` and `app.Particles(producer)`
+  register the pull source once and no per-frame call exists. Opting
+  into `gpud.h` IS opting into gpud, explicitly. Producers die before
+  the App — the one lifetime rule of the glue (the item's source
+  points into the producer object).
+
+  **A pulled item takes its size from the buffer**: a cloud is
+  interleaved xy pairs, so `bytes() / 8` IS the point count. Nothing
+  is passed alongside that could disagree with the memory — the same
+  reason a pushed item refuses `Update` rather than keeping a second
+  copy of the data.
 
 The core impl accepts behaviors (callables as fn-ptr+void*), handles
 (pointers), and integers (generation counters) — foreign vocabulary is

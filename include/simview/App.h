@@ -130,6 +130,14 @@ class App {
             return sv::Field{field_from_source(a_, p, d)};
     }
 
+    template <class P>
+    sv::Particles Particles(const P &p, const ParticlesDesc &d = {}) {
+        if constexpr (requires { source_of(p); })
+            return sv::Particles{particles_from_source(a_, source_of(p), d)};
+        else
+            return sv::Particles{particles_from_source(a_, p, d)};
+    }
+
   private:
     void reset() {
         if (a_)

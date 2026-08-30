@@ -1,11 +1,12 @@
-// The gpud door: the shared device reached through sv::Device, a
-// caller-owned gpud buffer drawn through the pull model (the field
-// asks the source at every draw), refusals named. Tests may speak
-// gpud — they are not consumers.
+// The gpud door: the shared device reached through sv::Device, and
+// caller-owned gpud buffers drawn through the pull model — both scene
+// kinds ask their source at every draw. Refusals named. Tests may
+// speak gpud, they are not consumers.
 #include "Harness.h"
 
 #include <simview/gpud.h>
 
+#include <cstdint>
 #include <vector>
 
 int main() {
@@ -49,6 +50,37 @@ int main() {
         CHECK((across > 60) != (down > 60));
         CHECK_GT(img.distinct(), std::size_t(4));
     }
+
+    // Particles from the same pull model, over the same field. The
+    // cloud is a row of points across the middle of the lattice, in
+    // the scene's cell coordinates.
+    std::vector<float> pts;
+    for (int i = 0; i < 24; ++i) {
+        pts.push_back(4.0f + 56.0f * float(i) / 23.0f);
+        pts.push_back(float(H) / 2.0f);
+    }
+    gpud::Buffer cloud = dev.alloc(pts.size() * 4);
+    dev.write(cloud, pts.data(), pts.size() * 4);
+
+    CHECK(!app.Particles(gpud::BufferSource{}));
+
+    gpud::BufferSource psrc{
+        +[](void *u) { return static_cast<gpud::Buffer *>(u); }, &cloud};
+    auto cl = app.Particles(
+        psrc, {.color = {1.0f, 0.3f, 0.1f, 1.0f}, .radius = 3.0f});
+    REQUIRE(bool(cl));
+
+    CHECK(!cl.Update(pts)); // pulled, not pushed
+
+    const std::uint64_t before_draws = app.Stats().draws;
+    Bmp with_points;
+    CHECK(harness::shot(app, "gpud_points", with_points));
+    // Two items drew, and the second one put pixels on the target the
+    // first did not: the count came from the buffer, nothing else
+    // could have told the draw how many points there are.
+    CHECK_EQ(app.Stats().draws - before_draws, std::uint64_t(2));
+    if (!img.px.empty() && !with_points.px.empty())
+        CHECK(!similar(img, with_points));
 
     return check::summary("gpud");
 }

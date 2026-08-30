@@ -449,5 +449,29 @@ Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
     return Field{&it};
 }
 
+Particles particles_from_source(App *a, gpud::BufferSource src,
+                                const ParticlesDesc &d) {
+    if (!a)
+        return {};
+    if (!src.fn)
+        return set_error("particles need a source that can answer — the "
+                         "BufferSource's fn is null"),
+               Particles{};
+    if (!(d.radius > 0.0f))
+        return set_error("particles need a radius above zero — they are "
+                         "drawn as discs, not as points"),
+               Particles{};
+
+    App::SceneItem &it = a->scene.items.emplace_back();
+    it.app = a;
+    it.kind = App::ItemKind::Particles;
+    it.particles.external = true;
+    it.particles.src = src;
+    for (int c = 0; c < 4; ++c)
+        it.particles.color[c] = d.color[c];
+    it.particles.radius = d.radius;
+    return Particles{&it};
+}
+
 } // namespace impl
 } // namespace sv

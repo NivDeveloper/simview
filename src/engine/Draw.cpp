@@ -116,8 +116,12 @@ void item_prepare(impl::App::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
     if (it.kind == impl::App::ItemKind::Particles) {
         impl::App::ParticlesState &ps = it.particles;
         if (ps.external) {
+            // The buffer IS the cloud: interleaved xy pairs, so its
+            // size is the point count. A count passed alongside would
+            // be a second copy of that fact, free to disagree.
             gpud::Buffer *b = ps.src.current();
             ps.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+            ps.count = b ? b->bytes() / 8 : 0;
         }
         if (ps.dirty && !ps.external && ps.buf && ps.count) {
             SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
