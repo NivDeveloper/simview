@@ -33,6 +33,10 @@ struct App {
     SDL_GPUDevice *dev = nullptr;
     SDL_Window *win = nullptr; // null when headless
     bool headless = false;
+    // What a headless UI frame is laid out for. A composited shot must
+    // be this size or ImGui's projection puts most of the frame off
+    // the target.
+    Extent2 ui_size{};
     bool quit = false;
     struct Cb {
         void (*fn)(void *);

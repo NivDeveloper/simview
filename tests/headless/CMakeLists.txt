@@ -1,14 +1,15 @@
 # Headless runtime checks: the verification the examples must never
 # carry. Plain mains; a missing device prints SKIP and exits 0.
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
-            view_check)
+            view_check resize_check viewport_check)
     add_executable(${t} ${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
-    # Tests may speak the UI stack; consumers may not. Granting the
-    # include path HERE is what makes that a decision rather than a
+    # Tests may speak the UI stack, SDL and gpud; consumers may not.
+    # Granting them HERE is what makes that a decision rather than a
     # side effect of how the library links its archives.
     target_include_directories(${t} PRIVATE
-        ${imgui_SOURCE_DIR} ${implot_SOURCE_DIR})
+        ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR})
+    target_link_libraries(${t} PRIVATE SDL3::SDL3 gpud::sdl)
     set_target_properties(${t} PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     if(NOT MSVC)

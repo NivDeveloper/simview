@@ -68,24 +68,23 @@ void ui_init(impl::App *a, const Config &c) {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     if (!a->win) {
-        // Headless: the context alone, given what a backend would have
-        // supplied — the display metrics, a frame time (the library
-        // owns no clock, so a test's frames are its own), and a built
-        // font atlas, which ImGui otherwise asserts on. The texture id
-        // is a placeholder: nothing samples it because nothing draws.
+        // Headless keeps the RENDERER backend and drops only the
+        // platform one: ImGui_ImplSDLGPU3_Init needs a device and a
+        // target format, never a window. So a headless frame is built
+        // by the same code, with the same backend flags and the same
+        // font atlas, and can be composited into a shot — which is
+        // the only way the UI is pixel-testable at all. What a
+        // platform backend would have supplied is supplied here: the
+        // display metrics and a frame time, since the library owns no
+        // clock and a test's frames are its own.
         io.DisplaySize = ImVec2(float(c.size.w), float(c.size.h));
         io.DeltaTime = 1.0f / 60.0f;
-        unsigned char *pixels = nullptr;
-        int tw = 0, th = 0;
-        io.Fonts->GetTexDataAsRGBA32(&pixels, &tw, &th);
-        io.Fonts->SetTexID(ImTextureID(1));
-        // The one backend flag headless must claim. Without it
-        // ImDrawList never splits at 65535 vertices and silently
-        // truncates indices, so a headless frame would stop matching
-        // the onscreen one — and matching is the law. Unlike the
-        // viewport flags, this changes only how draw lists are built:
-        // there is no backend function behind it to be missing.
-        io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
+
+        ImGui_ImplSDLGPU3_InitInfo ii{};
+        ii.Device = a->dev;
+        ii.ColorTargetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ii.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+        ImGui_ImplSDLGPU3_Init(&ii);
         return;
     }
 
@@ -119,10 +118,9 @@ void ui_quit(impl::App *a) {
         return;
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
-    if (a->win) {
+    if (a->win)
         ImGui_ImplSDL3_Shutdown();
-        ImGui_ImplSDLGPU3_Shutdown();
-    }
+    ImGui_ImplSDLGPU3_Shutdown();
     // The frame-count guard is the difference between saving a layout
     // and truncating a good one: an App that opens and closes without
     // ever building a UI frame has nothing to write, and that is the
@@ -140,10 +138,9 @@ void ui_quit(impl::App *a) {
 void ui_begin(impl::App *a) {
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
-    if (a->win) {
-        ImGui_ImplSDLGPU3_NewFrame();
+    ImGui_ImplSDLGPU3_NewFrame();
+    if (a->win)
         ImGui_ImplSDL3_NewFrame();
-    }
     ImGui::NewFrame();
     // A passthru central node is a hole: the scene shows through it,
     // and an empty dockspace emits no geometry at all.

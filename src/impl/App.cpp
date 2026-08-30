@@ -50,6 +50,7 @@ App *app_init(const Config &c) {
     a->gdev = std::move(g);
     a->dev = gpud::sdl::native_device(*a->gdev);
     a->headless = c.headless;
+    a->ui_size = c.size;
     if (!c.headless) {
         a->win = SDL_CreateWindow(c.title, int(c.size.w), int(c.size.h),
                                   SDL_WINDOW_RESIZABLE);
@@ -295,16 +296,23 @@ Stats app_stats(App *a) { return a ? a->stats : Stats{}; }
 bool app_shot(App *a, const char *path) {
     if (!a || !path)
         return set_error("shot: null"), false;
-    views_resize(a);
     // Sized from the first field so the shot carries no letterbox
-    // bars; 512 square when the scene has none.
+    // bars; 512 square when the scene has none. A COMPOSITED shot is
+    // the exception: it must match what the UI frame was laid out
+    // for, because that is what ImGui's projection assumes.
     Uint32 w = 512, h = 512;
-    for (const App::SceneItem &it : a->scene.items)
-        if (it.kind == App::ItemKind::Field && it.field.w) {
-            w = it.field.w * 2;
-            h = it.field.h * 2;
-            break;
-        }
+    const bool composited = !a->win && ui_on(a);
+    if (composited) {
+        w = a->ui_size.w;
+        h = a->ui_size.h;
+    } else {
+        for (const App::SceneItem &it : a->scene.items)
+            if (it.kind == App::ItemKind::Field && it.field.w) {
+                w = it.field.w * 2;
+                h = it.field.h * 2;
+                break;
+            }
+    }
 
     SDL_GPUTextureCreateInfo ti{};
     ti.type = SDL_GPU_TEXTURETYPE_2D;
@@ -332,6 +340,12 @@ bool app_shot(App *a, const char *path) {
     ++a->stats.frames;
     views_draw(a, cmd);
     scene_draw(a->scene, cmd, tex, w, h, ti.format);
+    // A headless shot is the COMPOSITED frame, viewports included:
+    // what a test can see must be what the window shows.
+    if (composited) {
+        ui_draw(a, cmd, tex);
+        ui_viewports(a);
+    }
     SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTextureRegion reg{};
     reg.texture = tex;
