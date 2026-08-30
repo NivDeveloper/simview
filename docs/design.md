@@ -149,6 +149,32 @@ Three laws, each learned from the predecessor:
   them; `PostEvent` bypasses capture entirely, because the automation
   seam addresses the app and must not depend on invisible UI state.
 
+## The scene
+
+What is drawn to the swapchain is a LIST of items, not one field.
+`scene_draw` prepares every item (pulls sources, uploads what the host
+changed), begins ONE render pass, and draws each item through
+`item_draw`'s switch on kind.
+
+- **The clear belongs to the scene**, never to an item — an item that
+  cleared would erase whatever the item before it drew. That single
+  move is what makes compositing possible.
+- **A scene has a 2-D range**, defaulting to the first field's grid in
+  CELLS, so points over a lattice are placed in cell coordinates. One
+  aspect-fit is computed from that range and used by every kind, so
+  alignment between a field and the points over it is structural
+  rather than coincidental. `SceneRange` names it explicitly when
+  there is no field to inherit from.
+- **A new scene kind costs its three sites PLUS a pipeline and a
+  shader** — irreducible, and worth saying so nobody expects the
+  series-level cheapness a plot kind has.
+- **The pipeline cache is keyed on (kind, format)**. Format alone would
+  hand one kind another's pipeline: a picture rather than an error.
+- **Uniforms are per STAGE.** A block bound in the vertex set is not
+  readable from a fragment shader — SDL binds nothing there, and the
+  draw silently produces nothing while every counter says it happened.
+  Values a fragment stage needs travel through the varying.
+
 ## Plots
 
 A plot is a panel: `app.Plot({.title = …})` returns a retained handle

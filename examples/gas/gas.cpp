@@ -1,0 +1,83 @@
+// A 2-D hard-disc gas in plain C++: particles in the scene, their
+// speed distribution in a plot, and the controls beside it. Nothing
+// here knows about a GPU — the positions are a std::vector the frame
+// hands over each step.
+#include <simview/simview.h>
+
+#include <cmath>
+#include <random>
+#include <span>
+#include <vector>
+
+constexpr std::size_t N = 2000;
+constexpr float BOX = 100.0f;
+
+int main() {
+    sv::App app({.title = "simview — gas", .size = {900, 700}});
+    if (!app)
+        return 1;
+
+    std::vector<float> xy(N * 2), vel(N * 2), speed(N);
+    std::mt19937 rng(2026);
+    std::uniform_real_distribution<float> place(2.0f, BOX - 2.0f);
+    std::normal_distribution<float> kick(0.0f, 6.0f);
+    for (std::size_t i = 0; i < N; ++i) {
+        xy[2 * i] = place(rng);
+        xy[2 * i + 1] = place(rng);
+        vel[2 * i] = kick(rng);
+        vel[2 * i + 1] = kick(rng);
+    }
+
+    float dt = 0.004f;
+    float gravity = 0.0f;
+    bool running = true;
+
+    // The box IS the coordinate system: no field, so the scene's range
+    // is named rather than inherited from a lattice.
+    app.SceneRange({0.0, 0.0, BOX, BOX});
+    auto points =
+        app.Particles({.color = {0.55f, 0.8f, 1.0f, 0.9f}, .radius = 2.0f});
+
+    app.Plot({.title = "speed",
+              .x = {.label = "|v|", .fit = sv::Fit::Stream},
+              .y = {.label = "count", .fit = sv::Fit::Stream}})
+        .Histogram(
+            "distribution", [&] { return std::span<const float>(speed); }, 32);
+
+    app.Panel("controls")
+        .Slider("dt", dt, 0.0f, 0.01f)
+        .Slider("gravity", gravity, 0.0f, 200.0f)
+        .Checkbox("running", running)
+        .Separator()
+        .Value("particles", [] { return double(N); }, "%.0f");
+
+    app.OnFrame([&] {
+        if (running)
+            for (std::size_t i = 0; i < N; ++i) {
+                vel[2 * i + 1] += gravity * dt;
+                xy[2 * i] += vel[2 * i] * dt;
+                xy[2 * i + 1] += vel[2 * i + 1] * dt;
+
+                // Reflect off the walls; energy is conserved exactly,
+                // so the speed distribution holds its shape.
+                for (int c = 0; c < 2; ++c) {
+                    float &p = xy[2 * i + c];
+                    float &v = vel[2 * i + c];
+                    if (p < 0.0f) {
+                        p = -p;
+                        v = -v;
+                    } else if (p > BOX) {
+                        p = 2.0f * BOX - p;
+                        v = -v;
+                    }
+                }
+                speed[i] = std::hypot(vel[2 * i], vel[2 * i + 1]);
+            }
+        points.Update(xy);
+    });
+
+    app.OnKey(sv::Key::Space, [&] { running = !running; })
+        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+
+    app.Run();
+}

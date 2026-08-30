@@ -89,12 +89,19 @@ Predicting five and being right beats claiming three and being
 surprised; five for structural reasons rather than eighteen for
 architectural ones is the architecture vindicated.
 
-**4. More than one field, and views in panels.** N scenes rather than
-one field per App, each renderable into a texture and shown in a
-dockable panel — which is what makes a view tearable and what finally
-lets the UI be pixel-tested.
+**4. The scene is a list** (shipped). What is drawn to the swapchain is
+N items, not one welded-in field: `scene_draw` prepares them, begins
+ONE pass, and `item_draw` switches on kind. The clear moved from the
+item to the scene, because an item that cleared would erase whatever
+came before it. `Particles` is the second kind — instanced quads,
+sharing the scene's 2-D range and its single aspect-fit so a point
+lands on the cell it belongs to.
 
-**5. (was: panels the user writes — shipped in move 1.)** N panels rather than one field per App;
+**5. Views in panels.** A scene whose target is a texture, shown by
+ImGui::Image — which is what makes a view dockable and tearable, and
+what finally lets the UI be pixel-tested.
+
+ N panels rather than one field per App;
 the refusal that exists today becomes a list.
 
 **6. 3D.** ImPlot3D for plot-shaped 3D, and — for particle/volume
