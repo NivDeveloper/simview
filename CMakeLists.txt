@@ -104,6 +104,37 @@ target_compile_definitions(simview_implot PRIVATE
 set_target_properties(simview_implot PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON)
+
+# ImPlot3D is a SEPARATE library — ImGui only, not ImPlot — with its
+# own context and its own BeginPlot. It is wired exactly as ImPlot is:
+# same pin-by-hash, same private include dirs, same numeric-type
+# narrowing (its macro mirrors ImPlot's). The demo is NOT built for
+# the same reason ImPlot's is not: it plots integer arrays that are
+# undefined references under the narrowed list. The meshes TU is,
+# because PlotMesh's built-in cube and sphere live there.
+FetchContent_Declare(implot3d
+    GIT_REPOSITORY https://github.com/brenocq/implot3d
+    # v0.4, pinned by hash; latest tag as of 2026-08
+    GIT_TAG        41ae3e447c0de20ecab95d38a4b4dc0835a3efc2)
+FetchContent_MakeAvailable(implot3d)
+
+add_library(simview_implot3d STATIC
+    ${implot3d_SOURCE_DIR}/implot3d.cpp
+    ${implot3d_SOURCE_DIR}/implot3d_items.cpp
+    ${implot3d_SOURCE_DIR}/implot3d_meshes.cpp)
+target_include_directories(simview_implot3d PRIVATE
+    ${implot3d_SOURCE_DIR} ${imgui_SOURCE_DIR})
+target_link_libraries(simview_implot3d PUBLIC simview_imgui)
+target_compile_definitions(simview_implot3d PRIVATE
+    "IMPLOT3D_CUSTOM_NUMERIC_TYPES=(float)(double)")
+set_target_properties(simview_implot3d PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_options(simview_implot3d PRIVATE /w /utf-8)
+else()
+    target_compile_options(simview_implot3d PRIVATE -w)
+endif()
 if(MSVC)
     target_compile_options(simview_implot PRIVATE /w /utf-8)
 else()
@@ -131,9 +162,11 @@ target_include_directories(simview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(simview PUBLIC gpud::gpud simview_imgui simview_implot
+                              simview_implot3d
                               PRIVATE gpud::sdl SDL3::SDL3)
 target_include_directories(simview PRIVATE
-    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR})
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}
+    ${implot3d_SOURCE_DIR})
 target_compile_definitions(simview PRIVATE
     SIMVIEW_VERSION="${PROJECT_VERSION}")
 set_target_properties(simview PROPERTIES
@@ -144,7 +177,8 @@ endif()
 
 # Both archives: without simview_imgui the installed library has
 # undefined ImGui symbols and nobody can link it.
-install(TARGETS simview simview_imgui simview_implot ARCHIVE DESTINATION lib)
+install(TARGETS simview simview_imgui simview_implot simview_implot3d
+        ARCHIVE DESTINATION lib)
 install(DIRECTORY include/simview DESTINATION include)
 
 if(SIMVIEW_BUILD_EXAMPLES)
@@ -169,7 +203,7 @@ if(SIMVIEW_BUILD_TESTS)
     add_library(simview_probe STATIC src/testing/Probe.cpp)
     target_include_directories(simview_probe PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include ${imgui_SOURCE_DIR}
-        ${implot_SOURCE_DIR})
+        ${implot_SOURCE_DIR} ${implot3d_SOURCE_DIR})
     target_link_libraries(simview_probe PRIVATE SDL3::SDL3 gpud::sdl)
     set_target_properties(simview_probe PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)

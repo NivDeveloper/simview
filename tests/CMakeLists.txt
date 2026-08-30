@@ -23,6 +23,7 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
     # what tests actually lack.
     target_include_directories(${t} PRIVATE
         ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}
+        ${implot3d_SOURCE_DIR}
         $<TARGET_PROPERTY:gpud::sdl,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(${t} PRIVATE SDL3::SDL3 simview_probe)
     set_target_properties(${t} PROPERTIES

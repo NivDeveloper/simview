@@ -23,6 +23,10 @@ ImGuiContext *ui_context(impl::App *a) { return a ? a->ui.ctx : nullptr; }
 
 ImPlotContext *plot_context(impl::App *a) { return a ? a->ui.plot : nullptr; }
 
+ImPlot3DContext *plot3d_context(impl::App *a) {
+    return a ? a->ui.plot3d : nullptr;
+}
+
 Extent2 view_extent(impl::App *a, const char *title) {
     if (!a || !title)
         return {};

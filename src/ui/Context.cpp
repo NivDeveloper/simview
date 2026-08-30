@@ -15,6 +15,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 #include <implot.h>
+#include <implot3d.h>
 
 namespace {
 
@@ -65,6 +66,10 @@ void ui_init(impl::App *a, const Config &c) {
     // its plots into the first App's context.
     a->ui.plot = ImPlot::CreateContext();
     ImPlot::SetCurrentContext(a->ui.plot);
+    // ImPlot3D has the identical trap, read from its source: it sets
+    // current only when GImPlot3D is null.
+    a->ui.plot3d = ImPlot3D::CreateContext();
+    ImPlot3D::SetCurrentContext(a->ui.plot3d);
 
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = nullptr; // the layout file is ours to place
@@ -122,6 +127,7 @@ void ui_quit(impl::App *a) {
         return;
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
+    ImPlot3D::SetCurrentContext(a->ui.plot3d);
     if (a->platform.win)
         ImGui_ImplSDL3_Shutdown();
     ImGui_ImplSDLGPU3_Shutdown();
@@ -131,7 +137,9 @@ void ui_quit(impl::App *a) {
     // default path for an app with no panels.
     if (!a->ui.ini.empty() && ImGui::GetFrameCount() > 0)
         ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
-    // ImPlot's context holds ImGui-derived state: it goes first.
+    // The plot contexts hold ImGui-derived state: they go first.
+    ImPlot3D::DestroyContext(a->ui.plot3d);
+    a->ui.plot3d = nullptr;
     ImPlot::DestroyContext(a->ui.plot);
     a->ui.plot = nullptr;
     ImGui::DestroyContext(a->ui.ctx);
@@ -142,6 +150,7 @@ void ui_quit(impl::App *a) {
 void ui_begin(impl::App *a) {
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
+    ImPlot3D::SetCurrentContext(a->ui.plot3d);
     ImGui_ImplSDLGPU3_NewFrame();
     if (a->platform.win)
         ImGui_ImplSDL3_NewFrame();

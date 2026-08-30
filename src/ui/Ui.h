@@ -17,6 +17,7 @@
 
 struct ImGuiContext;
 struct ImPlotContext;
+struct ImPlot3DContext;
 
 namespace sv {
 
@@ -27,6 +28,7 @@ struct App;
 struct UiState {
     ::ImGuiContext *ctx = nullptr;
     ::ImPlotContext *plot = nullptr;
+    ::ImPlot3DContext *plot3d = nullptr;
     std::string ini;
     std::forward_list<Cb> cbs; // panel callbacks, registration order
 };

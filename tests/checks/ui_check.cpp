@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 #include <implot.h>
+#include <implot3d.h>
 
 int main() {
     harness::begin();
@@ -26,6 +27,11 @@ int main() {
     // without it ImDrawList never splits at 65535 vertices.
     CHECK(ImGui::GetCurrentContext() == sv::probe::ui_context(app.Raw()));
     CHECK(ImPlot::GetCurrentContext() == sv::probe::plot_context(app.Raw()));
+    // ImPlot3D shares ImPlot's trap — CreateContext sets current only
+    // when none exists — so this is the same assertion, for the same
+    // reason, against the second library.
+    CHECK(ImPlot3D::GetCurrentContext() ==
+          sv::probe::plot3d_context(app.Raw()));
     CHECK((ImGui::GetIO().BackendFlags &
            ImGuiBackendFlags_RendererHasVtxOffset) != 0);
 
@@ -52,6 +58,15 @@ int main() {
     // alone, whose central node is a hole.
     {
         App bare({.headless = true});
+        // The trap, caught at the only moment it can bite: BEFORE the
+        // second App's first frame re-asserts its contexts. ImPlot's
+        // and ImPlot3D's CreateContext set current only when none
+        // exists — the first App's does — so without an explicit
+        // SetCurrentContext in ui_init, `bare` would plot into `app`.
+        CHECK(ImPlot::GetCurrentContext() ==
+              sv::probe::plot_context(bare.Raw()));
+        CHECK(ImPlot3D::GetCurrentContext() ==
+              sv::probe::plot3d_context(bare.Raw()));
         bare.OnUi([] {});
         bare.Step();
         // Measured, not assumed: PassthruCentralNode makes the host
@@ -66,6 +81,8 @@ int main() {
     app.Step();
     CHECK(ImGui::GetCurrentContext() == sv::probe::ui_context(app.Raw()));
     CHECK(ImPlot::GetCurrentContext() == sv::probe::plot_context(app.Raw()));
+    CHECK(ImPlot3D::GetCurrentContext() ==
+          sv::probe::plot3d_context(app.Raw()));
     CHECK_EQ(calls, 3);
 
     return check::summary("ui");

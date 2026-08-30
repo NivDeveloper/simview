@@ -15,12 +15,14 @@
 
 struct ImGuiContext;
 struct ImPlotContext;
+struct ImPlot3DContext;
 
 namespace sv {
 namespace probe {
 
 ImGuiContext *ui_context(impl::App *);
 ImPlotContext *plot_context(impl::App *);
+ImPlot3DContext *plot3d_context(impl::App *);
 
 // The size a view's texture currently holds — how a check asks
 // whether the panel's room reached the render target.
