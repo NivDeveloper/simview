@@ -40,11 +40,11 @@ int main() {
 
     // Before any frame the target is unsized: nothing has said how
     // much room the panel has.
-    CHECK_EQ(sv::impl::app_view_extent(app.Raw(), "lattice").w, 0u);
+    CHECK_EQ(sv::probe::view_extent(app.Raw(), "lattice").w, 0u);
 
     app.Step();
     app.Step();
-    const Extent2 e = sv::impl::app_view_extent(app.Raw(), "lattice");
+    const Extent2 e = sv::probe::view_extent(app.Raw(), "lattice");
     // Sized from the panel, not from a constant — and not collapsed,
     // which is what a window auto-fitting an image sized from itself
     // would do.

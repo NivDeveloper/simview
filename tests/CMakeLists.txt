@@ -19,7 +19,7 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
     # side effect of how the library links its archives.
     target_include_directories(${t} PRIVATE
         ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR})
-    target_link_libraries(${t} PRIVATE SDL3::SDL3 gpud::sdl)
+    target_link_libraries(${t} PRIVATE SDL3::SDL3 gpud::sdl simview_probe)
     set_target_properties(${t} PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     if(NOT MSVC)

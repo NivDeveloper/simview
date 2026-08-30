@@ -146,5 +146,20 @@ if(SIMVIEW_BUILD_EXAMPLES)
 endif()
 if(SIMVIEW_BUILD_TESTS)
     enable_testing()
+
+    # The test surface, in its OWN archive and deliberately absent
+    # from install(TARGETS) above. That makes the boundary a LINK
+    # boundary rather than a naming convention: a release build cannot
+    # contain sv::probe because this target is never built and never
+    # shipped, and tests/installed_surface proves the absence by
+    # looking for the file.
+    add_library(simview_probe STATIC src/testing/Probe.cpp)
+    target_link_libraries(simview_probe PRIVATE simview::simview)
+    target_include_directories(simview_probe PRIVATE
+        ${imgui_SOURCE_DIR} ${implot_SOURCE_DIR})
+    target_link_libraries(simview_probe PRIVATE SDL3::SDL3 gpud::sdl)
+    set_target_properties(simview_probe PROPERTIES
+        CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+
     add_subdirectory(tests)
 endif()

@@ -14,6 +14,34 @@ if(NOT r EQUAL 0)
     message(FATAL_ERROR "install failed")
 endif()
 
+# Test-only code must be ABSENT from a release build, not merely
+# undeclared. sv::probe lives in its own archive that install(TARGETS)
+# never names, so the question is a file, not a symbol table.
+if(EXISTS ${PREFIX}/lib/libsimview_probe.a OR
+   EXISTS ${PREFIX}/lib/simview_probe.lib)
+    message(FATAL_ERROR "the probe archive was installed — test-only "
+                        "code must never reach a consumer's prefix")
+endif()
+
+# Belt and braces, where the tool exists: the shipped library itself
+# must carry no sv::probe symbol. 5probe is the Itanium mangling of
+# the namespace. A missing nm is a NAMED skip — a skip and a pass must
+# not read alike.
+find_program(NM nm)
+if(NM AND EXISTS ${PREFIX}/lib/libsimview.a)
+    execute_process(COMMAND ${NM} ${PREFIX}/lib/libsimview.a
+                    OUTPUT_VARIABLE syms ERROR_QUIET)
+    string(FIND "${syms}" "5probe" found)
+    if(NOT found EQUAL -1)
+        message(FATAL_ERROR "libsimview.a exports an sv::probe symbol — "
+                            "test-only code compiled into the library")
+    endif()
+    message(STATUS "no sv::probe symbol in the installed library")
+else()
+    message(STATUS "SKIP: nm not found — the symbol half of the probe "
+                   "check did not run (the archive check did)")
+endif()
+
 file(WRITE ${CONSUMER}/CMakeLists.txt "
 cmake_minimum_required(VERSION 3.24)
 project(consumer CXX)

@@ -241,6 +241,8 @@ src/engine/        the SDL side — internal headers live here, never
                    installed
 examples/hello/    init headless, report, quit; doubles as the
                    install-check consumer
+src/testing/       sv::probe — the ONLY test-only code, in its own
+                   never-installed archive (lint rule (i))
 tests/harness/     the assertion and image vocabulary (Check, Bmp,
                    Harness, Palette)
 tests/fakes/       backends a display would otherwise be needed for

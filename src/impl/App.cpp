@@ -12,9 +12,6 @@
 #include <cstring>
 #include <vector>
 
-struct ImGuiContext;
-struct ImPlotContext;
-
 namespace sv {
 
 namespace {
@@ -481,19 +478,6 @@ bool particles_update(Particles p, const float *xy, std::size_t count) {
 }
 
 gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }
-
-ImGuiContext *app_ui_context(App *a) { return a ? a->ui.ctx : nullptr; }
-
-Extent2 app_view_extent(App *a, const char *title) {
-    if (!a || !title)
-        return {};
-    for (const App::ViewState &v : a->views)
-        if (v.title == title)
-            return {v.w, v.h};
-    return {};
-}
-
-ImPlotContext *app_plot_context(App *a) { return a ? a->ui.plot : nullptr; }
 
 Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
     App::SceneState *sc = static_cast<App::SceneState *>(s.p);

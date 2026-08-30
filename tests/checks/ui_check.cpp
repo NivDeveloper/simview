@@ -24,8 +24,8 @@ int main() {
     // The layer's own context is current, and headless claims the one
     // backend flag that keeps its geometry equal to the window's:
     // without it ImDrawList never splits at 65535 vertices.
-    CHECK(ImGui::GetCurrentContext() == sv::impl::app_ui_context(app.Raw()));
-    CHECK(ImPlot::GetCurrentContext() == sv::impl::app_plot_context(app.Raw()));
+    CHECK(ImGui::GetCurrentContext() == sv::probe::ui_context(app.Raw()));
+    CHECK(ImPlot::GetCurrentContext() == sv::probe::plot_context(app.Raw()));
     CHECK((ImGui::GetIO().BackendFlags &
            ImGuiBackendFlags_RendererHasVtxOffset) != 0);
 
@@ -64,8 +64,8 @@ int main() {
     // ImPlot's included, which its CreateContext does NOT guarantee on
     // its own (it sets current only when none exists).
     app.Step();
-    CHECK(ImGui::GetCurrentContext() == sv::impl::app_ui_context(app.Raw()));
-    CHECK(ImPlot::GetCurrentContext() == sv::impl::app_plot_context(app.Raw()));
+    CHECK(ImGui::GetCurrentContext() == sv::probe::ui_context(app.Raw()));
+    CHECK(ImPlot::GetCurrentContext() == sv::probe::plot_context(app.Raw()));
     CHECK_EQ(calls, 3);
 
     return check::summary("ui");

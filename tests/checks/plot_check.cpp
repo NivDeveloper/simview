@@ -49,7 +49,7 @@ int main() {
     App app({.headless = true});
     if (!app)
         return check::skip("plot", LastError());
-    CHECK(ImPlot::GetCurrentContext() == sv::impl::app_plot_context(app.Raw()));
+    CHECK(ImPlot::GetCurrentContext() == sv::probe::plot_context(app.Raw()));
 
     // A plot alone is a panel: it registers its own callback, so the
     // UI runs with no OnUi anywhere.

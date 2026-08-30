@@ -53,6 +53,18 @@ for h in include/simview/*.h; do
     esac
 done
 
+# (i): test-only code lives in ONE namespace and ONE place. sv::probe
+# is compiled into an archive that is never installed, so a release
+# build cannot contain it — this rule is what stops a new test-only
+# function being written somewhere that ships instead.
+stray=$(grep -rln 'sv::probe\|namespace probe' src include 2>/dev/null \
+        | grep -v '^src/testing/' || true)
+if [ -n "$stray" ]; then
+    echo "LINT: sv::probe outside src/testing/ — test-only code must not"
+    echo "      be compiled into the library:"; echo "$stray"
+    fail=1
+fi
+
 # (g)
 CF=/opt/homebrew/bin/clang-format
 command -v "$CF" >/dev/null 2>&1 || CF=clang-format
