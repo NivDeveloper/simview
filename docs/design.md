@@ -69,23 +69,21 @@ that path.
 
 ## Layers
 
-```
-App shell    window(s), the run loop, input, ImGui frame, headless mode
-Views        FieldView; PlotView/WidgetView builders; custom-pass hook
-Data plane   the sync layer: Executor + channels (versioned snapshots)
-Draw         internal pipelines from committed bytecode; ImGui render
-SDL3         the only floor
-```
+**The layer DAG, the patterns behind it and where it is going live in
+`architecture.md`.** This file records decisions as they were made;
+that one records the shape they add up to. When the two disagree, that
+one is the architecture and this one is the history.
 
 The sync layer inherits vklib's `SyncBuffer`/`Executor` design — its
 best-factored piece (138 public lines, 269 impl lines, 3 lines of
 consumer cost): Play/Pause/Step safe from any thread, `iterDelayNs`
 pacing, triple-buffered state/transfer/draw with POINTER swaps, sim
 depth capped at one in flight so render interleaves, lazy first-touch
-registration. Two channel flavors: `HostChannel` (triple-buffered host
-memory — the portable default, works for any sim) and `GpuChannel`
-(SDL_GPUBuffer handoff, zero-copy; single-threaded first, threaded
-only after SDL's cross-thread command-buffer rules are pinned).
+registration. One channel flavour shipped: `HostChannel`
+(triple-buffered host memory — the portable default, works for any
+sim). The zero-copy half was never built as a channel: the pull model
+(gpud's `BufferSource`, below) answered that question instead, and
+answered it without simview owning a second transfer path.
 
 ## Dependencies
 
@@ -378,24 +376,18 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
 | --- | --- |
 | gates | `make lint` (dependency hygiene of the installed surface) and `make install-check` (install to a scratch prefix; compile a consumer against ONLY that, SDL absent) — both from day one |
 | unit | the sync layer under a fake clock; builder recording |
-| pixel | offscreen goldens per view type, small, committed |
-| examples | every in-tree example builds on every platform on every push — build-only: they are showcases, and tests/headless carries the verification they must not |
-| interaction | SDL_PushEvent-driven scripted input (later) |
+| pixel | **measured palettes, not committed goldens** — a check captures the colours the working arrangement produces and fails on any colour outside them. It needs no golden to maintain, survives a driver that rounds differently, and catches a flash of a colour nobody predicted |
+| examples | every in-tree example builds on every platform on every push — build-only: they are showcases, and the checks carry the verification they must not |
+| interaction | `PostEvent` delivers keyboard events to the sim's own callbacks; `tests/fakes/` supplies the backends a display would otherwise be needed for, so torn-out panels are reachable headlessly |
+| boundary | test-only exports live in `sv::probe`, in their own never-installed archive; `installed_surface` proves it absent from the prefix |
 
 Every gate must be BROKEN once when added, to prove it fires.
 
 ## Roadmap
 
-- **Move 1** (this): constitution, gates, minimal impl, CI matrix.
-- **Move 2** (done): the walking skeleton — window + run loop,
-  Event/Key, host-path Field with the colormap pipeline (committed
-  SPIR-V bytecode; native MSL/DXIL emission is a named follow-up),
-  step/shot as headless API, hello-window.
-- **Move 3** (done): the founding examples — `ising-cpu` (plain
-  arrays + the sync layer; the canary) and `xy-gpu` (Mode B,
-  standalone subproject, the cross-compiler ABI proof) — plus the
-  Executor/Channel port and the zero-copy field. Controls are keys
-  until the widget move.
-- Then: plots over ImPlot behind the one UI boundary, aux windows,
-  particles, threaded GpuChannel. v1.0 is not a feature: it is the CI
-  matrix green on all three platforms with the docs matching reality.
+**`roadmap.md` is the feature list; `architecture.md` is the
+structural sequence.** Both were duplicated here once and drifted,
+which is why neither is repeated now.
+
+v1.0 is not a feature: it is the CI matrix green on all three
+platforms with the docs matching reality.

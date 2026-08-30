@@ -4,7 +4,8 @@ A window on a running numerical simulation: fields, particles, and
 live plots over SDL3, with a sim/render sync layer that keeps the two
 honest. The public surface is dependency-free — any C++20 compiler,
 `#include <simview/simview.h>`, link `libsimview` — and a grep-clean
-impl/sugar split keeps it that way (docs/design.md is the architecture record).
+impl/sugar split keeps it that way (docs/architecture.md is the
+structure; docs/design.md is how it got there).
 
 **Status: Move 3.** The walking skeleton: a real window loop
 (register-then-run), the Event/Key vocabulary (USB-HID numbering),

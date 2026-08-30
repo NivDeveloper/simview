@@ -2,7 +2,8 @@
 
 Lightweight cross-platform sim visualization over SDL3. C++20, the
 SYSTEM compiler (AppleClang/gcc/MSVC — deliberately NOT tensor's
-g++-16/reflection world). Design rationale and roadmap: docs/design.md.
+g++-16/reflection world). Structure and patterns: docs/architecture.md;
+how it got there: docs/design.md; what is next: docs/roadmap.md.
 Current state: the engine builds ON gpud (the sibling projects' GPU
 interchange): gpud::sdl::try_open owns device bring-up, and the one
 opt-in door — include/simview/gpud.h — carries sv::Device(app) and
@@ -242,5 +243,7 @@ examples/hello/    init headless, report, quit; doubles as the
                    install-check consumer
 tests/installed_surface/   the clean-surface gate
 tools/lint.sh      the hygiene gate
-docs/design.md     the architecture record
+docs/architecture.md   the structure: layers, patterns, the test
+                   boundary, and the refactor sequence
+docs/design.md     the decision record — history, not architecture
 ```
