@@ -241,7 +241,7 @@ Lines lines_from_source(Scene s, gpud::BufferSource src, const LinesDesc &d) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
-    if (!src.fn)
+    if (!src)
         return set_error("lines need a source that can answer — the "
                          "BufferSource's fn is null"),
                Lines{};

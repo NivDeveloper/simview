@@ -249,7 +249,7 @@ Particles particles_from_source(Scene s, gpud::BufferSource src,
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
-    if (!src.fn)
+    if (!src)
         return set_error("particles need a source that can answer — the "
                          "BufferSource's fn is null"),
                Particles{};

@@ -260,7 +260,7 @@ Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
-    if (!src.fn)
+    if (!src)
         return set_error("a field needs a source that can answer — the "
                          "BufferSource's fn is null"),
                Field{};

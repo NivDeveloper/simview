@@ -40,8 +40,11 @@ set(GPUD_BACKEND_VULKAN OFF)
 set(GPUD_BUILD_TESTS OFF)
 FetchContent_Declare(gpud
     GIT_REPOSITORY https://github.com/NivDeveloper/gpud
-    # v0.5.0, pinned by hash; examples/xy-gpu's tensor pin must agree
-    GIT_TAG        8011d0216cae4ed8b24a120760edcf71cbb98c12)
+    # v0.5.1, pinned by hash. The tensor the GPU examples pin declares
+    # gpud too, at the same hash by convention only: FetchContent is
+    # first-declare-wins, and in those subprojects THIS declaration is
+    # the one that counts.
+    GIT_TAG        0d36e1f1485944a747ea4ec5ae3046744033dbcf)
 FetchContent_MakeAvailable(gpud)
 
 # Dear ImGui is the UI layer: the dockspace, the panels, and — through
