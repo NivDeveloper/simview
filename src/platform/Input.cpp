@@ -2,7 +2,9 @@
 // callbacks in the same order — which is what makes a posted event a
 // faithful stand-in for a keypress.
 
-#include "../core/Engine.h"
+#include "Input.h"
+
+#include "../core/App.h"
 #include "../ui/Ui.h"
 
 #include <vector>
@@ -14,9 +16,9 @@ namespace impl {
 // SDL's own are: same callbacks, same order, same frame.
 void deliver_posted(App *a) {
     std::vector<Event> queued;
-    queued.swap(a->posted);
+    queued.swap(a->input.posted);
     for (const Event &e : queued)
-        in_order(a->event_cbs, [&](const App::Ecb &c) { c.fn(e, c.user); });
+        in_order(a->input.event_cbs, [&](const Ecb &c) { c.fn(e, c.user); });
 }
 
 void poll(App *a) {
@@ -26,20 +28,21 @@ void poll(App *a) {
     while (SDL_PollEvent(&ev)) {
         const bool typing = ui && ui_event(a, ev);
         if (ev.type == SDL_EVENT_QUIT)
-            a->quit = true;
+            a->platform.quit = true;
         // Once a panel is torn out, this window is no longer the last
         // one, so closing it stops producing SDL_EVENT_QUIT — and the
         // app would run on with only a floating panel to show for it.
-        if (ev.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && a->win &&
-            ev.window.windowID == SDL_GetWindowID(a->win))
-            a->quit = true;
+        if (ev.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && a->platform.win &&
+            ev.window.windowID == SDL_GetWindowID(a->platform.win))
+            a->platform.quit = true;
         if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
             if (typing)
                 continue; // a panel has the keyboard
             const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::KeyDown
                                                         : Event::Type::KeyUp,
                           std::int32_t(ev.key.scancode), ev.key.repeat};
-            in_order(a->event_cbs, [&](const App::Ecb &c) { c.fn(e, c.user); });
+            in_order(a->input.event_cbs,
+                     [&](const Ecb &c) { c.fn(e, c.user); });
         }
     }
 }

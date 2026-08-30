@@ -3,9 +3,13 @@
 // Thread-local, because two Apps on two threads must not read each
 // other's sentence.
 
-#include "Engine.h"
+#include "Error.h"
 
 #include <simview/Types.h>
+
+#include <SDL3/SDL.h>
+
+#include <string>
 
 namespace sv {
 

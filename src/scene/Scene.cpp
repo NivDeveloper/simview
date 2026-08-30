@@ -5,7 +5,7 @@
 // the cell it belongs to; and the two-phase order, because a copy pass
 // cannot be nested inside a render pass.
 
-#include "../core/Engine.h"
+#include "Target.h"
 
 #include <string>
 
@@ -34,51 +34,56 @@ bool scene_grid(const impl::SceneState &sc, Extent2 *out) {
     return false;
 }
 
-// The one format a view's texture is asked for: a colour target that
-// can also be sampled, and universally supported as both.
-constexpr SDL_GPUTextureFormat kViewFormat =
+// The one format a target is asked for: a colour target that can
+// also be sampled, and universally supported as both.
+constexpr SDL_GPUTextureFormat kTargetFormat =
     SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
 
-void views_resize(impl::App *a) {
-    for (impl::App::ViewState &v : a->views) {
-        if (v.tex && v.w == v.want_w && v.h == v.want_h)
-            continue;
-        if (v.tex)
-            SDL_ReleaseGPUTexture(a->dev, v.tex);
+void target_resize(SDL_GPUDevice *dev, impl::RenderTarget &t) {
+    if (t.tex && t.w == t.want_w && t.h == t.want_h)
+        return;
+    if (t.tex)
+        SDL_ReleaseGPUTexture(dev, t.tex);
 
-        SDL_GPUTextureCreateInfo ti{
-            .type = SDL_GPU_TEXTURETYPE_2D,
-            .format = kViewFormat,
-            .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
-                     SDL_GPU_TEXTUREUSAGE_SAMPLER,
-            .width = v.want_w,
-            .height = v.want_h,
-            .layer_count_or_depth = 1,
-            .num_levels = 1,
-            .sample_count = SDL_GPU_SAMPLECOUNT_1,
-            .props = 0,
-        };
-        v.tex = SDL_CreateGPUTexture(a->dev, &ti);
-        if (!v.tex) {
-            set_error(std::string("view texture: ") + SDL_GetError());
-            v.w = v.h = 0;
-            continue;
-        }
-        v.w = v.want_w;
-        v.h = v.want_h;
+    SDL_GPUTextureCreateInfo ti{
+        .type = SDL_GPU_TEXTURETYPE_2D,
+        .format = kTargetFormat,
+        .usage =
+            SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+        .width = t.want_w,
+        .height = t.want_h,
+        .layer_count_or_depth = 1,
+        .num_levels = 1,
+        .sample_count = SDL_GPU_SAMPLECOUNT_1,
+        .props = 0,
+    };
+    t.tex = SDL_CreateGPUTexture(dev, &ti);
+    if (!t.tex) {
+        set_error(std::string("view texture: ") + SDL_GetError());
+        t.w = t.h = 0;
+        return;
     }
+    t.w = t.want_w;
+    t.h = t.want_h;
 }
 
-void views_draw(impl::App *a, SDL_GPUCommandBuffer *cmd) {
-    for (impl::App::ViewState &v : a->views)
-        if (v.tex)
-            scene_draw(v.scene, cmd, v.tex, v.w, v.h, kViewFormat);
+void target_draw(impl::SceneState &sc, SDL_GPUCommandBuffer *cmd,
+                 impl::RenderTarget &t) {
+    if (t.tex)
+        scene_draw(sc, cmd, t.tex, t.w, t.h, kTargetFormat);
 }
 
-void scene_release(impl::App *a, impl::SceneState &sc) {
+void target_release(SDL_GPUDevice *dev, impl::RenderTarget &t) {
+    if (t.tex)
+        SDL_ReleaseGPUTexture(dev, t.tex);
+    t.tex = nullptr;
+    t.w = t.h = 0;
+}
+
+void scene_release(impl::SceneState &sc) {
     for (impl::SceneItem &it : sc.items)
         if (it.ops && it.ops->release)
-            it.ops->release(it, a->dev);
+            it.ops->release(it, sc.dev);
     sc.items.clear();
 }
 
@@ -120,8 +125,6 @@ void scene_range(Scene s, const Range2 &r) {
     if (SceneState *sc = static_cast<SceneState *>(s.p))
         sc->range = r;
 }
-
-Scene app_scene(App *a) { return a ? Scene{&a->scene} : Scene{}; }
 
 } // namespace impl
 } // namespace sv

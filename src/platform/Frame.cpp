@@ -10,12 +10,12 @@ namespace sv {
 void frame_build(impl::App *a) {
     // Before the UI frame: a draw list must never record a texture
     // this frame is about to release.
-    views_resize(a);
+    ui_views_resize(a);
     if (!ui_on(a))
         return;
 
     ui_begin(a);
-    in_order(a->ui_cbs, [](const impl::App::Cb &c) { c.fn(c.user); });
+    ui_run_panels(a);
     ui_end(a);
 }
 
@@ -24,12 +24,12 @@ void frame_render(impl::App *a, const Presenter &p) {
     // callback cannot desync them mid-frame.
     const bool ui = ui_on(a) && p.composites;
 
-    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
+    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->platform.dev);
     Target t{};
     const bool have = p.acquire(p.self, cmd, &t);
     if (have) {
         ++a->stats.frames;
-        views_draw(a, cmd);
+        ui_views_draw(a, cmd);
         scene_draw(a->scene, cmd, t.tex, t.w, t.h, t.format);
         if (ui)
             ui_draw(a, cmd, t.tex);
@@ -49,17 +49,18 @@ namespace {
 bool swapchain_acquire(void *self, SDL_GPUCommandBuffer *cmd, Target *out) {
     impl::App *a = static_cast<impl::App *>(self);
     SDL_GPUTexture *swap = nullptr;
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, a->win, &swap, nullptr,
-                                               nullptr) ||
+    if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, a->platform.win, &swap,
+                                               nullptr, nullptr) ||
         !swap)
         return false;
 
     int w = 0, h = 0;
-    SDL_GetWindowSizeInPixels(a->win, &w, &h);
+    SDL_GetWindowSizeInPixels(a->platform.win, &w, &h);
     out->tex = swap;
     out->w = Uint32(w);
     out->h = Uint32(h);
-    out->format = SDL_GetGPUSwapchainTextureFormat(a->dev, a->win);
+    out->format =
+        SDL_GetGPUSwapchainTextureFormat(a->platform.dev, a->platform.win);
     return true;
 }
 
@@ -103,8 +104,8 @@ void shot_finish(void *self, SDL_GPUCommandBuffer *cmd, bool acquired) {
     SDL_EndGPUCopyPass(cp);
 
     SDL_GPUFence *fe = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-    SDL_WaitForGPUFences(s->app->dev, true, &fe, 1);
-    SDL_ReleaseGPUFence(s->app->dev, fe);
+    SDL_WaitForGPUFences(s->app->platform.dev, true, &fe, 1);
+    SDL_ReleaseGPUFence(s->app->platform.dev, fe);
 }
 
 } // namespace
@@ -117,7 +118,7 @@ Presenter shot_presenter(ShotTarget *s) {
     // A windowed app's ImGui pipeline is built for the swapchain's
     // format, and a shot target is never that format — so a windowed
     // shot is the scene alone.
-    return {shot_acquire, shot_finish, s->app && !s->app->win, s};
+    return {shot_acquire, shot_finish, s->app && !s->app->platform.win, s};
 }
 
 namespace impl {
@@ -125,17 +126,17 @@ namespace impl {
 void app_run(App *a) {
     if (!a)
         return;
-    if (a->headless) {
+    if (!a->platform.win) {
         SDL_Log("simview: headless app — drive it with Step()/Shot()");
         return;
     }
-    a->quit = false;
-    while (!a->quit) {
+    a->platform.quit = false;
+    while (!a->platform.quit) {
         poll(a);
-        in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+        in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
         // A frame callback may quit; nothing after this point should
         // run when it did.
-        if (a->quit)
+        if (a->platform.quit)
             break;
 
         frame_build(a);
@@ -147,7 +148,7 @@ void app_step(App *a) {
     if (!a)
         return;
     deliver_posted(a);
-    in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+    in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
     // A headless frame builds the UI too: the panels run, their
     // geometry exists, and nothing is drawn — which is what makes the
     // callbacks testable without a display. It does NOT render, which
@@ -163,10 +164,10 @@ bool app_shot(App *a, const char *path) {
     // the exception: it must match what the UI frame was laid out
     // for, because that is what ImGui's projection assumes.
     Uint32 w = 512, h = 512;
-    const bool composited = !a->win && ui_on(a);
+    const bool composited = !a->platform.win && ui_on(a);
     if (composited) {
-        w = a->ui_size.w;
-        h = a->ui_size.h;
+        w = a->platform.ui_size.w;
+        h = a->platform.ui_size.h;
     } else if (Extent2 g{}; scene_grid(a->scene, &g)) {
         // At least two pixels a cell, so a lattice is legible.
         w = g.w * 2;
@@ -181,17 +182,18 @@ bool app_shot(App *a, const char *path) {
     ti.height = h;
     ti.layer_count_or_depth = 1;
     ti.num_levels = 1;
-    SDL_GPUTexture *tex = SDL_CreateGPUTexture(a->dev, &ti);
+    SDL_GPUTexture *tex = SDL_CreateGPUTexture(a->platform.dev, &ti);
     SDL_GPUTransferBufferCreateInfo tci{};
     tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
     tci.size = w * h * 4;
-    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+    SDL_GPUTransferBuffer *tb =
+        SDL_CreateGPUTransferBuffer(a->platform.dev, &tci);
     if (!tex || !tb) {
         set_error(SDL_GetError());
         if (tex)
-            SDL_ReleaseGPUTexture(a->dev, tex);
+            SDL_ReleaseGPUTexture(a->platform.dev, tex);
         if (tb)
-            SDL_ReleaseGPUTransferBuffer(a->dev, tb);
+            SDL_ReleaseGPUTransferBuffer(a->platform.dev, tb);
         return false;
     }
 
@@ -202,7 +204,7 @@ bool app_shot(App *a, const char *path) {
     ShotTarget st{a, tex, tb, w, h, ti.format};
     frame_render(a, shot_presenter(&st));
 
-    void *pixels = SDL_MapGPUTransferBuffer(a->dev, tb, false);
+    void *pixels = SDL_MapGPUTransferBuffer(a->platform.dev, tb, false);
     bool ok = pixels != nullptr;
     if (!ok) {
         set_error(SDL_GetError());
@@ -213,10 +215,10 @@ bool app_shot(App *a, const char *path) {
         if (!ok)
             set_error(SDL_GetError());
         SDL_DestroySurface(s);
-        SDL_UnmapGPUTransferBuffer(a->dev, tb);
+        SDL_UnmapGPUTransferBuffer(a->platform.dev, tb);
     }
-    SDL_ReleaseGPUTransferBuffer(a->dev, tb);
-    SDL_ReleaseGPUTexture(a->dev, tex);
+    SDL_ReleaseGPUTransferBuffer(a->platform.dev, tb);
+    SDL_ReleaseGPUTexture(a->platform.dev, tex);
     return ok;
 }
 

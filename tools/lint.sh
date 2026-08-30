@@ -65,6 +65,22 @@ if [ -n "$stray" ]; then
     fail=1
 fi
 
+# (j): the include DAG inside src/, core -> platform -> scene -> ui.
+# scene/ may name nothing from ui/ and never the composed App: a kind
+# sees a device and a counter block, not the world. And the layer
+# STATE headers (platform/Device.h, platform/Input.h) may not name ui/
+# either — the .cpp files that orchestrate a frame or a lifecycle are
+# L4 by content and may, which is why this rule is on headers and on
+# scene/, not on every file under platform/.
+dag=$( (grep -ln '"\.\./ui/\|core/App\.h' src/scene/*.cpp src/scene/*.h; \
+        grep -ln '"\.\./ui/\|core/App\.h' src/platform/Device.h src/platform/Input.h) \
+       2>/dev/null || true)
+if [ -n "$dag" ]; then
+    echo "LINT: a layer reaches UP the DAG (core -> platform -> scene -> ui):"
+    echo "$dag"
+    fail=1
+fi
+
 # (g)
 CF=/opt/homebrew/bin/clang-format
 command -v "$CF" >/dev/null 2>&1 || CF=clang-format

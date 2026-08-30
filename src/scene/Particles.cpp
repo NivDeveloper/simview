@@ -3,7 +3,7 @@
 // bindings in the opposite stages, which is why nothing about the
 // draw could be hoisted out of the kind.
 
-#include "../core/Engine.h"
+#include "Scene.h"
 
 #include "bytecode/particles_fsmain_spirv.h"
 #include "bytecode/particles_vsmain_spirv.h"
@@ -57,7 +57,7 @@ void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
         SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
         SDL_EndGPUCopyPass(cp);
         ps.dirty = false;
-        ++it.app->stats.uploads;
+        ++it.stats->uploads;
     }
 }
 
@@ -66,8 +66,8 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     ParticlesState &ps = state_of(it);
     if (!ps.buf || !ps.count)
         return;
-    SDL_GPUGraphicsPipeline *pipe =
-        pipeline_for(it.app, &kParticlesOps, at.format);
+    SDL_GPUGraphicsPipeline *pipe = pipeline_for(
+        it.dev, *it.pipelines, it.stats, &kParticlesOps, at.format);
     if (!pipe)
         return;
 
@@ -89,7 +89,7 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     // Six corners, one instance per point. first_* must stay 0: SDL
     // says the built-in IDs are not compatible with them.
     SDL_DrawGPUPrimitives(pass, 6, Uint32(ps.count), 0, 0);
-    ++it.app->stats.draws;
+    ++it.stats->draws;
 }
 
 void release(impl::SceneItem &it, SDL_GPUDevice *dev) {
@@ -133,7 +133,9 @@ Particles particles_create(Scene s, const ParticlesDesc &d) {
                Particles{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
+    it.dev = sc->dev;
+    it.stats = sc->stats;
+    it.pipelines = sc->pipelines;
     it.ops = &kParticlesOps;
     ParticlesState *ps = new ParticlesState{};
     for (int c = 0; c < 4; ++c)
@@ -150,7 +152,7 @@ bool particles_update(Particles p, const float *xy, std::size_t count) {
                false;
     if (!xy && count)
         return set_error("particles_update: null"), false;
-    App *a = it->app;
+    SDL_GPUDevice *dev = it->dev;
     ParticlesState &ps = state_of(*it);
     if (ps.external)
         return set_error("these particles read a caller-owned source, "
@@ -165,18 +167,18 @@ bool particles_update(Particles p, const float *xy, std::size_t count) {
     // Grow rather than refuse: a cloud that gains points is ordinary.
     if (count > ps.capacity) {
         if (ps.buf)
-            SDL_ReleaseGPUBuffer(a->dev, ps.buf);
+            SDL_ReleaseGPUBuffer(dev, ps.buf);
         if (ps.staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, ps.staging);
+            SDL_ReleaseGPUTransferBuffer(dev, ps.staging);
         const Uint32 bytes = Uint32(count * 8);
         SDL_GPUBufferCreateInfo bci{};
         bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
         bci.size = bytes;
-        ps.buf = SDL_CreateGPUBuffer(a->dev, &bci);
+        ps.buf = SDL_CreateGPUBuffer(dev, &bci);
         SDL_GPUTransferBufferCreateInfo tci{};
         tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         tci.size = bytes;
-        ps.staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+        ps.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
         if (!ps.buf || !ps.staging) {
             ps.capacity = ps.count = 0;
             return set_error(SDL_GetError()), false;
@@ -184,11 +186,11 @@ bool particles_update(Particles p, const float *xy, std::size_t count) {
         ps.capacity = count;
     }
 
-    void *map = SDL_MapGPUTransferBuffer(a->dev, ps.staging, true);
+    void *map = SDL_MapGPUTransferBuffer(dev, ps.staging, true);
     if (!map)
         return set_error(SDL_GetError()), false;
     std::memcpy(map, xy, count * 8);
-    SDL_UnmapGPUTransferBuffer(a->dev, ps.staging);
+    SDL_UnmapGPUTransferBuffer(dev, ps.staging);
     ps.count = count;
     ps.dirty = true;
     return true;
@@ -209,7 +211,9 @@ Particles particles_from_source(Scene s, gpud::BufferSource src,
                Particles{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
+    it.dev = sc->dev;
+    it.stats = sc->stats;
+    it.pipelines = sc->pipelines;
     it.ops = &kParticlesOps;
     ParticlesState *ps = new ParticlesState{};
     ps->external = true;

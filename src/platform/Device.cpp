@@ -1,7 +1,7 @@
 // Device bring-up, the window, and the App's lifecycle — what exists
 // before a frame and outlives the last one.
 
-#include "../core/Engine.h"
+#include "../core/App.h"
 #include "../ui/Ui.h"
 
 #include <simview/simview.h>
@@ -24,19 +24,22 @@ App *app_init(const Config &c) {
         return nullptr;
     }
     App *a = new App;
-    a->scene.app = a;
-    a->gdev = std::move(g);
-    a->dev = gpud::sdl::native_device(*a->gdev);
-    a->headless = c.headless;
-    a->ui_size = c.size;
+    Platform &pl = a->platform;
+    pl.gdev = std::move(g);
+    pl.dev = gpud::sdl::native_device(*pl.gdev);
+    pl.ui_size = c.size;
+    // The scene borrows what it needs from the App it lives in.
+    a->scene.dev = pl.dev;
+    a->scene.stats = &a->stats;
+    a->scene.pipelines = &a->pipelines;
     if (!c.headless) {
-        a->win = SDL_CreateWindow(c.title, int(c.size.w), int(c.size.h),
+        pl.win = SDL_CreateWindow(c.title, int(c.size.w), int(c.size.h),
                                   SDL_WINDOW_RESIZABLE);
-        if (!a->win || !SDL_ClaimWindowForGPUDevice(a->dev, a->win)) {
+        if (!pl.win || !SDL_ClaimWindowForGPUDevice(pl.dev, pl.win)) {
             set_error(SDL_GetError());
-            if (a->win)
-                SDL_DestroyWindow(a->win);
-            a->gdev.reset();
+            if (pl.win)
+                SDL_DestroyWindow(pl.win);
+            pl.gdev.reset();
             SDL_QuitSubSystem(SDL_INIT_VIDEO);
             delete a;
             return nullptr;
@@ -49,56 +52,57 @@ App *app_init(const Config &c) {
 void app_quit(App *a) {
     if (!a)
         return;
-    SDL_WaitForGPUIdle(a->dev);
-    // Before the device dies: the renderer backend holds pipelines and
-    // buffers on it, and the platform backend holds the torn-out
-    // windows.
+    Platform &pl = a->platform;
+    SDL_WaitForGPUIdle(pl.dev);
+    // One release per layer, top down. Before the device dies: the
+    // renderer backend holds pipelines and buffers on it, and the
+    // platform backend holds the torn-out windows.
     ui_quit(a);
-    for (const auto &e : a->pipelines)
-        SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
-    scene_release(a, a->scene);
-    for (App::ViewState &v : a->views) {
-        scene_release(a, v.scene);
-        if (v.tex)
-            SDL_ReleaseGPUTexture(a->dev, v.tex);
+    pipelines_release(pl.dev, a->pipelines);
+    scene_release(a->scene);
+    for (View &v : a->views) {
+        scene_release(v.scene);
+        target_release(pl.dev, v.target);
     }
-    if (a->win) {
-        SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
-        SDL_DestroyWindow(a->win);
+    if (pl.win) {
+        SDL_ReleaseWindowFromGPUDevice(pl.dev, pl.win);
+        SDL_DestroyWindow(pl.win);
     }
     // gpud's ~Device waits idle, destroys the SDL device and quits its
     // own subsystem ref; ours pairs with app_init's InitSubSystem.
-    a->gdev.reset();
+    pl.gdev.reset();
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
     delete a;
 }
 
 void app_on_frame(App *a, void (*fn)(void *), void *user) {
     if (a && fn)
-        a->frame_cbs.push_front({fn, user});
+        a->platform.frame_cbs.push_front({fn, user});
 }
 
 void app_on_event(App *a, void (*fn)(const Event &, void *), void *user) {
     if (a && fn)
-        a->event_cbs.push_front({fn, user});
+        a->input.event_cbs.push_front({fn, user});
 }
 
 void app_on_ui(App *a, void (*fn)(void *), void *user) {
     if (a && fn)
-        a->ui_cbs.push_front({fn, user});
+        a->ui.cbs.push_front({fn, user});
 }
 
 void app_request_quit(App *a) {
     if (a)
-        a->quit = true;
+        a->platform.quit = true;
 }
 
 void app_post_event(App *a, const Event &e) {
     if (a)
-        a->posted.push_back(e);
+        a->input.posted.push_back(e);
 }
 
 Stats app_stats(App *a) { return a ? a->stats : Stats{}; }
+
+Scene app_scene(App *a) { return a ? Scene{&a->scene} : Scene{}; }
 
 } // namespace impl
 } // namespace sv

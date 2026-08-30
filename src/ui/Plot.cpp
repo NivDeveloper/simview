@@ -6,7 +6,11 @@
 // temporary std::string would otherwise be a dangling read at draw
 // time, days later, in a different thread of the frame.
 
-#include "../core/Engine.h"
+#include "PlotState.h"
+
+#include "../core/App.h"
+#include "Ui.h"
+#include "View.h"
 
 #include <simview/simview.h>
 
@@ -16,13 +20,13 @@ namespace impl {
 // windows would draw into each other. Every kind that opens one is
 // named here — plots, panels and views share one namespace.
 bool title_taken(App *a, const char *title) {
-    for (const App::PlotState &p : a->plots)
+    for (const PlotState &p : a->plots)
         if (p.title == title)
             return true;
-    for (const App::PanelState &p : a->panels)
+    for (const PanelState &p : a->panels)
         if (p.title == title)
             return true;
-    for (const App::ViewState &v : a->views)
+    for (const View &v : a->views)
         if (v.title == title)
             return true;
     return false;
@@ -40,7 +44,7 @@ bool axis_ok(const AxisDesc &d, const char *which) {
     return true;
 }
 
-void copy_axis(App::AxisState &to, const AxisDesc &from) {
+void copy_axis(AxisState &to, const AxisDesc &from) {
     to.label = from.label ? from.label : "";
     to.desc = from;
     to.desc.label = nullptr; // the copy above is the one that lives
@@ -63,18 +67,18 @@ Plot plot_create(App *a, const PlotDesc &d) {
     if (!axis_ok(d.x, "x") || !axis_ok(d.y, "y"))
         return Plot{};
 
-    App::PlotState &st = a->plots.emplace_back();
+    PlotState &st = a->plots.emplace_back();
     st.title = d.title;
     copy_axis(st.x, d.x);
     copy_axis(st.y, d.y);
 
-    a->ui_cbs.push_front(
-        {[](void *u) { plot_draw(*static_cast<App::PlotState *>(u)); }, &st});
+    a->ui.cbs.push_front(
+        {[](void *u) { plot_draw(*static_cast<PlotState *>(u)); }, &st});
     return Plot{&st};
 }
 
 bool plot_series(Plot p, const SeriesDesc &d) {
-    App::PlotState *st = static_cast<App::PlotState *>(p.p);
+    PlotState *st = static_cast<PlotState *>(p.p);
     // The source is consumed either way: a refusal must not leak the
     // closure the caller already handed over.
     if (!st || !d.name || !*d.name) {
@@ -82,7 +86,7 @@ bool plot_series(Plot p, const SeriesDesc &d) {
             d.free(d.user);
         return set_error("a series needs a plot and a name"), false;
     }
-    for (const App::SeriesState &s : st->series)
+    for (const SeriesState &s : st->series)
         if (s.name == d.name) {
             if (d.free)
                 d.free(d.user);
@@ -94,7 +98,7 @@ bool plot_series(Plot p, const SeriesDesc &d) {
                    false;
         }
 
-    App::SeriesState &s = st->series.emplace_back();
+    SeriesState &s = st->series.emplace_back();
     s.name = d.name;
     s.kind = d.kind;
     s.dtype = d.dtype;
@@ -119,15 +123,15 @@ Panel panel_create(App *a, const char *title) {
                          "two windows of one name draw into each other"),
                Panel{};
 
-    App::PanelState &st = a->panels.emplace_back();
+    PanelState &st = a->panels.emplace_back();
     st.title = title;
-    a->ui_cbs.push_front(
-        {[](void *u) { panel_draw(*static_cast<App::PanelState *>(u)); }, &st});
+    a->ui.cbs.push_front(
+        {[](void *u) { panel_draw(*static_cast<PanelState *>(u)); }, &st});
     return Panel{&st};
 }
 
 bool panel_widget(Panel p, const WidgetDesc &d) {
-    App::PanelState *st = static_cast<App::PanelState *>(p.p);
+    PanelState *st = static_cast<PanelState *>(p.p);
     if (!st) {
         if (d.free)
             d.free(d.user);
@@ -151,7 +155,7 @@ bool panel_widget(Panel p, const WidgetDesc &d) {
                false;
     }
 
-    App::WidgetState &w = st->widgets.emplace_back();
+    WidgetState &w = st->widgets.emplace_back();
     w.label = d.label ? d.label : "";
     w.fmt = d.fmt ? d.fmt : "%.3g";
     w.kind = d.kind;

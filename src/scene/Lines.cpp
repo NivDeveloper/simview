@@ -3,7 +3,7 @@
 // shader, and its lines on the public surface. If anything else had
 // to change, the commit message says what.
 
-#include "../core/Engine.h"
+#include "Scene.h"
 
 #include "bytecode/lines_fsmain_spirv.h"
 #include "bytecode/lines_vsmain_spirv.h"
@@ -54,7 +54,7 @@ void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
         SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
         SDL_EndGPUCopyPass(cp);
         ls.dirty = false;
-        ++it.app->stats.uploads;
+        ++it.stats->uploads;
     }
 }
 
@@ -63,7 +63,8 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     LinesState &ls = state_of(it);
     if (!ls.buf || !ls.count)
         return;
-    SDL_GPUGraphicsPipeline *pipe = pipeline_for(it.app, &kLinesOps, at.format);
+    SDL_GPUGraphicsPipeline *pipe =
+        pipeline_for(it.dev, *it.pipelines, it.stats, &kLinesOps, at.format);
     if (!pipe)
         return;
 
@@ -84,7 +85,7 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     SDL_BindGPUVertexStorageBuffers(pass, 0, &ls.buf, 1);
     // Six corners, one instance per segment; first_* stay 0.
     SDL_DrawGPUPrimitives(pass, 6, Uint32(ls.count), 0, 0);
-    ++it.app->stats.draws;
+    ++it.stats->draws;
 }
 
 void release(impl::SceneItem &it, SDL_GPUDevice *dev) {
@@ -126,7 +127,9 @@ Lines lines_create(Scene s, const LinesDesc &d) {
                Lines{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
+    it.dev = sc->dev;
+    it.stats = sc->stats;
+    it.pipelines = sc->pipelines;
     it.ops = &kLinesOps;
     LinesState *ls = new LinesState{};
     for (int c = 0; c < 4; ++c)
@@ -142,7 +145,7 @@ bool lines_update(Lines l, const float *xyxy, std::size_t count) {
         return set_error("lines_update: this is not a lines handle"), false;
     if (!xyxy && count)
         return set_error("lines_update: null"), false;
-    App *a = it->app;
+    SDL_GPUDevice *dev = it->dev;
     LinesState &ls = state_of(*it);
     if (ls.external)
         return set_error("these lines read a caller-owned source, "
@@ -156,18 +159,18 @@ bool lines_update(Lines l, const float *xyxy, std::size_t count) {
 
     if (count > ls.capacity) {
         if (ls.buf)
-            SDL_ReleaseGPUBuffer(a->dev, ls.buf);
+            SDL_ReleaseGPUBuffer(dev, ls.buf);
         if (ls.staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, ls.staging);
+            SDL_ReleaseGPUTransferBuffer(dev, ls.staging);
         const Uint32 bytes = Uint32(count * 16);
         SDL_GPUBufferCreateInfo bci{};
         bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
         bci.size = bytes;
-        ls.buf = SDL_CreateGPUBuffer(a->dev, &bci);
+        ls.buf = SDL_CreateGPUBuffer(dev, &bci);
         SDL_GPUTransferBufferCreateInfo tci{};
         tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         tci.size = bytes;
-        ls.staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+        ls.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
         if (!ls.buf || !ls.staging) {
             ls.capacity = ls.count = 0;
             return set_error(SDL_GetError()), false;
@@ -175,11 +178,11 @@ bool lines_update(Lines l, const float *xyxy, std::size_t count) {
         ls.capacity = count;
     }
 
-    void *map = SDL_MapGPUTransferBuffer(a->dev, ls.staging, true);
+    void *map = SDL_MapGPUTransferBuffer(dev, ls.staging, true);
     if (!map)
         return set_error(SDL_GetError()), false;
     std::memcpy(map, xyxy, count * 16);
-    SDL_UnmapGPUTransferBuffer(a->dev, ls.staging);
+    SDL_UnmapGPUTransferBuffer(dev, ls.staging);
     ls.count = count;
     ls.dirty = true;
     return true;
@@ -199,7 +202,9 @@ Lines lines_from_source(Scene s, gpud::BufferSource src, const LinesDesc &d) {
                Lines{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
+    it.dev = sc->dev;
+    it.stats = sc->stats;
+    it.pipelines = sc->pipelines;
     it.ops = &kLinesOps;
     LinesState *ls = new LinesState{};
     ls->external = true;

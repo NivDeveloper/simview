@@ -6,6 +6,9 @@
 
 #include "Ui.h"
 
+#include "../core/App.h"
+#include "View.h"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -51,7 +54,7 @@ std::string ini_path(const char *title) {
 
 namespace sv {
 
-bool ui_on(impl::App *a) { return a && a->ui.ctx && !a->ui_cbs.empty(); }
+bool ui_on(impl::App *a) { return a && a->ui.ctx && !a->ui.cbs.empty(); }
 
 void ui_init(impl::App *a, const Config &c) {
     IMGUI_CHECKVERSION();
@@ -67,7 +70,7 @@ void ui_init(impl::App *a, const Config &c) {
     io.IniFilename = nullptr; // the layout file is ours to place
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-    if (!a->win) {
+    if (!a->platform.win) {
         // Headless keeps the RENDERER backend and drops only the
         // platform one: ImGui_ImplSDLGPU3_Init needs a device and a
         // target format, never a window. So a headless frame is built
@@ -81,7 +84,7 @@ void ui_init(impl::App *a, const Config &c) {
         io.DeltaTime = 1.0f / 60.0f;
 
         ImGui_ImplSDLGPU3_InitInfo ii{};
-        ii.Device = a->dev;
+        ii.Device = a->platform.dev;
         ii.ColorTargetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         ii.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
         ImGui_ImplSDLGPU3_Init(&ii);
@@ -92,7 +95,7 @@ void ui_init(impl::App *a, const Config &c) {
     if (!a->ui.ini.empty())
         ImGui::LoadIniSettingsFromDisk(a->ui.ini.c_str());
 
-    ImGui_ImplSDL3_InitForSDLGPU(a->win);
+    ImGui_ImplSDL3_InitForSDLGPU(a->platform.win);
     // The backend polls gamepads on every frame; simview initialises
     // only the video subsystem, and letting it look sets SDL's error
     // string for a device that was never meant to exist.
@@ -100,8 +103,9 @@ void ui_init(impl::App *a, const Config &c) {
                                   0);
 
     ImGui_ImplSDLGPU3_InitInfo ii{};
-    ii.Device = a->dev;
-    ii.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(a->dev, a->win);
+    ii.Device = a->platform.dev;
+    ii.ColorTargetFormat =
+        SDL_GetGPUSwapchainTextureFormat(a->platform.dev, a->platform.win);
     ii.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
     ImGui_ImplSDLGPU3_Init(&ii);
 
@@ -118,7 +122,7 @@ void ui_quit(impl::App *a) {
         return;
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
-    if (a->win)
+    if (a->platform.win)
         ImGui_ImplSDL3_Shutdown();
     ImGui_ImplSDLGPU3_Shutdown();
     // The frame-count guard is the difference between saving a layout
@@ -139,7 +143,7 @@ void ui_begin(impl::App *a) {
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
     ImGui_ImplSDLGPU3_NewFrame();
-    if (a->win)
+    if (a->platform.win)
         ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     // A passthru central node is a hole: the scene shows through it,
@@ -208,7 +212,7 @@ void sampler_linear(const ImDrawList *, const ImDrawCmd *) {
 
 } // namespace
 
-void view_draw(impl::App::ViewState &v) {
+void view_draw(impl::View &v) {
     // A first size, or the view collapses: an ImGui window sizes
     // itself to its content on its first frame, the content is an
     // image sized from the window, and the two would settle at the
@@ -229,16 +233,16 @@ void view_draw(impl::App::ViewState &v) {
     // size makes the image 1:1 and the letterbox the scene's own.
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const ImVec2 scale = ImGui::GetWindowViewport()->FramebufferScale;
-    v.want_w = Uint32(std::max(1.0f, avail.x * std::max(1.0f, scale.x)));
-    v.want_h = Uint32(std::max(1.0f, avail.y * std::max(1.0f, scale.y)));
+    v.target.want_w = Uint32(std::max(1.0f, avail.x * std::max(1.0f, scale.x)));
+    v.target.want_h = Uint32(std::max(1.0f, avail.y * std::max(1.0f, scale.y)));
 
     // The texture is last frame's — this frame's is drawn into the
     // same handle before the UI is composited, so what shows is
     // current. A view that has never been sized has no texture yet.
-    if (v.tex) {
+    if (v.target.tex) {
         ImGui::GetWindowDrawList()->AddCallback(sampler_nearest, nullptr);
         ImGui::Image(
-            ImTextureRef(ImTextureID(reinterpret_cast<intptr_t>(v.tex))),
+            ImTextureRef(ImTextureID(reinterpret_cast<intptr_t>(v.target.tex))),
             avail);
         ImGui::GetWindowDrawList()->AddCallback(sampler_linear, nullptr);
     }
@@ -249,6 +253,20 @@ bool ui_event(impl::App *a, const SDL_Event &ev) {
     ImGui::SetCurrentContext(a->ui.ctx);
     ImGui_ImplSDL3_ProcessEvent(&ev);
     return ImGui::GetIO().WantCaptureKeyboard;
+}
+
+void ui_run_panels(impl::App *a) {
+    impl::in_order(a->ui.cbs, [](const impl::Cb &c) { c.fn(c.user); });
+}
+
+void ui_views_resize(impl::App *a) {
+    for (impl::View &v : a->views)
+        target_resize(a->platform.dev, v.target);
+}
+
+void ui_views_draw(impl::App *a, SDL_GPUCommandBuffer *cmd) {
+    for (impl::View &v : a->views)
+        target_draw(v.scene, cmd, v.target);
 }
 
 } // namespace sv

@@ -6,9 +6,48 @@
 // float over the scene or frame it depending only on where the user
 // drags them.
 
-#include "../core/Engine.h"
+#include "../core/Callbacks.h"
+
+#include <simview/Types.h>
+
+#include <SDL3/SDL.h>
+
+#include <forward_list>
+#include <string>
+
+struct ImGuiContext;
+struct ImPlotContext;
 
 namespace sv {
+
+namespace impl {
+
+struct App;
+
+struct UiState {
+    ::ImGuiContext *ctx = nullptr;
+    ::ImPlotContext *plot = nullptr;
+    std::string ini;
+    std::forward_list<Cb> cbs; // panel callbacks, registration order
+};
+
+// Is this window title spoken for? Plots, panels and views open ImGui
+// windows and share one title namespace.
+bool title_taken(App *, const char *title);
+
+} // namespace impl
+
+// Run the panel callbacks — the middle of a UI frame, so platform
+// never touches ui's list itself.
+void ui_run_panels(impl::App *);
+
+// Resize every view's target to what its panel asked for. Here and not
+// in scene/, because only ui knows what a view is.
+void ui_views_resize(impl::App *);
+
+// Draw every view's scene into its target, ahead of the scene that
+// will sample them.
+void ui_views_draw(impl::App *, SDL_GPUCommandBuffer *);
 
 // Is there a UI frame to build? A context exists AND somebody asked
 // for a panel. With nobody asking, no ImGui frame is built at all and

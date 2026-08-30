@@ -2,7 +2,7 @@
 // its ops table, and the three exported functions a user reaches it
 // through. Nothing outside this file knows a FieldState exists.
 
-#include "../core/Engine.h"
+#include "Scene.h"
 
 #include "bytecode/display_fsmain_spirv.h"
 #include "bytecode/display_vsmain_spirv.h"
@@ -56,7 +56,7 @@ void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
         SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
         SDL_EndGPUCopyPass(cp);
         f.dirty = false;
-        ++it.app->stats.uploads;
+        ++it.stats->uploads;
     }
 }
 
@@ -65,7 +65,8 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     FieldState &f = state_of(it);
     if (!f.w || !f.buf)
         return;
-    SDL_GPUGraphicsPipeline *pipe = pipeline_for(it.app, &kFieldOps, at.format);
+    SDL_GPUGraphicsPipeline *pipe =
+        pipeline_for(it.dev, *it.pipelines, it.stats, &kFieldOps, at.format);
     if (!pipe)
         return;
 
@@ -83,7 +84,7 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     SDL_BindGPUGraphicsPipeline(pass, pipe);
     SDL_BindGPUFragmentStorageBuffers(pass, 0, &f.buf, 1);
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-    ++it.app->stats.draws;
+    ++it.stats->draws;
 }
 
 void release(impl::SceneItem &it, SDL_GPUDevice *dev) {
@@ -127,7 +128,7 @@ Field field_create(Scene s, const FieldDesc &d) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
-    App *a = sc->app;
+    SDL_GPUDevice *dev = sc->dev;
     if (d.dtype != DType::f32)
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
@@ -137,22 +138,24 @@ Field field_create(Scene s, const FieldDesc &d) {
     SDL_GPUBufferCreateInfo bci{};
     bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
     bci.size = bytes;
-    SDL_GPUBuffer *buf = SDL_CreateGPUBuffer(a->dev, &bci);
+    SDL_GPUBuffer *buf = SDL_CreateGPUBuffer(dev, &bci);
     SDL_GPUTransferBufferCreateInfo tci{};
     tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tci.size = bytes;
-    SDL_GPUTransferBuffer *staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+    SDL_GPUTransferBuffer *staging = SDL_CreateGPUTransferBuffer(dev, &tci);
     if (!buf || !staging) {
         set_error(SDL_GetError());
         if (buf)
-            SDL_ReleaseGPUBuffer(a->dev, buf);
+            SDL_ReleaseGPUBuffer(dev, buf);
         if (staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, staging);
+            SDL_ReleaseGPUTransferBuffer(dev, staging);
         return {};
     }
 
     SceneItem &it = sc->items.emplace_back();
-    it.app = a;
+    it.dev = sc->dev;
+    it.stats = sc->stats;
+    it.pipelines = sc->pipelines;
     it.ops = &kFieldOps;
     it.state = new FieldState{.w = d.extent.w,
                               .h = d.extent.h,
@@ -173,7 +176,7 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
         return set_error("field_update: this is not a field handle"), false;
     if (!data)
         return set_error("field_update: null"), false;
-    App *a = it->app;
+    SDL_GPUDevice *dev = it->dev;
     FieldState &fs = state_of(*it);
     if (fs.external)
         return set_error("this field reads a caller-owned source, "
@@ -186,11 +189,11 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
         return set_error("field_update: count must equal w*h"), false;
     // cycle=true: per-frame streaming; the frame in flight may still
     // read the previous contents (SDL's sanctioned ring).
-    void *map = SDL_MapGPUTransferBuffer(a->dev, fs.staging, true);
+    void *map = SDL_MapGPUTransferBuffer(dev, fs.staging, true);
     if (!map)
         return set_error(SDL_GetError()), false;
     std::memcpy(map, data, count * 4);
-    SDL_UnmapGPUTransferBuffer(a->dev, fs.staging);
+    SDL_UnmapGPUTransferBuffer(dev, fs.staging);
     fs.dirty = true;
     return true;
 }
@@ -209,7 +212,9 @@ Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
         return set_error("a field needs a non-zero extent"), Field{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
+    it.dev = sc->dev;
+    it.stats = sc->stats;
+    it.pipelines = sc->pipelines;
     it.ops = &kFieldOps;
     it.state = new FieldState{.w = d.extent.w,
                               .h = d.extent.h,

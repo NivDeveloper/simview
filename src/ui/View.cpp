@@ -3,7 +3,10 @@
 // is here is the registration, which is what makes a view an item in
 // the UI's title namespace like a plot or a panel.
 
-#include "../core/Engine.h"
+#include "View.h"
+
+#include "../core/App.h"
+#include "Ui.h"
 
 #include <simview/simview.h>
 
@@ -26,12 +29,13 @@ Scene view_create(App *a, const ViewDesc &d) {
                          "each other"),
                Scene{};
 
-    App::ViewState &v = a->views.emplace_back();
-    v.app = a;
+    View &v = a->views.emplace_back();
     v.title = d.title;
-    v.scene.app = a;
-    a->ui_cbs.push_front(
-        {[](void *u) { view_draw(*static_cast<App::ViewState *>(u)); }, &v});
+    v.scene.dev = a->platform.dev;
+    v.scene.stats = &a->stats;
+    v.scene.pipelines = &a->pipelines;
+    a->ui.cbs.push_front(
+        {[](void *u) { view_draw(*static_cast<View *>(u)); }, &v});
     return Scene{&v.scene};
 }
 

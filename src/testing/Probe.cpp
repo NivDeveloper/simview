@@ -12,7 +12,7 @@
 // never sv::impl. One grep answers what exists only for tests, and
 // tools/lint.sh refuses the namespace anywhere but here and tests/.
 
-#include "../core/Engine.h"
+#include "../core/App.h"
 
 #include "../../tests/probe/Probe.h"
 
@@ -26,9 +26,9 @@ ImPlotContext *plot_context(impl::App *a) { return a ? a->ui.plot : nullptr; }
 Extent2 view_extent(impl::App *a, const char *title) {
     if (!a || !title)
         return {};
-    for (const impl::App::ViewState &v : a->views)
+    for (const impl::View &v : a->views)
         if (v.title == title)
-            return {v.w, v.h};
+            return {v.target.w, v.target.h};
     return {};
 }
 

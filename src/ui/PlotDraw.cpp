@@ -8,7 +8,11 @@
 // axes are configured, SetupFinish draws the line, and only then are
 // the sources asked.
 
-#include "../core/Engine.h"
+#include "PlotState.h"
+
+#include "../core/App.h"
+#include "Ui.h"
+#include "View.h"
 
 #include <imgui.h>
 #include <implot.h>
@@ -20,7 +24,7 @@
 namespace sv {
 namespace {
 
-void setup_axis(ImAxis ax, const impl::App::AxisState &a) {
+void setup_axis(ImAxis ax, const impl::AxisState &a) {
     ImPlotAxisFlags flags = ImPlotAxisFlags_None;
     if (a.desc.fit == Fit::Stream)
         flags |= ImPlotAxisFlags_AutoFit;
@@ -58,8 +62,8 @@ ImPlotSpec spec_of(const SeriesStyle &st) {
 // value, one case, and one method on the builder, whatever the element
 // type.
 template <class T>
-void emit_series(const impl::App::SeriesState &s, const T *xs, const T *ys,
-                 int n, const ImPlotSpec &spec) {
+void emit_series(const impl::SeriesState &s, const T *xs, const T *ys, int n,
+                 const ImPlotSpec &spec) {
     switch (s.kind) {
     case impl::SeriesKind::Line:
         xs ? ImPlot::PlotLine(s.name.c_str(), xs, ys, n, spec)
@@ -79,7 +83,7 @@ void emit_series(const impl::App::SeriesState &s, const T *xs, const T *ys,
 
 } // namespace
 
-void plot_draw(impl::App::PlotState &p) {
+void plot_draw(impl::PlotState &p) {
     // A collapsed panel asks its sources nothing.
     if (!ImGui::Begin(p.title.c_str())) {
         ImGui::End();
@@ -90,7 +94,7 @@ void plot_draw(impl::App::PlotState &p) {
         setup_axis(ImAxis_Y1, p.y);
         ImPlot::SetupFinish();
 
-        for (impl::App::SeriesState &s : p.series) {
+        for (impl::SeriesState &s : p.series) {
             const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
             if (!d.y || !d.count)
                 continue;
@@ -108,12 +112,12 @@ void plot_draw(impl::App::PlotState &p) {
     ImGui::End();
 }
 
-void panel_draw(impl::App::PanelState &p) {
+void panel_draw(impl::PanelState &p) {
     if (!ImGui::Begin(p.title.c_str())) {
         ImGui::End();
         return;
     }
-    for (impl::App::WidgetState &w : p.widgets) {
+    for (impl::WidgetState &w : p.widgets) {
         switch (w.kind) {
         case impl::WidgetKind::Text:
             ImGui::TextUnformatted(w.label.c_str());

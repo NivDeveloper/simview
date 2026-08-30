@@ -162,8 +162,10 @@ if(SIMVIEW_BUILD_TESTS)
     # contain sv::probe because this target is never built and never
     # shipped, and tests/installed_surface proves the absence by
     # looking for the file.
-    # It READS App's layout from a header and calls nothing, so it
-    # links no library — only the include paths that header needs.
+    # It READS App's layout from core/App.h — the composed struct, the
+    # union of every layer's state — and calls nothing, so it links no
+    # library, only the include paths that header needs. Reordering
+    # App's members changes what this TU compiles against.
     add_library(simview_probe STATIC src/testing/Probe.cpp)
     target_include_directories(simview_probe PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include ${imgui_SOURCE_DIR}

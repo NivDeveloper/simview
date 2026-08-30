@@ -3,7 +3,7 @@
 // KindOps, which is what removed the four ternaries this file used to
 // carry.
 
-#include "../core/Engine.h"
+#include "Scene.h"
 
 #include <string>
 
@@ -25,29 +25,30 @@ SDL_GPUShader *make_shader(SDL_GPUDevice *dev, SDL_GPUShaderStage stage,
 
 } // namespace
 
-SDL_GPUGraphicsPipeline *pipeline_for(impl::App *a, const KindOps *kind,
+SDL_GPUGraphicsPipeline *pipeline_for(SDL_GPUDevice *dev,
+                                      std::vector<impl::PipelineEntry> &cache,
+                                      Stats *stats, const KindOps *kind,
                                       SDL_GPUTextureFormat tf) {
-    for (const auto &e : a->pipelines)
+    for (const auto &e : cache)
         if (e.kind == kind && e.format == tf)
             return e.pipeline;
 
-    if (!(SDL_GetGPUShaderFormats(a->dev) & SDL_GPU_SHADERFORMAT_SPIRV)) {
+    if (!(SDL_GetGPUShaderFormats(dev) & SDL_GPU_SHADERFORMAT_SPIRV)) {
         set_error("this driver does not take SPIR-V shaders — native "
                   "MSL and DXIL bytecode are a planned addition");
         return nullptr;
     }
-    SDL_GPUShader *vs = make_shader(a->dev, SDL_GPU_SHADERSTAGE_VERTEX,
-                                    kind->vs, SDL_GPU_SHADERFORMAT_SPIRV);
-    SDL_GPUShader *fs = make_shader(a->dev, SDL_GPU_SHADERSTAGE_FRAGMENT,
-                                    kind->fs, SDL_GPU_SHADERFORMAT_SPIRV);
+    SDL_GPUShader *vs = make_shader(dev, SDL_GPU_SHADERSTAGE_VERTEX, kind->vs,
+                                    SDL_GPU_SHADERFORMAT_SPIRV);
+    SDL_GPUShader *fs = make_shader(dev, SDL_GPU_SHADERSTAGE_FRAGMENT, kind->fs,
+                                    SDL_GPU_SHADERFORMAT_SPIRV);
     if (!vs || !fs) {
         set_error(std::string("shader creation failed (") +
-                  SDL_GetGPUDeviceDriver(a->dev) +
-                  " driver): " + SDL_GetError());
+                  SDL_GetGPUDeviceDriver(dev) + " driver): " + SDL_GetError());
         if (vs)
-            SDL_ReleaseGPUShader(a->dev, vs);
+            SDL_ReleaseGPUShader(dev, vs);
         if (fs)
-            SDL_ReleaseGPUShader(a->dev, fs);
+            SDL_ReleaseGPUShader(dev, fs);
         return nullptr;
     }
 
@@ -68,16 +69,23 @@ SDL_GPUGraphicsPipeline *pipeline_for(impl::App *a, const KindOps *kind,
     pci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pci.target_info.color_target_descriptions = &ctd;
     pci.target_info.num_color_targets = 1;
-    SDL_GPUGraphicsPipeline *p = SDL_CreateGPUGraphicsPipeline(a->dev, &pci);
-    SDL_ReleaseGPUShader(a->dev, vs);
-    SDL_ReleaseGPUShader(a->dev, fs);
+    SDL_GPUGraphicsPipeline *p = SDL_CreateGPUGraphicsPipeline(dev, &pci);
+    SDL_ReleaseGPUShader(dev, vs);
+    SDL_ReleaseGPUShader(dev, fs);
     if (!p) {
         set_error(std::string("pipeline creation failed: ") + SDL_GetError());
         return nullptr;
     }
-    a->pipelines.push_back({.kind = kind, .format = tf, .pipeline = p});
-    ++a->stats.pipelines;
+    cache.push_back({.kind = kind, .format = tf, .pipeline = p});
+    ++stats->pipelines;
     return p;
+}
+
+void pipelines_release(SDL_GPUDevice *dev,
+                       std::vector<impl::PipelineEntry> &cache) {
+    for (const auto &e : cache)
+        SDL_ReleaseGPUGraphicsPipeline(dev, e.pipeline);
+    cache.clear();
 }
 
 } // namespace sv
