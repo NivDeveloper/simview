@@ -85,6 +85,31 @@ sim). The zero-copy half was never built as a channel: the pull model
 (gpud's `BufferSource`, below) answered that question instead, and
 answered it without simview owning a second transfer path.
 
+**The Executor keeps the clock.** vklib's body received a command
+recorder and nothing else — no iteration index, no time, no dt —
+which is why it could not offer a step counter, a time readout or a
+"run N": it did not know what one iteration meant. The body here may
+receive a `Tick` (`n`, `time`, `dt`) the Executor advances and the
+body never fabricates. From that one fact the transport is derivable:
+`Advance(N)` plays until the count reaches a target and the worker
+pauses ITSELF (not when the caller notices — with an uncapped body
+that is 3 ticks against 3.8 million, measured); `Restart` is a STATE
+the worker observes between ticks, so the callback runs on the worker
+thread and can never overlap one — the race vklib's `FireOnRestart`
+had; `Now()` and `Rate()` are read from the same counter. The sim
+verb is `Advance`, because `App::Step` already means one FRAME.
+
+**A restart has two halves.** The callback runs where the sim's state
+lives (the worker), so it may touch sim state freely and must NOT
+touch main-thread data. `Restarted()` is the main thread's half — a
+consumable flag the frame polls to clear a trace or reset a plot.
+
+**`app.Controls(sim)`** is a panel led by a transport widget that
+reads the Executor: play/pause, advance one, advance N, restart, the
+clock, the achieved rate, and the speed as presets PLUS a delay
+slider. There is no shadow bool; the panel, the keys and the code
+cannot disagree. It returns the panel, so sliders chain on.
+
 ## Dependencies
 
 | dep | policy |

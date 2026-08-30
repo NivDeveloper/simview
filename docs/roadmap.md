@@ -112,6 +112,13 @@ particle/volume work — the one genuinely excellent piece of vklib
 worth stealing: its BDA-addressed particle path with Slang shaders,
 zero readback.
 
+**7. The transport** (shipped). The Executor keeps the clock — a
+`Tick` the body reads and never fabricates — and from that one fact
+`app.Controls(sim)` gives play/pause, advance one, advance N, restart,
+the clock, the rate and a speed slider in one line, with no shadow
+state anywhere. ising-cpu lost its reconcile loop, its `running` bool,
+its `reseed_wanted` flag and its hand-rolled restart.
+
 ## Non-goals
 
 - **We do not build multi-window.** Viewports own secondary OS

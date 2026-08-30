@@ -194,7 +194,7 @@ library and six of its eighteen examples were silently dead.
 
 The namespace is `sv`. **Everything a user types is PascalCase with
 no underscores** — sugar classes own the clean names (`sv::App`,
-`sv::Field`, `sv::Executor`, `sv::Channel<T>`), their methods and the
+`sv::Field`, `sv::Executor`, `sv::Channel<T>`, `sv::Tick`), their methods and the
 free functions match (`OnFrame`, `Run`, `Update`, `Device`,
 `LastError`), and no user-facing type wears a `Handle` suffix.
 `sv::Device(app)` and the producer overload `app.Field(p, desc)`

@@ -148,9 +148,12 @@ never the reverse.
 L0  core       Types, Error                        no SDK
 L1  platform   Device, Window, Presenter port      SDL / gpud
 L2  scene      SceneState, kinds via the ops table L0 L1
-L3  ui         Context, Panel, Plot, View          L0 L1 L2 + ImGui
+L3  ui         Context, Panel, Plot, View          L0 L1 L2 sync + ImGui
 L4  app        the frame over the Presenter port   L1 L2 L3
 L5  doors      gpud.h                              public vocabulary
+    sync       Executor, Channel, Tick             std only — a leaf; ui
+                                                   may include it, it
+                                                   includes nothing
 ```
 
 `App` **composes** rather than contains — `src/core/App.h`, 40 lines:

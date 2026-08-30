@@ -1,8 +1,9 @@
 // The 2-D Ising model in plain C++ — no tensor library, no GPU
 // compute — simulated on simview's Executor thread and handed to the
 // window through a Channel, with its magnetisation traced beside it
-// and a panel of controls. Space pauses, Up/Down move temperature, R
-// reseeds, Esc quits — the same variables the panel writes.
+// and a transport panel that drives the Executor directly. Space
+// toggles, Up/Down move temperature, R restarts, Esc quits — the keys
+// call the Executor, as the panel does, so nothing is reconciled.
 #include <simview/simview.h>
 
 #include <algorithm>
@@ -25,7 +26,6 @@ int main() {
     // The slider moves a plain float on the main thread; the frame
     // publishes it to the atomic the sim thread reads.
     float temperature = 2.269f; // the critical point
-    bool running = true;
     std::atomic<float> T{temperature};
     std::mt19937 rng(2026);
 
@@ -37,7 +37,9 @@ int main() {
     reseed();
 
     sv::Channel<float> chan(L * L);
-    sv::Executor sim([&] {
+    // The Executor keeps the clock: the body may read t.n and t.time,
+    // and never counts for itself. One tick is one sweep.
+    sv::Executor sim([&](const sv::Tick &) {
         // One Metropolis sweep at the current temperature.
         std::uniform_real_distribution<float> u;
         std::uniform_int_distribution<unsigned> cell(0, L * L - 1);
@@ -59,7 +61,10 @@ int main() {
         std::copy(s.begin(), s.end(), out.begin());
         chan.Publish();
     });
-
+    // Restart re-randomises the SIM's state, on the worker thread,
+    // between ticks — it can never overlap a sweep. The main thread's
+    // half (clearing the trace) waits for Restarted() in the frame.
+    sim.OnRestart(reseed);
     sim.Play();
 
     // The trace grows, so it REALLOCATES — which is exactly why the
@@ -118,26 +123,15 @@ int main() {
                     .fit = sv::Fit::Fixed}})
         .Line("m", [&] { return std::span<const float>(mag); });
 
-    bool reseed_wanted = false;
-    app.Panel("controls")
-        .Slider("temperature", temperature, 0.05f, 4.5f)
-        .Checkbox("running", running)
-        .Separator()
-        .Button("reseed", [&] { reseed_wanted = true; });
+    // Play, pause, advance one sweep, advance N, restart, the clock and
+    // the rate — one line, reading the Executor. Sliders chain on.
+    app.Controls(sim).Slider("temperature", temperature, 0.05f, 4.5f);
 
     std::uint64_t gen = 0;
     app.OnFrame([&] {
         T.store(temperature, std::memory_order_relaxed);
-        if (running != sim.Playing())
-            running ? sim.Play() : sim.Pause();
-        if (reseed_wanted) {
-            reseed_wanted = false;
-            sim.Pause();
-            reseed();
+        if (sim.Restarted())
             mag.clear();
-            if (running)
-                sim.Play();
-        }
 
         if (auto latest = chan.Latest(gen); !latest.empty()) {
             field.Update(latest);
@@ -168,14 +162,13 @@ int main() {
         }
     });
 
-    // The keys move the same variables the panel does, so the two
-    // never disagree about what the sim is doing.
-    app.OnKey(sv::Key::Space, [&] { running = !running; })
+    // The keys call the Executor, as the panel does.
+    app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
         .OnKey(sv::Key::Up,
                [&] { temperature = std::min(4.5f, temperature + 0.05f); })
         .OnKey(sv::Key::Down,
                [&] { temperature = std::max(0.05f, temperature - 0.05f); })
-        .OnKey(sv::Key::R, [&] { reseed_wanted = true; })
+        .OnKey(sv::Key::R, [&] { sim.Restart(); })
         .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
