@@ -33,9 +33,13 @@ struct PlotDesc {
 
 struct SeriesStyle {
     float color[4] = {0.0f, 0.0f, 0.0f, -1.0f};
+    float fill[4] = {0.0f, 0.0f, 0.0f, -1.0f};
+    float fill_alpha = 1.0f;
     float weight = 1.0f;
     float marker_size = 4.0f;
+    float size = 4.0f;
     int marker = -2;
+    bool horizontal = false;
 };
 
 template <class T> struct Points {
@@ -50,9 +54,13 @@ struct App;
 enum class SeriesKind : std::int32_t { Line, Scatter, Histogram };
 
 struct SeriesData {
-    const void *x = nullptr;
-    const void *y = nullptr;
+    const void *a = nullptr;
+    const void *b = nullptr;
+    const void *c = nullptr;
+    const void *d = nullptr;
+    const unsigned *idx = nullptr;
     std::size_t count = 0;
+    std::size_t count2 = 0;
 };
 
 struct Plot {
@@ -64,7 +72,7 @@ struct SeriesDesc {
     const char *name = nullptr;
     SeriesKind kind = SeriesKind::Line;
     DType dtype = DType::f32;
-    int bins = -2;
+    double param[4] = {-2.0, 0.0, 0.0, 0.0};
     SeriesData data{};
     SeriesData (*src)(void *) = nullptr;
     void *user = nullptr;
@@ -154,19 +162,20 @@ class Plot {
   private:
     Plot &borrowed(impl::SeriesKind k, const char *name, const void *x,
                    const void *y, std::size_t n, DType dt, const SeriesStyle &s,
-                   int bins = -2) {
-        impl::plot_series(p_, impl::SeriesDesc{.name = name,
-                                               .kind = k,
-                                               .dtype = dt,
-                                               .bins = bins,
-                                               .data = {x, y, n},
-                                               .style = s});
+                   double p0 = -2.0) {
+        impl::plot_series(p_,
+                          impl::SeriesDesc{.name = name,
+                                           .kind = k,
+                                           .dtype = dt,
+                                           .param = {p0, 0.0, 0.0, 0.0},
+                                           .data = {.a = x, .b = y, .count = n},
+                                           .style = s});
         return *this;
     }
 
     template <class F>
     Plot &pulled(impl::SeriesKind k, const char *name, F pull,
-                 const SeriesStyle &s, int bins = -2) {
+                 const SeriesStyle &s, double p0 = -2.0) {
         using Ret = std::remove_cvref_t<std::invoke_result_t<F>>;
         if constexpr (std::ranges::contiguous_range<Ret>) {
             impl::plot_series(
@@ -175,13 +184,13 @@ class Plot {
                     .name = name,
                     .kind = k,
                     .dtype = series_dtype<std::ranges::range_value_t<Ret>>(),
-                    .bins = bins,
+                    .param = {p0, 0.0, 0.0, 0.0},
                     .src =
                         [](void *u) {
                             decltype(auto) r = (*static_cast<F *>(u))();
-                            return impl::SeriesData{nullptr,
-                                                    std::ranges::data(r),
-                                                    std::ranges::size(r)};
+                            return impl::SeriesData{.b = std::ranges::data(r),
+                                                    .count =
+                                                        std::ranges::size(r)};
                         },
                     .user = new F(std::move(pull)),
                     .free = [](void *u) { delete static_cast<F *>(u); },
@@ -192,13 +201,14 @@ class Plot {
                         .name = name,
                         .kind = k,
                         .dtype = series_dtype<typename Ret::value_type>(),
-                        .bins = bins,
+                        .param = {p0, 0.0, 0.0, 0.0},
                         .src =
                             [](void *u) {
                                 decltype(auto) r = (*static_cast<F *>(u))();
                                 return impl::SeriesData{
-                                    r.x.data(), r.y.data(),
-                                    std::min(r.x.size(), r.y.size())};
+                                    .a = r.x.data(),
+                                    .b = r.y.data(),
+                                    .count = std::min(r.x.size(), r.y.size())};
                             },
                         .user = new F(std::move(pull)),
                         .free = [](void *u) { delete static_cast<F *>(u); },

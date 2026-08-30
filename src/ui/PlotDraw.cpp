@@ -52,33 +52,45 @@ ImPlotSpec spec_of(const SeriesStyle &st) {
     if (st.color[3] >= 0.0f)
         spec.LineColor =
             ImVec4(st.color[0], st.color[1], st.color[2], st.color[3]);
+    if (st.fill[3] >= 0.0f)
+        spec.FillColor = ImVec4(st.fill[0], st.fill[1], st.fill[2], st.fill[3]);
+    spec.FillAlpha = st.fill_alpha;
     spec.LineWeight = st.weight;
     spec.Marker = st.marker;
     spec.MarkerSize = st.marker_size;
+    spec.Size = st.size;
     return spec;
 }
 
 // The scalar is erased ONCE, here — so a new series kind is one enum
 // value, one case, and one method on the builder, whatever the element
-// type.
+// type. A kind casts only the slots it reads, at the point it reads
+// them; the slots are positional BY KIND and the case says which.
 template <class T>
-void emit_series(const impl::SeriesState &s, const T *xs, const T *ys, int n,
-                 const ImPlotSpec &spec) {
+double emit_series(const impl::SeriesState &s, const impl::SeriesData &d,
+                   const ImPlotSpec &spec) {
+    const char *name = s.name.c_str();
+    const int n = int(std::min<std::size_t>(d.count, INT_MAX));
+    const T *a = static_cast<const T *>(d.a);
+    const T *b = static_cast<const T *>(d.b);
     switch (s.kind) {
-    case impl::SeriesKind::Line:
-        xs ? ImPlot::PlotLine(s.name.c_str(), xs, ys, n, spec)
-           : ImPlot::PlotLine(s.name.c_str(), ys, n, 1, 0, spec);
-        break;
-    case impl::SeriesKind::Scatter:
-        xs ? ImPlot::PlotScatter(s.name.c_str(), xs, ys, n, spec)
-           : ImPlot::PlotScatter(s.name.c_str(), ys, n, 1, 0, spec);
-        break;
-    case impl::SeriesKind::Histogram:
-        // Returns the max bin count, which no caller has asked for yet.
-        (void)ImPlot::PlotHistogram(s.name.c_str(), ys, n, s.bins, 1.0,
-                                    ImPlotRange(), spec);
-        break;
+    case impl::SeriesKind::Line: // a = x (optional), b = y
+        if (a)
+            ImPlot::PlotLine(name, a, b, n, spec);
+        else
+            ImPlot::PlotLine(name, b, n, 1, 0, spec);
+        return 0.0;
+    case impl::SeriesKind::Scatter: // a = x (optional), b = y
+        if (a)
+            ImPlot::PlotScatter(name, a, b, n, spec);
+        else
+            ImPlot::PlotScatter(name, b, n, 1, 0, spec);
+        return 0.0;
+    case impl::SeriesKind::Histogram: // b = values; param[0] = bins
+        return ImPlot::PlotHistogram(name, b, n, int(s.param[0]), 1.0,
+                                     ImPlotRange(), spec);
     }
+    return 0.0;
 }
 
 } // namespace
@@ -96,16 +108,13 @@ void plot_draw(impl::PlotState &p) {
 
         for (impl::SeriesState &s : p.series) {
             const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
-            if (!d.y || !d.count)
+            if (!d.b || !d.count)
                 continue;
-            const int n = int(std::min<std::size_t>(d.count, INT_MAX));
             const ImPlotSpec spec = spec_of(s.style);
             if (s.dtype == DType::f32)
-                emit_series<float>(s, static_cast<const float *>(d.x),
-                                   static_cast<const float *>(d.y), n, spec);
+                emit_series<float>(s, d, spec);
             else
-                emit_series<double>(s, static_cast<const double *>(d.x),
-                                    static_cast<const double *>(d.y), n, spec);
+                emit_series<double>(s, d, spec);
         }
         ImPlot::EndPlot();
     }

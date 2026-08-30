@@ -22,7 +22,7 @@ struct SeriesState {
     std::string name;
     SeriesKind kind = SeriesKind::Line;
     DType dtype = DType::f32;
-    int bins = -2;
+    double param[4] = {-2.0, 0.0, 0.0, 0.0};
     SeriesData data{};
     SeriesData (*src)(void *) = nullptr;
     void *user = nullptr;
