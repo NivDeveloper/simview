@@ -77,13 +77,55 @@ one is the architecture and this one is the history.
 The sync layer inherits vklib's `SyncBuffer`/`Executor` design — its
 best-factored piece (138 public lines, 269 impl lines, 3 lines of
 consumer cost): Play/Pause/Step safe from any thread, `iterDelayNs`
-pacing, triple-buffered state/transfer/draw with POINTER swaps, sim
-depth capped at one in flight so render interleaves, lazy first-touch
-registration. One channel flavour shipped: `HostChannel`
-(triple-buffered host memory — the portable default, works for any
-sim). The zero-copy half was never built as a channel: the pull model
-(gpud's `BufferSource`, below) answered that question instead, and
-answered it without simview owning a second transfer path.
+pacing, three slots with POINTER swaps, sim depth capped at one in
+flight so render interleaves.
+
+**`sv::Sync<T>` is the handoff as a type.** Three slots of `T` with
+roles `next` / `current` / `shown`, the roles as INDICES under one
+mutex, no `T` ever moved between slots. The sim writes `Next()`, reads
+`Current()`, calls `Publish()`; the frame flips `shown := current`
+once; every consumer reads `Shown()`. `next` is never `current` or
+`shown`, so the sim writes what nobody reads and the frame reads what
+nobody writes — the property a bare pointer handed across threads
+cannot have, and the race `examples/ising` shipped with before this
+type existed: its Executor re-parked a tensor on its thread while the
+frame read the same slot. A sim that produces a fresh value per tick
+(every tensor eval) pays no copy; an in-place sim copies `Current()`
+into `Next()` itself, the price it chose (`ising-cpu` pays one
+memcpy a sweep). The `T` is anything: a device-resident tensor, a
+`std::vector<float>`, a gpud buffer.
+
+Three rules make it hold. **The flip is the FIRST thing a frame does**
+— before the frame callbacks, so `OnFrame`, the panels and the scene
+all read one generation; one site per entry path (run, step, a plain
+shot), never inside `frame_build` or `frame_render`, where `app_run`
+would flip twice and split a frame across generations. A composited
+headless shot reuses the draw data the last `Step` built and shows
+what that Step flipped to. **A Sync is tracked when a builder is given
+it** — the App owns one list of gates, so a Sync drawn by the main
+scene and a view flips once; a Sync no builder was given is never
+flipped and `Shown()` stays at generation 0 (`app.Track` is the
+roadmap's answer for a Sync only a plot reads). **The gate is
+refcounted**: the Sync holds one reference, the registry another, so a
+Sync destroyed mid-run leaves a dead gate the flip skips, never a
+dangling handle — the user-facing rule stays "the producer outlives
+the last frame that draws it", but breaking it is now a blank item.
+
+Why the frame never waits: the slot a sim writes next was last bound
+by a frame that has already SUBMITTED (a slot leaves `shown` only at
+the next frame's flip), so a fresh-per-tick producer's inline free
+lands on SDL's deferred release. What that does NOT cover is a
+producer writing IN PLACE into a device buffer while the previous
+frame still executes on the GPU — safe only if SDL orders submissions
+on its one queue, which is the open question below.
+
+Two spellings, kept on purpose. The BARE pull — `app.Field(tensor,
+…)` with the sim stepping inside `OnFrame` — is the render-thread
+shape: nothing re-parks the tensor while a frame reads it, and it
+costs one lattice instead of three (`xy-gpu`). `Sync` is the
+off-thread shape. The `Channel` that preceded both allocated slabs of
+its own, unrelated to the sim's data — the user copied in, the item
+copied out — and nothing used it.
 
 **The Executor keeps the clock.** vklib's body received a command
 recorder and nothing else — no iteration index, no time, no dt —
@@ -141,7 +183,15 @@ glue and no API that scales with vis types.
   register the pull source once and no per-frame call exists. Opting
   into `gpud.h` IS opting into gpud, explicitly. Producers die before
   the App — the one lifetime rule of the glue (the item's source
-  points into the producer object).
+  points into the producer object). **The producer must be driven on
+  the render thread**: `current()` is a borrowed pointer with no
+  roles, and a producer re-parking on another thread races every
+  reader. A producer on its own thread wraps its state in `Sync<T>`
+  — `app.Field(sync, desc)` resolves the SHOWN slot's source at every
+  bind, and the door's `source_of(const Sync<P>&)` forwards to `P`'s
+  own. Mode A has the same twin: `Sync<std::vector<float>>` is fed to
+  the item through `host_of`, and the frame stages a NEW generation
+  the way an `Update` does, and only a new one.
 
   **A pulled item takes its size from the buffer**: a cloud is
   interleaved xy pairs, so `bytes() / 8` IS the point count. Nothing
@@ -351,7 +401,7 @@ Three rungs, deliberately split by where the signal lives:
 
 - **Local, every change**: `make test` + `make lint`. The headless
   checks cover refusals, the loop contract, posted-event delivery, the
-  engine's counters, the sync layer's tearing stress, and SHOT CHECKS
+  engine's counters, the Sync gate's roles and tearing stress, and SHOT CHECKS
   THAT READ PIXELS — a ramp's equal-value corners must agree and its
   ends must not, so "it drew something" is an assertion, not a file
   size. Image assertions are statistics and geometry (mean, distinct
@@ -430,7 +480,7 @@ creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
 | layer | what |
 | --- | --- |
 | gates | `make lint` (dependency hygiene of the installed surface) and `make install-check` (install to a scratch prefix; compile a consumer against ONLY that, SDL absent) — both from day one |
-| unit | the sync layer under a fake clock; builder recording |
+| unit | the sync layer: the Executor's clock, the Sync gate's roles over random interleavings, the fresh-buffer rotation on gpud's mock under TSan |
 | pixel | **measured palettes, not committed goldens** — a check captures the colours the working arrangement produces and fails on any colour outside them. It needs no golden to maintain, survives a driver that rounds differently, and catches a flash of a colour nobody predicted |
 | examples | every in-tree example builds on every platform on every push — build-only: they are showcases, and the checks carry the verification they must not |
 | interaction | `PostEvent` delivers keyboard events to the sim's own callbacks; `tests/fakes/` supplies the backends a display would otherwise be needed for, so torn-out panels are reachable headlessly |

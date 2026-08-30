@@ -119,6 +119,27 @@ the clock, the rate and a speed slider in one line, with no shadow
 state anywhere. The Ising example lost its reconcile loop, its `running` bool,
 its `reseed_wanted` flag and its hand-rolled restart.
 
+**8. The handoff as a type** (shipped). `sv::Sync<T>`: three slots
+with roles next / current / shown, indices under one mutex, flipped
+once at the top of every frame — the sim writes what nobody reads and
+the frame reads what nobody writes. It closed a real race: `ising`'s
+Executor re-parked a tensor on its thread while the frame read the
+same slot (TSan named it on the weekly leg). Zero copies for a
+fresh-per-tick producer, the sim's own memcpy for an in-place one;
+the kinds take a Sync over a device buffer, a tensor, or a vector of
+floats, and `Channel` is gone. Three follow-ups it names:
+- **a struct-shaped `T`** with per-field projections, so one Sync can
+  carry a sim's several arrays and a kind can bind one of them — what
+  converting `gas` to the Executor needs, since its plots borrow
+  derived arrays the sim would now write off-thread;
+- **`app.Track(sync)`** for a Sync only a plot reads: a Sync no
+  builder was given is never flipped, and `Shown()` stays at
+  generation 0;
+- **the in-place device writer**: a kernel writing into `Next()`'s
+  buffer while the previous frame still executes on the GPU is safe
+  only if SDL orders submissions on its one queue — a device test that
+  fails without a guard, then a per-frame fence if it does.
+
 ## Non-goals
 
 - **We do not build multi-window.** Viewports own secondary OS

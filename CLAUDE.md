@@ -128,7 +128,7 @@ Next: 3-D scene kinds, and more than one window.
 | the clean-surface proof | `make install-check` — install to a scratch prefix, compile examples/hello against ONLY it |
 | run the hello | `make run` |
 | **sanitizers** | `make san` / `make tsan` — ASan+UBSan over the suite, TSan over sync_check. **Neither runs on macOS 26+**: the AppleClang sanitizer runtime spins in `get_dyld_hdr()` during its own startup, before `main` — a runtime-vs-OS break, nothing to do with this code. `.github/workflows/weekly.yml` runs both on Linux |
-| **the flagship** | `make flagship` — builds examples/xy-gpu (needs g++-16); NO runner reaches it, so this is the local gate that keeps the door from rotting |
+| **the flagship** | `make flagship` — builds examples/xy-gpu and examples/ising (need g++-16); NO runner reaches them, so this is the local gate that keeps the door from rotting |
 | clean | `make clean` (build, build-san, build-tsan) |
 
 **Configure through `make`, never `cmake -B build` by hand.** SDL3 is
@@ -195,7 +195,7 @@ library and six of its eighteen examples were silently dead.
 
 The namespace is `sv`. **Everything a user types is PascalCase with
 no underscores** — sugar classes own the clean names (`sv::App`,
-`sv::Field`, `sv::Executor`, `sv::Channel<T>`, `sv::Tick`), their methods and the
+`sv::Field`, `sv::Executor`, `sv::Sync<T>`, `sv::Tick`), their methods and the
 free functions match (`OnFrame`, `Run`, `Update`, `Device`,
 `LastError`), and no user-facing type wears a `Handle` suffix.
 `sv::Device(app)` and the producer overload `app.Field(p, desc)`

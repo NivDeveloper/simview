@@ -36,8 +36,9 @@ san:
 	ctest --test-dir build-san --output-on-failure --timeout 300 \
 	    -E installed_surface
 
-# TSan over the threaded layer alone — the Executor/Channel handoff is
-# the only place in the library where two threads meet.
+# TSan over the threaded layer alone — the Executor and the Sync gate
+# are where two threads meet; the check rotates fresh buffers on
+# gpud's mock, so it needs no device.
 tsan:
 	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build-tsan -DCMAKE_BUILD_TYPE=Debug \
 	    -DSIMVIEW_SANITIZE=thread

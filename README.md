@@ -1,8 +1,9 @@
 # simview
 
 A window on a running numerical simulation: fields, particles, and
-live plots over SDL3, with a sim/render sync layer that keeps the two
-honest. The public surface is dependency-free — any C++20 compiler,
+live plots over SDL3, with a sim/render sync layer — an Executor on
+its own thread and `sv::Sync<T>`, three slots with roles — that keeps
+the two honest. The public surface is dependency-free — any C++20 compiler,
 `#include <simview/simview.h>`, link `libsimview` — and a grep-clean
 impl/sugar split keeps it that way (docs/architecture.md is the
 structure; docs/design.md is how it got there).

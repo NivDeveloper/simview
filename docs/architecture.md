@@ -147,13 +147,13 @@ never the reverse.
 ```
 L0  core       Types, Error                        no SDK
 L1  platform   Device, Window, Presenter port      SDL / gpud
-L2  scene      SceneState, kinds via the ops table L0 L1
+L2  scene      SceneState, kinds via the ops table L0 L1 sync
 L3  ui         Context, Panel, Plot, View          L0 L1 L2 sync + ImGui
 L4  app        the frame over the Presenter port   L1 L2 L3
 L5  doors      gpud.h                              public vocabulary
-    sync       Executor, Channel, Tick             std only — a leaf; ui
-                                                   may include it, it
-                                                   includes nothing
+    sync       Executor, Sync, Tick                std + Types.h — a
+                                                   leaf; scene and ui
+                                                   may include it
 ```
 
 `App` **composes** rather than contains — `src/core/App.h`, 40 lines:
@@ -236,9 +236,10 @@ src/
 `shaders/*.slang` stays at the repo root as a source; its generated
 bytecode lives beside the code that includes it.
 
-**`include/` has two subfolders.** `sync/Sync.h` — an
-Executor/Channel concurrency layer with no dependency on simview and
-no use *by* simview, so the folder says what it is. And `scene/`, one
+**`include/` has two subfolders.** `sync/Sync.h` — the Executor and
+`Sync<T>`, a concurrency layer over std and `Types.h` alone; the
+scene consumes a Sync through its gate handle and the frame flips it,
+and neither knows the `T`, so the folder says what it is. And `scene/`, one
 header per kind: a kind's public half (its `Desc`, its handle, its
 sugar class) is one file there, and `Scene.h` holds only what every
 kind shares — `Range2`, the `Scene` builder, `no_door`. The kind
