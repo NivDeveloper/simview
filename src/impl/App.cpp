@@ -172,71 +172,6 @@ void app_run(App *a) {
     }
 }
 
-Field field_create(Scene s, const FieldDesc &d) {
-    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
-    if (!sc)
-        return {};
-    App *a = sc->app;
-    if (d.dtype != DType::f32)
-        return set_error("fields hold f32 values only for now"), Field{};
-    if (!d.extent.w || !d.extent.h)
-        return set_error("a field needs a non-zero extent"), Field{};
-
-    const Uint32 bytes = d.extent.w * d.extent.h * 4;
-    SDL_GPUBufferCreateInfo bci{};
-    bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-    bci.size = bytes;
-    SDL_GPUBuffer *buf = SDL_CreateGPUBuffer(a->dev, &bci);
-    SDL_GPUTransferBufferCreateInfo tci{};
-    tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    tci.size = bytes;
-    SDL_GPUTransferBuffer *staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
-    if (!buf || !staging) {
-        set_error(SDL_GetError());
-        if (buf)
-            SDL_ReleaseGPUBuffer(a->dev, buf);
-        if (staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, staging);
-        return {};
-    }
-    App::SceneItem &it = sc->items.emplace_back();
-    it.app = a;
-    it.kind = App::ItemKind::Field;
-    it.field = {.w = d.extent.w,
-                .h = d.extent.h,
-                .cmap = Sint32(d.map),
-                .lo = d.lo,
-                .hi = d.hi,
-                .buf = buf,
-                .staging = staging};
-    return Field{&it};
-}
-
-bool field_update(Field f, const void *data, DType t, std::size_t count) {
-    App::SceneItem *it = static_cast<App::SceneItem *>(f.p);
-    if (!it || !data)
-        return set_error("field_update: null"), false;
-    App *a = it->app;
-    if (it->field.external)
-        return set_error("this field reads a caller-owned source, "
-                         "re-resolved each frame — update the producer, "
-                         "not the field"),
-               false;
-    if (t != DType::f32)
-        return set_error("fields hold f32 values only for now"), false;
-    if (count != std::size_t(it->field.w) * it->field.h)
-        return set_error("field_update: count must equal w*h"), false;
-    // cycle=true: per-frame streaming; the frame in flight may still
-    // read the previous contents (SDL's sanctioned ring).
-    void *map = SDL_MapGPUTransferBuffer(a->dev, it->field.staging, true);
-    if (!map)
-        return set_error(SDL_GetError()), false;
-    std::memcpy(map, data, count * 4);
-    SDL_UnmapGPUTransferBuffer(a->dev, it->field.staging);
-    it->field.dirty = true;
-    return true;
-}
-
 void app_step(App *a) {
     if (!a)
         return;
@@ -268,13 +203,10 @@ bool app_shot(App *a, const char *path) {
     if (composited) {
         w = a->ui_size.w;
         h = a->ui_size.h;
-    } else {
-        for (const App::SceneItem &it : a->scene.items)
-            if (it.kind == App::ItemKind::Field && it.field.w) {
-                w = it.field.w * 2;
-                h = it.field.h * 2;
-                break;
-            }
+    } else if (Extent2 g{}; scene_grid(a->scene, &g)) {
+        // At least two pixels a cell, so a lattice is legible.
+        w = g.w * 2;
+        h = g.h * 2;
     }
 
     SDL_GPUTextureCreateInfo ti{};
@@ -324,13 +256,6 @@ bool app_shot(App *a, const char *path) {
     return ok;
 }
 
-void scene_range(Scene s, const Range2 &r) {
-    if (App::SceneState *sc = static_cast<App::SceneState *>(s.p))
-        sc->range = r;
-}
-
-Scene app_scene(App *a) { return a ? Scene{&a->scene} : Scene{}; }
-
 Scene view_create(App *a, const ViewDesc &d) {
     if (!a)
         return {};
@@ -354,123 +279,7 @@ Scene view_create(App *a, const ViewDesc &d) {
     return Scene{&v.scene};
 }
 
-Particles particles_create(Scene s, const ParticlesDesc &d) {
-    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
-    if (!sc)
-        return {};
-    if (!(d.radius > 0.0f))
-        return set_error("particles need a radius above zero — they are "
-                         "drawn as discs, not as points"),
-               Particles{};
-
-    App::SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
-    it.kind = App::ItemKind::Particles;
-    for (int c = 0; c < 4; ++c)
-        it.particles.color[c] = d.color[c];
-    it.particles.radius = d.radius;
-    return Particles{&it};
-}
-
-bool particles_update(Particles p, const float *xy, std::size_t count) {
-    App::SceneItem *it = static_cast<App::SceneItem *>(p.p);
-    if (!it || (!xy && count))
-        return set_error("particles_update: null"), false;
-    App *a = it->app;
-    App::ParticlesState &ps = it->particles;
-    if (ps.external)
-        return set_error("these particles read a caller-owned source, "
-                         "re-resolved each frame — update the producer, "
-                         "not the item"),
-               false;
-    if (!count) {
-        ps.count = 0; // an empty cloud is not an error
-        return true;
-    }
-
-    // Grow rather than refuse: a cloud that gains points is ordinary.
-    if (count > ps.capacity) {
-        if (ps.buf)
-            SDL_ReleaseGPUBuffer(a->dev, ps.buf);
-        if (ps.staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, ps.staging);
-        const Uint32 bytes = Uint32(count * 8);
-        SDL_GPUBufferCreateInfo bci{};
-        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-        bci.size = bytes;
-        ps.buf = SDL_CreateGPUBuffer(a->dev, &bci);
-        SDL_GPUTransferBufferCreateInfo tci{};
-        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tci.size = bytes;
-        ps.staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
-        if (!ps.buf || !ps.staging) {
-            ps.capacity = ps.count = 0;
-            return set_error(SDL_GetError()), false;
-        }
-        ps.capacity = count;
-    }
-
-    void *map = SDL_MapGPUTransferBuffer(a->dev, ps.staging, true);
-    if (!map)
-        return set_error(SDL_GetError()), false;
-    std::memcpy(map, xy, count * 8);
-    SDL_UnmapGPUTransferBuffer(a->dev, ps.staging);
-    ps.count = count;
-    ps.dirty = true;
-    return true;
-}
-
 gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }
-
-Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
-    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
-    if (!sc)
-        return {};
-    if (!src.fn)
-        return set_error("a field needs a source that can answer — the "
-                         "BufferSource's fn is null"),
-               Field{};
-    if (d.dtype != DType::f32)
-        return set_error("fields hold f32 values only for now"), Field{};
-    if (!d.extent.w || !d.extent.h)
-        return set_error("a field needs a non-zero extent"), Field{};
-    App::SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
-    it.kind = App::ItemKind::Field;
-    it.field = {.w = d.extent.w,
-                .h = d.extent.h,
-                .cmap = Sint32(d.map),
-                .lo = d.lo,
-                .hi = d.hi,
-                .external = true,
-                .src = src};
-    return Field{&it};
-}
-
-Particles particles_from_source(Scene s, gpud::BufferSource src,
-                                const ParticlesDesc &d) {
-    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
-    if (!sc)
-        return {};
-    if (!src.fn)
-        return set_error("particles need a source that can answer — the "
-                         "BufferSource's fn is null"),
-               Particles{};
-    if (!(d.radius > 0.0f))
-        return set_error("particles need a radius above zero — they are "
-                         "drawn as discs, not as points"),
-               Particles{};
-
-    App::SceneItem &it = sc->items.emplace_back();
-    it.app = sc->app;
-    it.kind = App::ItemKind::Particles;
-    it.particles.external = true;
-    it.particles.src = src;
-    for (int c = 0; c < 4; ++c)
-        it.particles.color[c] = d.color[c];
-    it.particles.radius = d.radius;
-    return Particles{&it};
-}
 
 } // namespace impl
 } // namespace sv

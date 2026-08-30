@@ -60,10 +60,30 @@ int main() {
     CHECK(harness::shot(app, "two", two));
     CHECK_EQ(app.Stats().draws, std::uint64_t(2));
     CHECK_EQ(app.Stats().frames, std::uint64_t(1)); // a frame, not a field
+    // The argument refusals, on a REAL field handle. (These once
+    // passed an App pointer through a Field handle, which read an
+    // App's bytes as an item's and happened to refuse on arithmetic.
+    // It was undefined behaviour that looked like a test.)
     double d[64]{};
-    CHECK(!impl::field_update(impl::Field{app.Raw()}, d, DType::f64, 64));
+    CHECK(!impl::field_update(f1.Raw(), d, DType::f64, 64));
     float shortv[8]{};
-    CHECK(!impl::field_update(impl::Field{app.Raw()}, shortv, DType::f32, 8));
+    CHECK(!impl::field_update(f1.Raw(), shortv, DType::f32, 8));
+
+    // A handle of the WRONG KIND is refused BY NAME. The sentence is
+    // the assertion, not the false: read as another kind's bytes, the
+    // arithmetic checks refuse too — for the wrong reason — so a bare
+    // `!update(...)` here passes with no kind check at all. Measured:
+    // it did.
+    auto wrong = app.Particles({.radius = 2.0f});
+    REQUIRE(bool(wrong));
+    CHECK(!impl::field_update(impl::Field{wrong.Raw().p}, small.data(),
+                              DType::f32, 64));
+    CHECK(std::string(LastError()).find("not a field handle") !=
+          std::string::npos);
+    CHECK(
+        !impl::particles_update(impl::Particles{f1.Raw().p}, small.data(), 32));
+    CHECK(std::string(LastError()).find("not a particles handle") !=
+          std::string::npos);
 
     // Particles are the second scene kind: same list, same pass,
     // composited over whatever came before them.

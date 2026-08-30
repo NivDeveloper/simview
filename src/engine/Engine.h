@@ -8,6 +8,8 @@
 #include <simview/Plots.h>
 #include <simview/Scene.h>
 
+#include "../scene/Kinds.h"
+
 #include <SDL3/SDL.h>
 #include <gpud/Sdl.h>
 
@@ -27,6 +29,27 @@ namespace sv {
 // The one App state, in impl:: because the impl's opaque `App *`
 // points here.
 namespace impl {
+
+// An item knows its App because an upload needs the device, its ops
+// because that is what it IS, and its state only as a void * — the
+// kind's own file is the one place that knows the type.
+struct SceneItem {
+    App *app = nullptr;
+    const KindOps *ops = nullptr;
+    void *state = nullptr;
+};
+
+// What is drawn to a target, in registration order. std::list because
+// an item's ADDRESS is the public handle.
+// The range every item maps into. Unset means: the first item with a
+// natural grid, in cells, so a lattice and the points over it share
+// coordinates; with no such item, the unit square.
+struct SceneState {
+    App *app = nullptr;
+    std::list<SceneItem> items;
+    Range2 range{};
+};
+
 struct App {
     // The device is gpud's; dev is its borrowed native handle, valid
     // until gdev.reset().
@@ -53,61 +76,15 @@ struct App {
     // next Step or loop iteration exactly like SDL's own.
     std::vector<Event> posted;
     sv::Stats stats;
-    // What a scene is made of. The switch in item_draw is where a
-    // new kind lands, beside its pipeline and shader.
-    enum class ItemKind : std::int32_t { Field, Particles };
-
-    // Keyed on BOTH: a particles request that matched on format
-    // alone would silently bind the field's pipeline.
+    // Keyed on BOTH: a request that matched on format alone would
+    // silently bind another kind's pipeline.
     struct PipelineEntry {
-        ItemKind kind;
+        const KindOps *kind;
         SDL_GPUTextureFormat format;
         SDL_GPUGraphicsPipeline *pipeline;
     };
     std::vector<PipelineEntry> pipelines;
 
-    struct FieldState {
-        Uint32 w = 0, h = 0;
-        Sint32 cmap = 0;
-        float lo = 0, hi = 1;
-        SDL_GPUBuffer *buf = nullptr;
-        SDL_GPUTransferBuffer *staging = nullptr;
-        bool dirty = false;    // staging holds a newer grid than buf
-        bool external = false; // buf resolves from src: no staging, no release
-        // The pull source an external field re-asks at every draw.
-        gpud::BufferSource src{};
-    };
-    struct ParticlesState {
-        SDL_GPUBuffer *buf = nullptr;
-        SDL_GPUTransferBuffer *staging = nullptr;
-        std::size_t count = 0;    // points the host last wrote
-        std::size_t capacity = 0; // points the buffer holds
-        bool dirty = false;
-        bool external = false;
-        gpud::BufferSource src{};
-        float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-        float radius = 3.0f;
-    };
-
-    // An item knows its App because an upload needs the device.
-    struct SceneItem {
-        App *app = nullptr;
-        ItemKind kind = ItemKind::Field;
-        FieldState field{};
-        ParticlesState particles{};
-    };
-
-    // The scene: what is drawn to a target, in registration order.
-    // std::list because items are non-copyable in spirit and their
-    // addresses are handed out as Field handles.
-    // The range every item maps into. Unset (x1 <= x0) means: the
-    // first field's grid in cells, so a lattice and the points over
-    // it share coordinates; with no field, the unit square.
-    struct SceneState {
-        App *app = nullptr;
-        std::list<SceneItem> items;
-        Range2 range{};
-    };
     SceneState scene;
 
     // A view is a scene whose target is a texture rather than the
@@ -200,9 +177,9 @@ struct App {
 };
 } // namespace impl
 
-// Draw.cpp: prepare every item, then ONE pass — the clear belongs to
+// scene/Scene.cpp: prepare every item, then ONE pass — the clear belongs to
 // the scene, not to an item, or only the first item could composite.
-void scene_draw(impl::App::SceneState &, SDL_GPUCommandBuffer *,
+void scene_draw(impl::SceneState &, SDL_GPUCommandBuffer *,
                 SDL_GPUTexture *target, Uint32 tw, Uint32 th,
                 SDL_GPUTextureFormat);
 
@@ -216,7 +193,11 @@ void views_resize(impl::App *);
 void views_draw(impl::App *, SDL_GPUCommandBuffer *);
 
 // Release a scene's items and, for a view, its texture.
-void scene_release(impl::App *, impl::App::SceneState &);
+void scene_release(impl::App *, impl::SceneState &);
+
+// The first item with a natural grid, if any — what a scene's default
+// range and a shot's dimensions are both derived from.
+bool scene_grid(const impl::SceneState &, Extent2 *);
 
 // forward_list push_front reversed registration; fire in registration
 // order by walking a copied reverse. The COPY matters: a callback that

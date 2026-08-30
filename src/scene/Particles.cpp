@@ -1,0 +1,225 @@
+// The Particles kind, whole. Same shape as Field.cpp: state, uniform
+// block, shaders, ops table, and the exported functions — with the
+// bindings in the opposite stages, which is why nothing about the
+// draw could be hoisted out of the kind.
+
+#include "../engine/Engine.h"
+
+#include "bytecode/particles_fsmain_spirv.h"
+#include "bytecode/particles_vsmain_spirv.h"
+
+#include <cstring>
+
+namespace sv {
+namespace {
+
+struct ParticlesState {
+    SDL_GPUBuffer *buf = nullptr;
+    SDL_GPUTransferBuffer *staging = nullptr;
+    std::size_t count = 0;    // points the host last wrote
+    std::size_t capacity = 0; // points the buffer holds
+    bool dirty = false;
+    bool external = false;
+    gpud::BufferSource src{};
+    float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    float radius = 3.0f;
+};
+
+// Matches particles.slang's PParams: 4-byte scalars and a float4 on a
+// 16-byte boundary.
+struct PointParams {
+    float x0, y0, x1, y1;
+    float fit[2];
+    float viewport[2];
+    float color[4];
+    float radius;
+    float pad0, pad1, pad2;
+};
+
+ParticlesState &state_of(impl::SceneItem &it) {
+    return *static_cast<ParticlesState *>(it.state);
+}
+
+void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
+    ParticlesState &ps = state_of(it);
+    if (ps.external) {
+        // The buffer IS the cloud: interleaved xy pairs, so its size
+        // is the point count. A count passed alongside would be a
+        // second copy of that fact, free to disagree.
+        gpud::Buffer *b = ps.src.current();
+        ps.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+        ps.count = b ? b->bytes() / 8 : 0;
+    }
+    if (ps.dirty && !ps.external && ps.buf && ps.count) {
+        SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
+        const SDL_GPUTransferBufferLocation loc{ps.staging, 0};
+        const SDL_GPUBufferRegion reg{ps.buf, 0, Uint32(ps.count * 8)};
+        SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
+        SDL_EndGPUCopyPass(cp);
+        ps.dirty = false;
+        ++it.app->stats.uploads;
+    }
+}
+
+void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
+          SDL_GPURenderPass *pass, const Placement &at) {
+    ParticlesState &ps = state_of(it);
+    if (!ps.buf || !ps.count)
+        return;
+    SDL_GPUGraphicsPipeline *pipe =
+        pipeline_for(it.app, &kParticlesOps, at.format);
+    if (!pipe)
+        return;
+
+    PointParams p{};
+    p.x0 = float(at.range.x0);
+    p.y0 = float(at.range.y0);
+    p.x1 = float(at.range.x1);
+    p.y1 = float(at.range.y1);
+    p.fit[0] = at.sx;
+    p.fit[1] = at.sy;
+    p.viewport[0] = float(at.tw);
+    p.viewport[1] = float(at.th);
+    for (int c = 0; c < 4; ++c)
+        p.color[c] = ps.color[c];
+    p.radius = ps.radius;
+    SDL_PushGPUVertexUniformData(cmd, 0, &p, sizeof p);
+    SDL_BindGPUGraphicsPipeline(pass, pipe);
+    SDL_BindGPUVertexStorageBuffers(pass, 0, &ps.buf, 1);
+    // Six corners, one instance per point. first_* must stay 0: SDL
+    // says the built-in IDs are not compatible with them.
+    SDL_DrawGPUPrimitives(pass, 6, Uint32(ps.count), 0, 0);
+    ++it.app->stats.draws;
+}
+
+void release(impl::SceneItem &it, SDL_GPUDevice *dev) {
+    ParticlesState *ps = static_cast<ParticlesState *>(it.state);
+    if (!ps)
+        return;
+    if (ps->buf && !ps->external)
+        SDL_ReleaseGPUBuffer(dev, ps->buf);
+    if (ps->staging)
+        SDL_ReleaseGPUTransferBuffer(dev, ps->staging);
+    delete ps;
+    it.state = nullptr;
+}
+
+} // namespace
+
+// A cloud has no natural grid: `grid` stays null, and the scene asks
+// the next item instead.
+// clang-format off: the table reads as a table
+const KindOps kParticlesOps{
+    .name = "particles",
+    .prepare = prepare,
+    .draw = draw,
+    .release = release,
+    .grid = nullptr,
+    .vs = {particles_vsmain_spirv, particles_vsmain_spirv_len, "vsmain", 1, 1},
+    .fs = {particles_fsmain_spirv, particles_fsmain_spirv_len, "fsmain", 0, 0},
+    .blend = {.enabled = true},
+};
+// clang-format on
+
+namespace impl {
+
+Particles particles_create(Scene s, const ParticlesDesc &d) {
+    SceneState *sc = static_cast<SceneState *>(s.p);
+    if (!sc)
+        return {};
+    if (!(d.radius > 0.0f))
+        return set_error("particles need a radius above zero — they are "
+                         "drawn as discs, not as points"),
+               Particles{};
+
+    SceneItem &it = sc->items.emplace_back();
+    it.app = sc->app;
+    it.ops = &kParticlesOps;
+    ParticlesState *ps = new ParticlesState{};
+    for (int c = 0; c < 4; ++c)
+        ps->color[c] = d.color[c];
+    ps->radius = d.radius;
+    it.state = ps;
+    return Particles{&it};
+}
+
+bool particles_update(Particles p, const float *xy, std::size_t count) {
+    SceneItem *it = static_cast<SceneItem *>(p.p);
+    if (!it || it->ops != &kParticlesOps)
+        return set_error("particles_update: this is not a particles handle"),
+               false;
+    if (!xy && count)
+        return set_error("particles_update: null"), false;
+    App *a = it->app;
+    ParticlesState &ps = state_of(*it);
+    if (ps.external)
+        return set_error("these particles read a caller-owned source, "
+                         "re-resolved each frame — update the producer, "
+                         "not the item"),
+               false;
+    if (!count) {
+        ps.count = 0; // an empty cloud is not an error
+        return true;
+    }
+
+    // Grow rather than refuse: a cloud that gains points is ordinary.
+    if (count > ps.capacity) {
+        if (ps.buf)
+            SDL_ReleaseGPUBuffer(a->dev, ps.buf);
+        if (ps.staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, ps.staging);
+        const Uint32 bytes = Uint32(count * 8);
+        SDL_GPUBufferCreateInfo bci{};
+        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+        bci.size = bytes;
+        ps.buf = SDL_CreateGPUBuffer(a->dev, &bci);
+        SDL_GPUTransferBufferCreateInfo tci{};
+        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tci.size = bytes;
+        ps.staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+        if (!ps.buf || !ps.staging) {
+            ps.capacity = ps.count = 0;
+            return set_error(SDL_GetError()), false;
+        }
+        ps.capacity = count;
+    }
+
+    void *map = SDL_MapGPUTransferBuffer(a->dev, ps.staging, true);
+    if (!map)
+        return set_error(SDL_GetError()), false;
+    std::memcpy(map, xy, count * 8);
+    SDL_UnmapGPUTransferBuffer(a->dev, ps.staging);
+    ps.count = count;
+    ps.dirty = true;
+    return true;
+}
+
+Particles particles_from_source(Scene s, gpud::BufferSource src,
+                                const ParticlesDesc &d) {
+    SceneState *sc = static_cast<SceneState *>(s.p);
+    if (!sc)
+        return {};
+    if (!src.fn)
+        return set_error("particles need a source that can answer — the "
+                         "BufferSource's fn is null"),
+               Particles{};
+    if (!(d.radius > 0.0f))
+        return set_error("particles need a radius above zero — they are "
+                         "drawn as discs, not as points"),
+               Particles{};
+
+    SceneItem &it = sc->items.emplace_back();
+    it.app = sc->app;
+    it.ops = &kParticlesOps;
+    ParticlesState *ps = new ParticlesState{};
+    ps->external = true;
+    ps->src = src;
+    for (int c = 0; c < 4; ++c)
+        ps->color[c] = d.color[c];
+    ps->radius = d.radius;
+    it.state = ps;
+    return Particles{&it};
+}
+
+} // namespace impl
+} // namespace sv

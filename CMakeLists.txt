@@ -112,7 +112,10 @@ endif()
 
 add_library(simview STATIC
     src/impl/App.cpp
-    src/engine/Draw.cpp
+    src/scene/Field.cpp
+    src/scene/Particles.cpp
+    src/scene/Pipelines.cpp
+    src/scene/Scene.cpp
     src/engine/Frame.cpp
     src/engine/Plots.cpp
     src/engine/Ui.cpp
