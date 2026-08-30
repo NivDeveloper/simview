@@ -5,8 +5,8 @@
 // The boilerplate lives here so a new check is the assertions and
 // nothing else.
 
-#include "Bmp.h"
-#include "Check.h"
+#include "harness/Bmp.h"
+#include "harness/Check.h"
 
 #include <simview/simview.h>
 

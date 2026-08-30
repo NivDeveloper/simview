@@ -1,6 +1,6 @@
 // The sync layer's contract, device-free: the Executor state machine
 // and the Channel's generation and tearing guarantees.
-#include "Check.h"
+#include "harness/Check.h"
 
 #include <simview/Sync.h>
 

@@ -243,9 +243,9 @@ matters — **its own command buffer, recorded and submitted inside
   reason: a draw list records a texture handle, and releasing a
   texture the built frame points at is a use-after-free.
 
-`tests/headless/viewport_check.cpp` covers the arrangements a panel
-passes through, and `tests/headless/Viewports.h` is what makes them
-reachable without a display.
+`tests/checks/viewport_check.cpp` covers the arrangements a panel
+passes through; `tests/fakes/Viewports.h` is what makes them reachable
+without a display, and `tests/harness/Palette.h` is the assertion.
 
 ## Plots
 
@@ -316,7 +316,7 @@ Three rungs, deliberately split by where the signal lives:
 - **CI, weekly**: ASan+UBSan and TSan on Linux (`weekly.yml`), where
   those runtimes work; timeouts everywhere so a hang is bounded.
 
-A new feature adds: one `tests/headless/<x>_check.cpp` (harness +
+A new feature adds: one `tests/checks/<x>_check.cpp` (harness +
 assertions), its line in the foreach with a `device`/`pure` label,
 and — if it adds a rule — one lint clause, broken once to watch it go
 red.

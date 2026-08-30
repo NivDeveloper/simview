@@ -3,9 +3,9 @@
 // needed to see — that the view's scene really draws, that its target
 // is sized from the panel rather than from a constant, and that the
 // two never share a window title.
-#include "Harness.h"
+#include "harness/Harness.h"
 
-#include "Internals.h"
+#include "probe/Probe.h"
 
 #include <imgui.h>
 

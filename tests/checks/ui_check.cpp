@@ -1,9 +1,9 @@
 // The UI layer without a display: the context lives, panel callbacks
 // run once per frame, and a panel that draws produces real geometry.
 // Tests may speak ImGui — they are not consumers.
-#include "Harness.h"
+#include "harness/Harness.h"
 
-#include "Internals.h"
+#include "probe/Probe.h"
 
 #include <imgui.h>
 #include <implot.h>

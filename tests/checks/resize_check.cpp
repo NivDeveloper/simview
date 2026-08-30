@@ -4,57 +4,21 @@
 // cannot produce, for one frame, and be gone before anyone could
 // screenshot it.
 //
-// The property asserted here is deliberately not "no magenta": it is
-// that a resize introduces NO COLOUR THAT STEADY STATE DOES NOT
-// CONTAIN. A flash of any colour fails it, and a legitimate change of
+// The property is arrangement invariance, from harness/Palette.h:
+// a resize introduces no colour that steady state does not contain.
+// A flash of any colour fails it, and a legitimate change of
 // proportions does not, because the letterbox and the antialiased
 // disc edges are already in the steady palette.
 //
 // Tests may speak ImGui — they are not consumers.
-#include "Harness.h"
+#include "harness/Harness.h"
+#include "harness/Palette.h"
 
 #include <imgui.h>
 
 #include <array>
-
-#include <cmath>
-#include <cstdint>
 #include <cstdio>
-#include <set>
 #include <vector>
-
-namespace {
-
-constexpr int kStep = 16; // colour quantisation, as Bmp::distinct uses
-constexpr int kFar = 64;  // channel-sum distance that counts as "new"
-constexpr std::size_t kRegion = 64; // pixels before a colour is a flash
-
-int key_of(const std::array<int, 3> &p) {
-    return (p[0] / kStep) << 16 | (p[1] / kStep) << 8 | (p[2] / kStep);
-}
-
-void absorb(const Bmp &img, std::set<int> &palette) {
-    for (const auto &p : img.px)
-        palette.insert(key_of(p));
-}
-
-// A colour is a flash when steady state never showed anything like it.
-// Distance is measured against the palette's own colours so that a new
-// blend along an existing edge does not read as new.
-int far_from(const std::array<int, 3> &p, const std::set<int> &palette) {
-    int best = 765;
-    for (int k : palette) {
-        const int r = ((k >> 16) & 0xff) * kStep + kStep / 2;
-        const int g = ((k >> 8) & 0xff) * kStep + kStep / 2;
-        const int b = (k & 0xff) * kStep + kStep / 2;
-        const int d =
-            std::abs(p[0] - r) + std::abs(p[1] - g) + std::abs(p[2] - b);
-        best = d < best ? d : best;
-    }
-    return best;
-}
-
-} // namespace
 
 int main() {
     harness::begin();
@@ -96,7 +60,7 @@ int main() {
     // change is DISCARDED: a view's target is only ever drawn during a
     // shot, so that shot is the one carrying the resize, and taking
     // the palette from it would define the anomaly as normal.
-    std::set<int> palette;
+    palette::Set known;
     for (float w : {300.0f, 420.0f}) {
         want_w = w;
         want_h = w * 0.7f;
@@ -108,11 +72,11 @@ int main() {
         app.Step();
         Bmp img;
         REQUIRE(harness::shot(app, "resize_steady", img));
-        absorb(img, palette);
+        palette::absorb(img, known);
     }
-    std::printf("(steady palette: %zu colours over %ux%u)\n", palette.size(),
+    std::printf("(steady palette: %zu colours over %ux%u)\n", known.size(),
                 640u, 480u);
-    CHECK_GT(palette.size(), std::size_t(3));
+    CHECK_GT(known.size(), std::size_t(3));
 
     // The sweep: every size between, one frame each — no settling, so
     // a frame that samples a target mid-recreation is not skipped over.
@@ -126,35 +90,14 @@ int main() {
         if (!harness::shot(app, "resize_sweep", img))
             continue;
 
-        std::set<int> unseen;
-        std::vector<std::size_t> counts;
-        for (const auto &p : img.px) {
-            const int k = key_of(p);
-            if (palette.count(k) || far_from(p, palette) <= kFar)
-                continue;
-            unseen.insert(k);
-        }
-        std::size_t worst = 0;
-        std::array<int, 3> worst_colour{0, 0, 0};
-        for (int k : unseen) {
-            std::size_t n = 0;
-            std::array<int, 3> sample{0, 0, 0};
-            for (const auto &p : img.px)
-                if (key_of(p) == k) {
-                    ++n;
-                    sample = p;
-                }
-            if (n > worst) {
-                worst = n;
-                worst_colour = sample;
-            }
-        }
-        if (worst >= kRegion) {
+        std::array<int, 3> colour{0, 0, 0};
+        const std::size_t n = palette::intruder(img, known, colour);
+        if (n >= palette::kRegion) {
             ++flashes;
             std::printf("  at %dx%d: %zu pixels of rgb(%d,%d,%d), which "
                         "steady state never produced\n",
-                        w, int(float(w) * 0.7f), worst, worst_colour[0],
-                        worst_colour[1], worst_colour[2]);
+                        w, int(float(w) * 0.7f), n, colour[0], colour[1],
+                        colour[2]);
         }
     }
 

@@ -81,7 +81,7 @@ more than one window.
   gates OS events, never `PostEvent`. The layout lives per-app under
   `SDL_GetPrefPath`, saved on `WantSaveIniSettings` and again at quit
   BUT only when a frame was built (else a good layout is truncated).
-- **A test is assertions and nothing else.** `tests/headless/` gives
+- **A test is assertions and nothing else.** `tests/harness/` gives
   every check a `Harness.h` (device-or-SKIP, temp paths, shot-read-back),
   a `Check.h` (CHECK/CHECK_EQ/CHECK_GT keep going and print BOTH
   values; REQUIRE leaves; `check::summary` is main's return) and a
@@ -105,7 +105,7 @@ more than one window.
   pipeline.
 - **Examples are showcases, tests carry the verification.** No argv
   test modes, no probes in examples/ — that machinery lives in
-  tests/headless/. And a showcase never prints — no stdout, no logs
+  tests/checks/. And a showcase never prints — no stdout, no logs
   (`tools/lint.sh` rule (f)); its error handling is checking the
   bool, because the library already said why. An example with extra toolchain needs (xy-gpu:
   g++-16 -freflection) is a STANDALONE subproject that gates itself
@@ -241,6 +241,11 @@ src/engine/        the SDL side — internal headers live here, never
                    installed
 examples/hello/    init headless, report, quit; doubles as the
                    install-check consumer
+tests/harness/     the assertion and image vocabulary (Check, Bmp,
+                   Harness, Palette)
+tests/fakes/       backends a display would otherwise be needed for
+tests/probe/       the declared test surface
+tests/checks/      the checks themselves
 tests/installed_surface/   the clean-surface gate
 tools/lint.sh      the hygiene gate
 docs/architecture.md   the structure: layers, patterns, the test

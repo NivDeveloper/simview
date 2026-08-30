@@ -1,7 +1,7 @@
 // The field's headless verification: every colormap draws a real
 // picture, the ramp's geometry survives into the pixels, and every
 // refusal fires with its sentence.
-#include "Harness.h"
+#include "harness/Harness.h"
 
 #include <vector>
 

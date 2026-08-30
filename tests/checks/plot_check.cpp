@@ -1,9 +1,9 @@
 // Plots and panels without a display: they are ImGui windows drawing
 // into draw lists, so everything but colour and feel is provable here.
 // Tests may speak ImGui — they are not consumers.
-#include "Harness.h"
+#include "harness/Harness.h"
 
-#include "Internals.h"
+#include "probe/Probe.h"
 
 #include <imgui.h>
 #include <implot.h>

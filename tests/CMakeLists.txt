@@ -1,9 +1,19 @@
-# Headless runtime checks: the verification the examples must never
-# carry. Plain mains; a missing device prints SKIP and exits 0.
+add_subdirectory(installed_surface)
+
+# Four kinds of thing, one folder each: harness/ is the assertion and
+# image vocabulary, fakes/ the backends a display would otherwise be
+# needed for, probe/ the declared test surface, checks/ the tests.
+#
+# Plain mains; a missing device prints SKIP and exits 0.
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             view_check resize_check viewport_check)
-    add_executable(${t} ${t}.cpp)
+    add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
+    # Quoted includes resolve against the INCLUDING file's directory,
+    # so once headers and sources live apart every one of them needs
+    # this. Folder-qualified includes then say which stratum a header
+    # belongs to at the point of use.
+    target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     # Tests may speak the UI stack, SDL and gpud; consumers may not.
     # Granting them HERE is what makes that a decision rather than a
     # side effect of how the library links its archives.

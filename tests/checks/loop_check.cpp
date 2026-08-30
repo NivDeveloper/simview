@@ -1,7 +1,7 @@
 // The headless loop contract: Step fires frame callbacks in
 // registration order and delivers posted events, quit is idempotent,
 // and a headless Run returns rather than blocking.
-#include "Harness.h"
+#include "harness/Harness.h"
 
 #include <string>
 #include <vector>

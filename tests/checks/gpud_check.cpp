@@ -2,7 +2,7 @@
 // caller-owned gpud buffers drawn through the pull model — both scene
 // kinds ask their source at every draw. Refusals named. Tests may
 // speak gpud, they are not consumers.
-#include "Harness.h"
+#include "harness/Harness.h"
 
 #include <simview/gpud.h>
 

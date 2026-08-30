@@ -8,73 +8,18 @@
 //
 // The expected palette is not written down here. It is MEASURED from
 // the arrangement that works, and every later arrangement must stay
-// inside it. A frame that shows a colour the scene cannot produce
-// fails, whatever that colour turns out to be.
-#include "Harness.h"
-#include "Viewports.h"
+// inside it — harness/Palette.h is that assertion. A frame that shows
+// a colour the scene cannot produce fails, whatever that colour turns
+// out to be.
+#include "fakes/Viewports.h"
+#include "harness/Harness.h"
+#include "harness/Palette.h"
 
 #include <imgui.h>
 
 #include <array>
 #include <cstdio>
-#include <set>
 #include <vector>
-
-namespace {
-
-constexpr int kStep = 16;
-constexpr int kFar = 64;
-constexpr std::size_t kRegion = 64;
-
-int key_of(const std::array<int, 3> &p) {
-    return (p[0] / kStep) << 16 | (p[1] / kStep) << 8 | (p[2] / kStep);
-}
-
-void absorb(const Bmp &img, std::set<int> &palette) {
-    for (const auto &p : img.px)
-        palette.insert(key_of(p));
-}
-
-int far_from(const std::array<int, 3> &p, const std::set<int> &palette) {
-    int best = 765;
-    for (int k : palette) {
-        const int r = ((k >> 16) & 0xff) * kStep + kStep / 2;
-        const int g = ((k >> 8) & 0xff) * kStep + kStep / 2;
-        const int b = (k & 0xff) * kStep + kStep / 2;
-        const int d =
-            std::abs(p[0] - r) + std::abs(p[1] - g) + std::abs(p[2] - b);
-        best = d < best ? d : best;
-    }
-    return best;
-}
-
-// The largest run of one colour the palette does not contain. Zero
-// means every pixel is something this scene can produce.
-std::size_t intruder(const Bmp &img, const std::set<int> &palette,
-                     std::array<int, 3> &colour) {
-    std::set<int> unseen;
-    for (const auto &p : img.px)
-        if (!palette.count(key_of(p)) && far_from(p, palette) > kFar)
-            unseen.insert(key_of(p));
-
-    std::size_t worst = 0;
-    for (int k : unseen) {
-        std::size_t n = 0;
-        std::array<int, 3> sample{0, 0, 0};
-        for (const auto &p : img.px)
-            if (key_of(p) == k) {
-                ++n;
-                sample = p;
-            }
-        if (n > worst) {
-            worst = n;
-            colour = sample;
-        }
-    }
-    return worst;
-}
-
-} // namespace
 
 int main() {
     harness::begin();
@@ -108,7 +53,7 @@ int main() {
 
     // Arrangement one: laid out inside the window. This is the
     // reference — what the scene looks like when everything works.
-    std::set<int> palette;
+    palette::Set known;
     for (int i = 0; i < 5; ++i)
         app.Step();
     Bmp settling;
@@ -116,9 +61,9 @@ int main() {
     app.Step();
     Bmp inside;
     REQUIRE(harness::shot(app, "vp_inside", inside));
-    absorb(inside, palette);
-    CHECK_GT(palette.size(), std::size_t(3));
-    std::printf("(inside the window: %zu colours)\n", palette.size());
+    palette::absorb(inside, known);
+    CHECK_GT(known.size(), std::size_t(3));
+    std::printf("(inside the window: %zu colours)\n", known.size());
 
     // Arrangement two: torn out. The panel becomes a viewport of its
     // own, drawn by its own command buffer.
@@ -135,12 +80,12 @@ int main() {
         CHECK_GT(torn.distinct(), std::size_t(2)); // it drew something
 
         std::array<int, 3> colour{0, 0, 0};
-        const std::size_t n = intruder(torn, palette, colour);
-        if (n >= kRegion)
+        const std::size_t n = palette::intruder(torn, known, colour);
+        if (n >= palette::kRegion)
             std::printf("  torn out: %zu pixels of rgb(%d,%d,%d), which the "
                         "same panel inside the window never showed\n",
                         n, colour[0], colour[1], colour[2]);
-        CHECK(n < kRegion);
+        CHECK(n < palette::kRegion);
     }
 
     // Arrangement three: resized while torn out — the case a user
@@ -158,8 +103,8 @@ int main() {
         if (!viewports::count() || !viewports::read(0, "vp_sweep_out", out))
             continue;
         std::array<int, 3> colour{0, 0, 0};
-        const std::size_t n = intruder(out, palette, colour);
-        if (n >= kRegion) {
+        const std::size_t n = palette::intruder(out, known, colour);
+        if (n >= palette::kRegion) {
             ++flashes;
             std::printf("  at %dx%d torn out: %zu pixels of rgb(%d,%d,%d)\n", w,
                         int(float(w) * 0.7f), n, colour[0], colour[1],

@@ -82,7 +82,11 @@ jobs:
           GPUD_LOG: "1"
         run: |
           ls -la /usr/share/vulkan/icd.d/ || true
-          ./build/tests/headless/gpud_check || true
+          # Diagnostic, not a gate — the gates step below is the one
+          # that can fail. The tolerance is deliberate: this check
+          # exits 77 when no device comes up, which is a SKIP, and a
+          # skip must not fail a diagnostic.
+          ./build/tests/gpud_check || true
 
       # Lavapipe (in mesa-vulkan-drivers) is a software Vulkan device,
       # so the Linux leg actually DRAWS: the shot checks assert pixels,

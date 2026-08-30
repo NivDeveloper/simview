@@ -18,8 +18,8 @@
 //
 // Tests may speak ImGui, SDL and gpud. They are not consumers.
 
-#include "Bmp.h"
-#include "Harness.h"
+#include "harness/Bmp.h"
+#include "harness/Harness.h"
 
 #include <simview/gpud.h>
 #include <simview/simview.h>
