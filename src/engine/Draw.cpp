@@ -231,6 +231,60 @@ Range2 effective_range(const impl::App::SceneState &sc) {
 
 } // namespace
 
+// The one format a view's texture is asked for: a colour target that
+// can also be sampled, and universally supported as both.
+constexpr SDL_GPUTextureFormat kViewFormat =
+    SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+
+void views_resize(impl::App *a) {
+    for (impl::App::ViewState &v : a->views) {
+        if (v.tex && v.w == v.want_w && v.h == v.want_h)
+            continue;
+        if (v.tex)
+            SDL_ReleaseGPUTexture(a->dev, v.tex);
+
+        SDL_GPUTextureCreateInfo ti{
+            .type = SDL_GPU_TEXTURETYPE_2D,
+            .format = kViewFormat,
+            .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                     SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width = v.want_w,
+            .height = v.want_h,
+            .layer_count_or_depth = 1,
+            .num_levels = 1,
+            .sample_count = SDL_GPU_SAMPLECOUNT_1,
+            .props = 0,
+        };
+        v.tex = SDL_CreateGPUTexture(a->dev, &ti);
+        if (!v.tex) {
+            set_error(std::string("view texture: ") + SDL_GetError());
+            v.w = v.h = 0;
+            continue;
+        }
+        v.w = v.want_w;
+        v.h = v.want_h;
+    }
+}
+
+void views_draw(impl::App *a, SDL_GPUCommandBuffer *cmd) {
+    for (impl::App::ViewState &v : a->views)
+        if (v.tex)
+            scene_draw(v.scene, cmd, v.tex, v.w, v.h, kViewFormat);
+}
+
+void scene_release(impl::App *a, impl::App::SceneState &sc) {
+    for (impl::App::SceneItem &it : sc.items) {
+        if (it.field.buf && !it.field.external)
+            SDL_ReleaseGPUBuffer(a->dev, it.field.buf);
+        if (it.field.staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, it.field.staging);
+        if (it.particles.buf && !it.particles.external)
+            SDL_ReleaseGPUBuffer(a->dev, it.particles.buf);
+        if (it.particles.staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, it.particles.staging);
+    }
+}
+
 void scene_draw(impl::App::SceneState &sc, SDL_GPUCommandBuffer *cmd,
                 SDL_GPUTexture *target, Uint32 tw, Uint32 th,
                 SDL_GPUTextureFormat tf) {

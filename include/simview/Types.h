@@ -18,6 +18,14 @@ struct Config {
 };
 
 namespace impl {
+
+struct App;
+
+struct Scene {
+    void *p = nullptr;
+    explicit operator bool() const { return p != nullptr; }
+};
+
 const char *version();
 const char *last_error();
 }

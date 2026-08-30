@@ -6,16 +6,20 @@
 // current without any of it appearing on the public surface.
 // Tests are not consumers.
 
+#include <simview/Types.h>
+
 struct ImGuiContext;
 struct ImPlotContext;
 
 namespace sv {
 namespace impl {
 
-struct App;
-
 ImGuiContext *app_ui_context(App *);
 ImPlotContext *app_plot_context(App *);
+
+// The size a view's texture currently holds — how a check asks
+// whether the panel's room reached the render target.
+Extent2 app_view_extent(App *, const char *title);
 
 } // namespace impl
 } // namespace sv

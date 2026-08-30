@@ -8,10 +8,14 @@ interchange): gpud::sdl::try_open owns device bring-up, and the one
 opt-in door — include/simview/gpud.h — carries sv::Device(app) and
 the pull-model field (app.Field(producer, desc) resolves gpud's
 source_of protocol by ADL; the engine re-asks the source at every
-draw, so rebind does not exist). Examples: ising-cpu (plain arrays +
-the sync layer; the independence canary) and xy-gpu (the pull model,
-a standalone subproject). Next: widgets + plots over vendored
-ImGui/ImPlot behind the one UI boundary.
+draw, so rebind does not exist — `app.Particles(producer)` is the
+same protocol for a point cloud, whose count comes from the buffer's
+size). The UI is vendored ImGui + ImPlot behind one boundary that no
+public header names: plots, panels and views are builders. Examples:
+ising-cpu (plain arrays + the sync layer; the independence canary),
+gas (a view, a plot and a panel — the fully framed layout) and xy-gpu
+(the pull model, a standalone subproject). Next: 3-D scene kinds, and
+more than one window.
 
 ## Invariants (do not break)
 
@@ -213,7 +217,8 @@ Design rationale lives in docs/, implementation commentary in `src/`
 
 ```
 include/simview/   the installed surface: simview.h (umbrella),
-                   Types.h, App.h, Plots.h, Panel.h, gpud.h (the door)
+                   Types.h, App.h, Field.h, Scene.h, Plots.h, Panel.h,
+                   Event.h, Sync.h, gpud.h (the door)
 third_party/       vendored deps, one dir each, PIN + LICENSE
                    required (README.md is the contract; exempt from
                    the format gate, never from the warning flags)

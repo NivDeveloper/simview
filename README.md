@@ -15,12 +15,14 @@ Vulkan driver on macOS; native MSL/DXIL are one named follow-up).
 
 The examples are the showcase: `hello-window` (an animated field in
 ~45 lines), `ising-cpu` (a threaded sim through the Executor/Channel
-sync layer, plain C++ arrays — simview's independence proof), and
-`xy-gpu` (a GPU sim drawn zero-copy through the gpud door, a
-standalone subproject: one device, a pull-model field, no per-frame
-glue). Verification lives in tests/, never in examples.
+sync layer, plain C++ arrays — simview's independence proof, with the
+lattice on the window and panels floating over it), `gas` (2000
+particles, a live histogram and the controls, every part of it a
+dockable panel), and `xy-gpu` (a GPU sim drawn zero-copy through the
+gpud door, a standalone subproject: one device, a pull-model field,
+no per-frame glue). Verification lives in tests/, never in examples.
 
-Next: widgets and plots over vendored ImGui/ImPlot.
+Next: 3-D scene kinds, and more than one window.
 
 ## Build
 

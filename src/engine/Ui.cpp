@@ -7,6 +7,8 @@
 #include "Ui.h"
 
 #include <imgui.h>
+
+#include <algorithm>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 #include <implot.h>
@@ -184,6 +186,66 @@ void ui_viewports(impl::App *a) {
         return;
     ImGui::UpdatePlatformWindows();
     ImGui::RenderPlatformWindowsDefault();
+}
+
+namespace {
+
+// A view's texture is a lattice, not a photograph: sampled with the
+// backend's default linear filter it would smear cell edges the
+// moment the panel is not an exact multiple of the grid. The backend
+// carries a nearest sampler for exactly this, switched per draw
+// command and switched back so text stays smooth.
+void sampler_nearest(const ImDrawList *, const ImDrawCmd *) {
+    auto *rs = static_cast<ImGui_ImplSDLGPU3_RenderState *>(
+        ImGui::GetPlatformIO().Renderer_RenderState);
+    if (rs)
+        rs->SamplerCurrent = rs->SamplerNearest;
+}
+
+void sampler_linear(const ImDrawList *, const ImDrawCmd *) {
+    auto *rs = static_cast<ImGui_ImplSDLGPU3_RenderState *>(
+        ImGui::GetPlatformIO().Renderer_RenderState);
+    if (rs)
+        rs->SamplerCurrent = rs->SamplerLinear;
+}
+
+} // namespace
+
+void view_draw(impl::App::ViewState &v) {
+    // A first size, or the view collapses: an ImGui window sizes
+    // itself to its content on its first frame, the content is an
+    // image sized from the window, and the two would settle at the
+    // smallest window ImGui will draw. No padding, so the image meets
+    // the frame and the letterbox is the scene's own.
+    ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    const bool open = ImGui::Begin(v.title.c_str());
+    ImGui::PopStyleVar();
+    if (!open) {
+        ImGui::End();
+        return;
+    }
+
+    // What the panel has room for, in PIXELS: content region is in
+    // ImGui's points, and on a retina display a texture sized in
+    // points would be drawn at half resolution. Asking for the pixel
+    // size makes the image 1:1 and the letterbox the scene's own.
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const ImVec2 scale = ImGui::GetWindowViewport()->FramebufferScale;
+    v.want_w = Uint32(std::max(1.0f, avail.x * std::max(1.0f, scale.x)));
+    v.want_h = Uint32(std::max(1.0f, avail.y * std::max(1.0f, scale.y)));
+
+    // The texture is last frame's — this frame's is drawn into the
+    // same handle before the UI is composited, so what shows is
+    // current. A view that has never been sized has no texture yet.
+    if (v.tex) {
+        ImGui::GetWindowDrawList()->AddCallback(sampler_nearest, nullptr);
+        ImGui::Image(
+            ImTextureRef(ImTextureID(reinterpret_cast<intptr_t>(v.tex))),
+            avail);
+        ImGui::GetWindowDrawList()->AddCallback(sampler_linear, nullptr);
+    }
+    ImGui::End();
 }
 
 bool ui_event(impl::App *a, const SDL_Event &ev) {

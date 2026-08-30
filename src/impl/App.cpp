@@ -46,6 +46,7 @@ App *app_init(const Config &c) {
         return nullptr;
     }
     App *a = new App;
+    a->scene.app = a;
     a->gdev = std::move(g);
     a->dev = gpud::sdl::native_device(*a->gdev);
     a->headless = c.headless;
@@ -76,15 +77,11 @@ void app_quit(App *a) {
     ui_quit(a);
     for (const auto &e : a->pipelines)
         SDL_ReleaseGPUGraphicsPipeline(a->dev, e.pipeline);
-    for (App::SceneItem &it : a->scene.items) {
-        if (it.field.buf && !it.field.external)
-            SDL_ReleaseGPUBuffer(a->dev, it.field.buf);
-        if (it.field.staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, it.field.staging);
-        if (it.particles.buf && !it.particles.external)
-            SDL_ReleaseGPUBuffer(a->dev, it.particles.buf);
-        if (it.particles.staging)
-            SDL_ReleaseGPUTransferBuffer(a->dev, it.particles.staging);
+    scene_release(a, a->scene);
+    for (App::ViewState &v : a->views) {
+        scene_release(a, v.scene);
+        if (v.tex)
+            SDL_ReleaseGPUTexture(a->dev, v.tex);
     }
     if (a->win) {
         SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
@@ -176,6 +173,9 @@ void app_run(App *a) {
         if (a->quit)
             break;
 
+        // Before the UI frame: a draw list must never record a texture
+        // this frame is about to release.
+        views_resize(a);
         const bool ui = ui_on(a);
         if (ui) {
             ui_begin(a);
@@ -192,6 +192,7 @@ void app_run(App *a) {
             int tw = 0, th = 0;
             SDL_GetWindowSizeInPixels(a->win, &tw, &th);
             ++a->stats.frames;
+            views_draw(a, cmd);
             scene_draw(a->scene, cmd, swap, Uint32(tw), Uint32(th),
                        SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
             if (ui)
@@ -208,9 +209,11 @@ void app_run(App *a) {
     }
 }
 
-Field field_create(App *a, const FieldDesc &d) {
-    if (!a)
+Field field_create(Scene s, const FieldDesc &d) {
+    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
+    if (!sc)
         return {};
+    App *a = sc->app;
     if (d.dtype != DType::f32)
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
@@ -233,7 +236,7 @@ Field field_create(App *a, const FieldDesc &d) {
             SDL_ReleaseGPUTransferBuffer(a->dev, staging);
         return {};
     }
-    App::SceneItem &it = a->scene.items.emplace_back();
+    App::SceneItem &it = sc->items.emplace_back();
     it.app = a;
     it.kind = App::ItemKind::Field;
     it.field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo,
@@ -269,6 +272,7 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
 void app_step(App *a) {
     if (!a)
         return;
+    views_resize(a);
     deliver_posted(a);
     in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
     // A headless frame builds the UI too: the panels run, their
@@ -291,6 +295,7 @@ Stats app_stats(App *a) { return a ? a->stats : Stats{}; }
 bool app_shot(App *a, const char *path) {
     if (!a || !path)
         return set_error("shot: null"), false;
+    views_resize(a);
     // Sized from the first field so the shot carries no letterbox
     // bars; 512 square when the scene has none.
     Uint32 w = 512, h = 512;
@@ -325,6 +330,7 @@ bool app_shot(App *a, const char *path) {
 
     SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
     ++a->stats.frames;
+    views_draw(a, cmd);
     scene_draw(a->scene, cmd, tex, w, h, ti.format);
     SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTextureRegion reg{};
@@ -353,21 +359,47 @@ bool app_shot(App *a, const char *path) {
     return ok;
 }
 
-void scene_range(App *a, const Range2 &r) {
-    if (a)
-        a->scene.range = r;
+void scene_range(Scene s, const Range2 &r) {
+    if (App::SceneState *sc = static_cast<App::SceneState *>(s.p))
+        sc->range = r;
 }
 
-Particles particles_create(App *a, const ParticlesDesc &d) {
+Scene app_scene(App *a) { return a ? Scene{&a->scene} : Scene{}; }
+
+Scene view_create(App *a, const ViewDesc &d) {
     if (!a)
+        return {};
+    if (!d.title || !*d.title)
+        return set_error("a view needs a title — it names the panel it "
+                         "is shown in"),
+               Scene{};
+    if (title_taken(a, d.title))
+        return set_error(std::string("\"") + d.title +
+                         "\" is already the title of a plot, panel or "
+                         "view, and two windows of one name draw into "
+                         "each other"),
+               Scene{};
+
+    App::ViewState &v = a->views.emplace_back();
+    v.app = a;
+    v.title = d.title;
+    v.scene.app = a;
+    a->ui_cbs.push_front(
+        {[](void *u) { view_draw(*static_cast<App::ViewState *>(u)); }, &v});
+    return Scene{&v.scene};
+}
+
+Particles particles_create(Scene s, const ParticlesDesc &d) {
+    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
+    if (!sc)
         return {};
     if (!(d.radius > 0.0f))
         return set_error("particles need a radius above zero — they are "
                          "drawn as discs, not as points"),
                Particles{};
 
-    App::SceneItem &it = a->scene.items.emplace_back();
-    it.app = a;
+    App::SceneItem &it = sc->items.emplace_back();
+    it.app = sc->app;
     it.kind = App::ItemKind::Particles;
     for (int c = 0; c < 4; ++c)
         it.particles.color[c] = d.color[c];
@@ -427,10 +459,20 @@ gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }
 
 ImGuiContext *app_ui_context(App *a) { return a ? a->ui.ctx : nullptr; }
 
+Extent2 app_view_extent(App *a, const char *title) {
+    if (!a || !title)
+        return {};
+    for (const App::ViewState &v : a->views)
+        if (v.title == title)
+            return {v.w, v.h};
+    return {};
+}
+
 ImPlotContext *app_plot_context(App *a) { return a ? a->ui.plot : nullptr; }
 
-Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
-    if (!a)
+Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
+    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
+    if (!sc)
         return {};
     if (!src.fn)
         return set_error("a field needs a source that can answer — the "
@@ -440,8 +482,8 @@ Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
         return set_error("a field needs a non-zero extent"), Field{};
-    App::SceneItem &it = a->scene.items.emplace_back();
-    it.app = a;
+    App::SceneItem &it = sc->items.emplace_back();
+    it.app = sc->app;
     it.kind = App::ItemKind::Field;
     it.field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
                 nullptr,    nullptr,    false,         true};
@@ -449,9 +491,10 @@ Field field_from_source(App *a, gpud::BufferSource src, const FieldDesc &d) {
     return Field{&it};
 }
 
-Particles particles_from_source(App *a, gpud::BufferSource src,
+Particles particles_from_source(Scene s, gpud::BufferSource src,
                                 const ParticlesDesc &d) {
-    if (!a)
+    App::SceneState *sc = static_cast<App::SceneState *>(s.p);
+    if (!sc)
         return {};
     if (!src.fn)
         return set_error("particles need a source that can answer — the "
@@ -462,8 +505,8 @@ Particles particles_from_source(App *a, gpud::BufferSource src,
                          "drawn as discs, not as points"),
                Particles{};
 
-    App::SceneItem &it = a->scene.items.emplace_back();
-    it.app = a;
+    App::SceneItem &it = sc->items.emplace_back();
+    it.app = sc->app;
     it.kind = App::ItemKind::Particles;
     it.particles.external = true;
     it.particles.src = src;

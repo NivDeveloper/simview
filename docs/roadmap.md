@@ -97,9 +97,10 @@ came before it. `Particles` is the second kind — instanced quads,
 sharing the scene's 2-D range and its single aspect-fit so a point
 lands on the cell it belongs to.
 
-**5. Views in panels.** A scene whose target is a texture, shown by
-ImGui::Image — which is what makes a view dockable and tearable, and
-what finally lets the UI be pixel-tested.
+**5. Views in panels** (shipped). A scene whose target is a texture,
+shown by ImGui::Image — a view docks, tabs and tears out like any
+other panel, and `gas` is the example that arranges a whole window
+out of them.
 
  N panels rather than one field per App;
 the refusal that exists today becomes a list.

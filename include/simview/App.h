@@ -102,20 +102,24 @@ class App {
 
     sv::Stats Stats() const { return impl::app_stats(a_); }
 
-    sv::Field Field(const FieldDesc &d) {
-        return sv::Field{impl::field_create(a_, d)};
+    sv::Scene Scene() { return sv::Scene{impl::app_scene(a_)}; }
+
+    sv::Scene View(const ViewDesc &d = {}) {
+        return sv::Scene{impl::view_create(a_, d)};
     }
+
+    sv::Field Field(const FieldDesc &d) { return Scene().Field(d); }
 
     sv::Plot Plot(const PlotDesc &d) {
         return sv::Plot{impl::plot_create(a_, d)};
     }
 
     sv::Particles Particles(const ParticlesDesc &d = {}) {
-        return sv::Particles{impl::particles_create(a_, d)};
+        return Scene().Particles(d);
     }
 
     App &SceneRange(const Range2 &r) {
-        impl::scene_range(a_, r);
+        Scene().Range(r);
         return *this;
     }
 
@@ -124,18 +128,12 @@ class App {
     }
 
     template <class P> sv::Field Field(const P &p, const FieldDesc &d) {
-        if constexpr (requires { source_of(p); })
-            return sv::Field{field_from_source(a_, source_of(p), d)};
-        else
-            return sv::Field{field_from_source(a_, p, d)};
+        return Scene().Field(p, d);
     }
 
     template <class P>
     sv::Particles Particles(const P &p, const ParticlesDesc &d = {}) {
-        if constexpr (requires { source_of(p); })
-            return sv::Particles{particles_from_source(a_, source_of(p), d)};
-        else
-            return sv::Particles{particles_from_source(a_, p, d)};
+        return Scene().Particles(p, d);
     }
 
   private:

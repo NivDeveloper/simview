@@ -1,7 +1,9 @@
-// A 2-D hard-disc gas in plain C++: particles in the scene, their
-// speed distribution in a plot, and the controls beside it. Nothing
-// here knows about a GPU — the positions are a std::vector the frame
-// hands over each step.
+// A 2-D hard-disc gas in plain C++: particles in a view, their speed
+// distribution in a plot, and the controls beside them — every part
+// of the window a panel you can dock, tab or tear out. (ising-cpu is
+// the other arrangement: the scene straight to the window, panels
+// floating over it.) Nothing here knows about a GPU — the positions
+// are a std::vector the frame hands over each step.
 #include <simview/simview.h>
 
 #include <cmath>
@@ -34,9 +36,10 @@ int main() {
 
     // The box IS the coordinate system: no field, so the scene's range
     // is named rather than inherited from a lattice.
-    app.SceneRange({0.0, 0.0, BOX, BOX});
     auto points =
-        app.Particles({.color = {0.55f, 0.8f, 1.0f, 0.9f}, .radius = 2.0f});
+        app.View({.title = "box"})
+            .Range({0.0, 0.0, BOX, BOX})
+            .Particles({.color = {0.55f, 0.8f, 1.0f, 0.9f}, .radius = 2.0f});
 
     app.Plot({.title = "speed",
               .x = {.label = "|v|", .fit = sv::Fit::Stream},

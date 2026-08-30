@@ -12,10 +12,9 @@
 
 namespace sv {
 namespace impl {
-namespace {
-
 // ImGui appends into a window of the same title, so two same-titled
-// panels would draw into each other.
+// windows would draw into each other. Every kind that opens one is
+// named here — plots, panels and views share one namespace.
 bool title_taken(App *a, const char *title) {
     for (const App::PlotState &p : a->plots)
         if (p.title == title)
@@ -23,8 +22,13 @@ bool title_taken(App *a, const char *title) {
     for (const App::PanelState &p : a->panels)
         if (p.title == title)
             return true;
+    for (const App::ViewState &v : a->views)
+        if (v.title == title)
+            return true;
     return false;
 }
+
+namespace {
 
 bool axis_ok(const AxisDesc &d, const char *which) {
     if ((d.fit == Fit::Start || d.fit == Fit::Fixed) && !(d.min < d.max)) {

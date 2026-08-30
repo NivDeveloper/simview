@@ -99,10 +99,26 @@ struct App {
     // first field's grid in cells, so a lattice and the points over
     // it share coordinates; with no field, the unit square.
     struct SceneState {
+        App *app = nullptr;
         std::list<SceneItem> items;
         Range2 range{};
     };
     SceneState scene;
+
+    // A view is a scene whose target is a texture rather than the
+    // swapchain, shown by a panel that can dock and tear out like any
+    // other. The texture is sized from what the panel had room for
+    // LAST frame: it is recreated before the UI is built, so no draw
+    // list can be left pointing at a texture that has been released.
+    struct ViewState {
+        App *app = nullptr;
+        std::string title;
+        SceneState scene;
+        SDL_GPUTexture *tex = nullptr;
+        Uint32 w = 0, h = 0;
+        Uint32 want_w = 256, want_h = 256;
+    };
+    std::list<ViewState> views;
 
     // The UI layer. Appended last on purpose: FieldState's aggregate
     // initialisers are positional, so a member inserted above them
@@ -187,9 +203,31 @@ void scene_draw(impl::App::SceneState &, SDL_GPUCommandBuffer *,
                 SDL_GPUTexture *target, Uint32 tw, Uint32 th,
                 SDL_GPUTextureFormat);
 
+// Match every view's texture to the size its panel asked for. Must
+// run BEFORE the UI frame is built, because that frame's draw list
+// records the texture handle.
+void views_resize(impl::App *);
+
+// Every view's scene into its own texture, recorded ahead of the
+// scene that will sample them.
+void views_draw(impl::App *, SDL_GPUCommandBuffer *);
+
+// Release a scene's items and, for a view, its texture.
+void scene_release(impl::App *, impl::App::SceneState &);
+
+// Plots.cpp: is this window title spoken for? Plots, panels and views
+// open ImGui windows and share one title namespace.
+namespace impl {
+bool title_taken(App *, const char *title);
+}
+
 // Plots.cpp: one panel each, drawn from the ui callbacks they register.
 void plot_draw(impl::App::PlotState &);
 void panel_draw(impl::App::PanelState &);
+
+// Ui.cpp: the panel a view lives in — it shows the texture and reports
+// how much room it had, which is what sizes the next frame's texture.
+void view_draw(impl::App::ViewState &);
 
 // The per-thread sentence behind sv::LastError().
 void set_error(std::string msg);

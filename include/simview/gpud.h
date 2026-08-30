@@ -10,8 +10,8 @@ namespace sv {
 
 namespace impl {
 gpud::Device *app_device(App *);
-Field field_from_source(App *, gpud::BufferSource, const FieldDesc &);
-Particles particles_from_source(App *, gpud::BufferSource,
+Field field_from_source(Scene, gpud::BufferSource, const FieldDesc &);
+Particles particles_from_source(Scene, gpud::BufferSource,
                                 const ParticlesDesc &);
 }
 

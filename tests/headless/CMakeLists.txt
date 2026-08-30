@@ -1,6 +1,7 @@
 # Headless runtime checks: the verification the examples must never
 # carry. Plain mains; a missing device prints SKIP and exits 0.
-foreach(t field_check loop_check sync_check gpud_check ui_check plot_check)
+foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
+            view_check)
     add_executable(${t} ${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     set_target_properties(${t} PROPERTIES

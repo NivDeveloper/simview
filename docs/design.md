@@ -173,7 +173,37 @@ changed), begins ONE render pass, and draws each item through
   there is no field to inherit from.
 - **A new scene kind costs its three sites PLUS a pipeline and a
   shader** — irreducible, and worth saying so nobody expects the
-  series-level cheapness a plot kind has.
+  series-level cheapness a plot kind has. The three sites are one
+  `impl::*_create(Scene, …)`, one `case` in `item_draw`, and one
+  method on `sv::Scene`. **`sv::Scene` is the one place a kind is
+  spelled for the user**: `App` and `View` both hand one out, so
+  neither grows a method per kind.
+
+## Views
+
+A view is a scene whose target is a texture instead of the swapchain,
+shown by a panel that docks, tabs and tears out like any other. It is
+the SECOND arrangement, not a replacement: `app.Field(…)` still draws
+straight to the window with panels floating over it (ising-cpu), and
+`app.View({…}).Field(…)` frames the scene in the UI (gas).
+
+- **The texture is sized from what the panel had room for LAST
+  frame**, and resized before the next UI frame is built — because a
+  draw list records the texture handle, and releasing a texture the
+  built frame points at is a use-after-free with a picture on the
+  other side of it.
+- **A first size is mandatory.** An ImGui window fits itself to its
+  content on its first frame, and the content is an image sized from
+  the window: without `SetNextWindowSize(…, FirstUseEver)` the two
+  settle at the smallest window ImGui will draw. Measured: 32x13.
+- **The room is asked for in PIXELS** — the content region is in
+  ImGui's points, and on a retina display a texture sized in points
+  would be drawn at half resolution.
+- **The image is sampled NEAREST**, through the backend's render
+  state and a pair of draw callbacks. A view's texture is a lattice,
+  not a photograph; the default linear filter smears cell edges the
+  moment the panel is not an exact multiple of the grid. The callback
+  puts the sampler back, so text stays smooth.
 - **The pipeline cache is keyed on (kind, format)**. Format alone would
   hand one kind another's pipeline: a picture rather than an error.
 - **Uniforms are per STAGE.** A block bound in the vertex set is not

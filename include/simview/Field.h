@@ -18,14 +18,12 @@ struct FieldDesc {
 
 namespace impl {
 
-struct App;
-
 struct Field {
     void *p = nullptr;
     explicit operator bool() const { return p != nullptr; }
 };
 
-Field field_create(App *, const FieldDesc &);
+Field field_create(Scene, const FieldDesc &);
 bool field_update(Field, const void *data, DType, std::size_t count);
 
 }
