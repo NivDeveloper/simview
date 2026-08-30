@@ -3,6 +3,7 @@
 // kinds ask their source at every draw. Refusals named. Tests may
 // speak gpud, they are not consumers.
 #include "harness/Harness.h"
+#include "probe/Probe.h"
 
 #include <simview/gpud.h>
 
@@ -81,6 +82,63 @@ int main() {
     CHECK_EQ(app.Stats().draws - before_draws, std::uint64_t(2));
     if (!img.px.empty() && !with_points.px.empty())
         CHECK(!similar(img, with_points));
+
+    // A Sync of gpud buffers through the door: the SHOWN slot is what
+    // draws. Before the first publish the three slots are empty
+    // buffers — nothing draws, nothing crashes. A publish is a new
+    // picture at the next frame; no publish, the same picture.
+    {
+        App app2({.headless = true});
+        REQUIRE(bool(app2));
+        gpud::Device &d2 = sv::Device(app2);
+        Sync<gpud::Buffer> synced;
+        auto sf = app2.Field(synced, {.extent = {W, H}});
+        REQUIRE(bool(sf));
+        CHECK_EQ(probe::gate_count(app2.Raw()), std::size_t(1));
+        CHECK(!sf.Update(v)); // pulled, not pushed
+
+        Bmp none;
+        CHECK(harness::shot(app2, "sync_none", none));
+
+        auto ramp = [&](bool along_x) {
+            std::vector<float> r(W * H);
+            for (std::size_t y = 0; y < H; ++y)
+                for (std::size_t x = 0; x < W; ++x)
+                    r[y * W + x] =
+                        along_x ? float(x) / (W - 1) : float(y) / (H - 1);
+            gpud::Buffer b = d2.alloc(W * H * 4);
+            d2.write(b, r.data(), W * H * 4);
+            return b;
+        };
+        synced.Publish(ramp(false));
+        Bmp a;
+        CHECK(harness::shot(app2, "sync_a", a));
+        if (!a.px.empty()) {
+            CHECK(!similar(none, a));
+            const int across = a.diff(a.w / 8, a.h / 2, a.w - a.w / 8, a.h / 2);
+            const int down = a.diff(a.w / 2, a.h / 8, a.w / 2, a.h - a.h / 8);
+            CHECK((across > 60) != (down > 60));
+        }
+        Bmp again;
+        CHECK(harness::shot(app2, "sync_again", again));
+        CHECK(similar(a, again));
+
+        synced.Publish(ramp(true));
+        Bmp b;
+        CHECK(harness::shot(app2, "sync_b", b));
+        CHECK(!similar(a, b));
+    }
+
+    // Drawn by the main scene AND a view, a Sync is tracked once.
+    {
+        App app3({.headless = true});
+        REQUIRE(bool(app3));
+        Sync<gpud::Buffer> twice;
+        CHECK(bool(app3.Field(twice, {.extent = {W, H}})));
+        CHECK(bool(
+            app3.View({.title = "twin"}).Field(twice, {.extent = {W, H}})));
+        CHECK_EQ(probe::gate_count(app3.Raw()), std::size_t(1));
+    }
 
     return check::summary("gpud");
 }

@@ -20,6 +20,7 @@ struct Lines {
 };
 
 Lines lines_create(Scene, const LinesDesc &);
+Lines lines_from_host(Scene, HostSource, const LinesDesc &);
 bool lines_update(Lines, const float *xyxy, std::size_t count);
 
 }

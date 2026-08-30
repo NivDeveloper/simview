@@ -6,6 +6,8 @@
 #include "scene/Particles.h"
 #include "sync/Sync.h"
 
+#include <concepts>
+
 namespace sv {
 
 struct Range2 {
@@ -19,6 +21,11 @@ struct ViewDesc {
 namespace impl {
 
 template <class> inline constexpr bool no_door = false;
+
+template <class P>
+concept Synced = requires(const P &p) {
+    { p.Gate() } -> std::same_as<SyncGate>;
+};
 
 void scene_range(Scene, const Range2 &);
 void scene_track(Scene, SyncGate);
@@ -53,10 +60,14 @@ class Scene {
     }
 
     template <class P> sv::Field Field(const P &p, const FieldDesc &d) {
+        if constexpr (impl::Synced<P>)
+            impl::scene_track(s_, p.Gate());
         if constexpr (requires { field_from_source(s_, source_of(p), d); })
             return sv::Field{field_from_source(s_, source_of(p), d)};
         else if constexpr (requires { field_from_source(s_, p, d); })
             return sv::Field{field_from_source(s_, p, d)};
+        else if constexpr (requires { field_from_host(s_, host_of(p), d); })
+            return sv::Field{field_from_host(s_, host_of(p), d)};
         else
             static_assert(impl::no_door<P>,
                           "drawing a producer that keeps its data on the "
@@ -64,14 +75,21 @@ class Scene {
                           "the door header that enables it (docs/design.md, "
                           "\"Integration with sims\"). If it has, then this "
                           "type is not one of that door's buffer sources and "
-                          "declares no source_of.");
+                          "declares no source_of. A Sync over a "
+                          "device-resident type needs that header too; a "
+                          "Sync over host data needs its T to be a "
+                          "contiguous, sized range of float.");
     }
 
     template <class P> sv::Lines Lines(const P &p, const LinesDesc &d = {}) {
+        if constexpr (impl::Synced<P>)
+            impl::scene_track(s_, p.Gate());
         if constexpr (requires { lines_from_source(s_, source_of(p), d); })
             return sv::Lines{lines_from_source(s_, source_of(p), d)};
         else if constexpr (requires { lines_from_source(s_, p, d); })
             return sv::Lines{lines_from_source(s_, p, d)};
+        else if constexpr (requires { lines_from_host(s_, host_of(p), d); })
+            return sv::Lines{lines_from_host(s_, host_of(p), d)};
         else
             static_assert(impl::no_door<P>,
                           "drawing a producer that keeps its data on the "
@@ -79,15 +97,22 @@ class Scene {
                           "the door header that enables it (docs/design.md, "
                           "\"Integration with sims\"). If it has, then this "
                           "type is not one of that door's buffer sources and "
-                          "declares no source_of.");
+                          "declares no source_of. A Sync over a "
+                          "device-resident type needs that header too; a "
+                          "Sync over host data needs its T to be a "
+                          "contiguous, sized range of float.");
     }
 
     template <class P>
     sv::Particles Particles(const P &p, const ParticlesDesc &d = {}) {
+        if constexpr (impl::Synced<P>)
+            impl::scene_track(s_, p.Gate());
         if constexpr (requires { particles_from_source(s_, source_of(p), d); })
             return sv::Particles{particles_from_source(s_, source_of(p), d)};
         else if constexpr (requires { particles_from_source(s_, p, d); })
             return sv::Particles{particles_from_source(s_, p, d)};
+        else if constexpr (requires { particles_from_host(s_, host_of(p), d); })
+            return sv::Particles{particles_from_host(s_, host_of(p), d)};
         else
             static_assert(impl::no_door<P>,
                           "drawing a producer that keeps its data on the "
@@ -95,7 +120,10 @@ class Scene {
                           "the door header that enables it (docs/design.md, "
                           "\"Integration with sims\"). If it has, then this "
                           "type is not one of that door's buffer sources and "
-                          "declares no source_of.");
+                          "declares no source_of. A Sync over a "
+                          "device-resident type needs that header too; a "
+                          "Sync over host data needs its T to be a "
+                          "contiguous, sized range of float.");
     }
 
   private:

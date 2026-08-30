@@ -3,6 +3,7 @@
 // device rotation runs on gpud's mock — a test may speak gpud.
 #include "harness/Check.h"
 
+#include <simview/gpud.h>
 #include <simview/sync/Sync.h>
 
 #include <gpud/Mock.h>
@@ -191,8 +192,9 @@ int main() {
     while (rotations < 100 && std::chrono::steady_clock::now() < deadline) {
         impl::sync_gate_flip(buf.Gate());
         rotations = buf.Generation();
-        const gpud::Buffer &b = buf.Shown();
-        if (rotations ? (!b || b.bytes() % 4 != 0 || b.bytes() > 28) : bool(b))
+        const gpud::Buffer *b = source_of(buf).current(); // the door's read
+        if (rotations ? (!b || b->bytes() % 4 != 0 || b->bytes() > 28)
+                      : b != nullptr)
             wrong = true;
         if (wrong)
             break;

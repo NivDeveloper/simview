@@ -9,6 +9,7 @@
 #include "bytecode/particles_vsmain_spirv.h"
 
 #include <cstring>
+#include <string>
 
 namespace sv {
 namespace {
@@ -21,6 +22,8 @@ struct ParticlesState {
     bool dirty = false;
     bool external = false;
     gpud::BufferSource src{};
+    HostSource host{};
+    std::uint64_t host_gen = 0;
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     float radius = 3.0f;
 };
@@ -40,16 +43,67 @@ ParticlesState &state_of(impl::SceneItem &it) {
     return *static_cast<ParticlesState *>(it.state);
 }
 
+// Stage a cloud: grow the buffer rather than refuse, then fill the
+// staging. Shared by Update and the host pull.
+bool upload(ParticlesState &ps, SDL_GPUDevice *dev, const float *xy,
+            std::size_t count) {
+    if (!count) {
+        ps.count = 0; // an empty cloud is not an error
+        return true;
+    }
+
+    // Grow rather than refuse: a cloud that gains points is ordinary.
+    if (count > ps.capacity) {
+        if (ps.buf)
+            SDL_ReleaseGPUBuffer(dev, ps.buf);
+        if (ps.staging)
+            SDL_ReleaseGPUTransferBuffer(dev, ps.staging);
+        const Uint32 bytes = Uint32(count * 8);
+        SDL_GPUBufferCreateInfo bci{};
+        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+        bci.size = bytes;
+        ps.buf = SDL_CreateGPUBuffer(dev, &bci);
+        SDL_GPUTransferBufferCreateInfo tci{};
+        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tci.size = bytes;
+        ps.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
+        if (!ps.buf || !ps.staging) {
+            ps.capacity = ps.count = 0;
+            return set_error(SDL_GetError()), false;
+        }
+        ps.capacity = count;
+    }
+
+    void *map = SDL_MapGPUTransferBuffer(dev, ps.staging, true);
+    if (!map)
+        return set_error(SDL_GetError()), false;
+    std::memcpy(map, xy, count * 8);
+    SDL_UnmapGPUTransferBuffer(dev, ps.staging);
+    ps.count = count;
+    ps.dirty = true;
+    return true;
+}
+
+// The buffer IS the cloud: interleaved xy pairs, so its size is the
+// point count, whichever source it came from.
+void pull_host(ParticlesState &ps, SDL_GPUDevice *dev) {
+    std::size_t bytes = 0;
+    std::uint64_t gen = 0;
+    const void *data = ps.host.fn(ps.host.user, &bytes, &gen);
+    if (!data || gen == ps.host_gen)
+        return;
+    ps.host_gen = gen;
+    if (bytes % 8)
+        return set_error("a cloud is xy pairs, and " +
+                         std::to_string(bytes / 4) +
+                         " floats were published — an odd count");
+    upload(ps, dev, static_cast<const float *>(data), bytes / 8);
+}
+
 void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
     ParticlesState &ps = state_of(it);
-    if (ps.external) {
-        // The buffer IS the cloud: interleaved xy pairs, so its size
-        // is the point count. A count passed alongside would be a
-        // second copy of that fact, free to disagree.
-        gpud::Buffer *b = ps.src.current();
-        ps.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
-        ps.count = b ? b->bytes() / 8 : 0;
-    }
+    if (ps.host)
+        pull_host(ps, it.dev);
     if (ps.dirty && !ps.external && ps.buf && ps.count) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{ps.staging, 0};
@@ -64,6 +118,13 @@ void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
 void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
           SDL_GPURenderPass *pass, const Placement &at) {
     ParticlesState &ps = state_of(it);
+    // Resolved at the bind, count included: bytes()/8 IS the point
+    // count, and nothing sits between asking and using.
+    if (ps.external) {
+        gpud::Buffer *b = ps.src.current();
+        ps.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+        ps.count = b ? b->bytes() / 8 : 0;
+    }
     if (!ps.buf || !ps.count)
         return;
     SDL_GPUGraphicsPipeline *pipe = pipeline_for(
@@ -123,7 +184,9 @@ const KindOps kParticlesOps{
 
 namespace impl {
 
-Particles particles_create(Scene s, const ParticlesDesc &d) {
+namespace {
+
+Particles particles_new(Scene s, const ParticlesDesc &d, HostSource host) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
@@ -138,11 +201,26 @@ Particles particles_create(Scene s, const ParticlesDesc &d) {
     it.pipelines = sc->pipelines;
     it.ops = &kParticlesOps;
     ParticlesState *ps = new ParticlesState{};
+    ps->host = host;
     for (int c = 0; c < 4; ++c)
         ps->color[c] = d.color[c];
     ps->radius = d.radius;
     it.state = ps;
     return Particles{&it};
+}
+
+} // namespace
+
+Particles particles_create(Scene s, const ParticlesDesc &d) {
+    return particles_new(s, d, HostSource{});
+}
+
+Particles particles_from_host(Scene s, HostSource src, const ParticlesDesc &d) {
+    if (!src)
+        return set_error("particles need a source that can answer — the "
+                         "HostSource's fn is null"),
+               Particles{};
+    return particles_new(s, d, src);
 }
 
 bool particles_update(Particles p, const float *xy, std::size_t count) {
@@ -159,41 +237,11 @@ bool particles_update(Particles p, const float *xy, std::size_t count) {
                          "re-resolved each frame — update the producer, "
                          "not the item"),
                false;
-    if (!count) {
-        ps.count = 0; // an empty cloud is not an error
-        return true;
-    }
-
-    // Grow rather than refuse: a cloud that gains points is ordinary.
-    if (count > ps.capacity) {
-        if (ps.buf)
-            SDL_ReleaseGPUBuffer(dev, ps.buf);
-        if (ps.staging)
-            SDL_ReleaseGPUTransferBuffer(dev, ps.staging);
-        const Uint32 bytes = Uint32(count * 8);
-        SDL_GPUBufferCreateInfo bci{};
-        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-        bci.size = bytes;
-        ps.buf = SDL_CreateGPUBuffer(dev, &bci);
-        SDL_GPUTransferBufferCreateInfo tci{};
-        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tci.size = bytes;
-        ps.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
-        if (!ps.buf || !ps.staging) {
-            ps.capacity = ps.count = 0;
-            return set_error(SDL_GetError()), false;
-        }
-        ps.capacity = count;
-    }
-
-    void *map = SDL_MapGPUTransferBuffer(dev, ps.staging, true);
-    if (!map)
-        return set_error(SDL_GetError()), false;
-    std::memcpy(map, xy, count * 8);
-    SDL_UnmapGPUTransferBuffer(dev, ps.staging);
-    ps.count = count;
-    ps.dirty = true;
-    return true;
+    if (ps.host)
+        return set_error("these particles read a Sync — publish to it, "
+                         "not the item"),
+               false;
+    return upload(ps, dev, xy, count);
 }
 
 Particles particles_from_source(Scene s, gpud::BufferSource src,

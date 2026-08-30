@@ -20,6 +20,7 @@ struct Particles {
 };
 
 Particles particles_create(Scene, const ParticlesDesc &);
+Particles particles_from_host(Scene, HostSource, const ParticlesDesc &);
 bool particles_update(Particles, const float *xy, std::size_t count);
 
 }

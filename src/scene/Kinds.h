@@ -22,7 +22,6 @@
 namespace sv {
 
 namespace impl {
-struct App;
 struct SceneItem;
 } // namespace impl
 
@@ -90,11 +89,5 @@ struct KindOps {
 extern const KindOps kFieldOps;
 extern const KindOps kParticlesOps;
 extern const KindOps kLinesOps;
-
-// The pipeline for a kind AND a target format, created on demand and
-// cached on the App. Keyed on both: matching format alone would hand
-// one kind another's pipeline — a picture, not an error.
-SDL_GPUGraphicsPipeline *pipeline_for(impl::App *, const KindOps *,
-                                      SDL_GPUTextureFormat);
 
 } // namespace sv

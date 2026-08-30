@@ -8,6 +8,7 @@
 #include "bytecode/display_vsmain_spirv.h"
 
 #include <cstring>
+#include <string>
 
 namespace sv {
 namespace {
@@ -22,6 +23,10 @@ struct FieldState {
     bool external = false; // buf resolves from src: no staging, no release
     // The pull source an external field re-asks at every draw.
     gpud::BufferSource src{};
+    // The host source a Sync-fed field asks once per frame, and the
+    // generation it last staged.
+    HostSource host{};
+    std::uint64_t host_gen = 0;
 };
 
 // std140-compatible: 4-byte scalars only, matching display.slang's
@@ -43,12 +48,35 @@ const FieldState &state_of(const impl::SceneItem &it) {
     return *static_cast<const FieldState *>(it.state);
 }
 
+// A host-fed field stages a NEW generation the way an Update does. A
+// size that disagrees with the extent is refused once per generation,
+// by name, and the last good grid stays on screen.
+void pull_host(FieldState &f, SDL_GPUDevice *dev) {
+    std::size_t bytes = 0;
+    std::uint64_t gen = 0;
+    const void *data = f.host.fn(f.host.user, &bytes, &gen);
+    if (!data || gen == f.host_gen)
+        return;
+    f.host_gen = gen;
+    if (bytes != std::size_t(f.w) * f.h * 4) {
+        set_error("a field of " + std::to_string(std::size_t(f.w) * f.h) +
+                  " floats was published " + std::to_string(bytes / 4) +
+                  " — the extent and the Sync disagree");
+        return;
+    }
+
+    void *map = SDL_MapGPUTransferBuffer(dev, f.staging, true);
+    if (!map)
+        return set_error(SDL_GetError());
+    std::memcpy(map, data, bytes);
+    SDL_UnmapGPUTransferBuffer(dev, f.staging);
+    f.dirty = true;
+}
+
 void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
     FieldState &f = state_of(it);
-    if (f.external) {
-        gpud::Buffer *b = f.src.current();
-        f.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
-    }
+    if (f.host)
+        pull_host(f, it.dev);
     if (f.w && f.dirty && !f.external) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{f.staging, 0};
@@ -63,6 +91,13 @@ void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
 void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
           SDL_GPURenderPass *pass, const Placement &at) {
     FieldState &f = state_of(it);
+    // Resolved AT the bind, not a phase earlier: the pointer a source
+    // hands out is good for as long as the source says, and nothing
+    // should sit between asking and using.
+    if (f.external) {
+        gpud::Buffer *b = f.src.current();
+        f.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+    }
     if (!f.w || !f.buf)
         return;
     SDL_GPUGraphicsPipeline *pipe =
@@ -124,7 +159,11 @@ const KindOps kFieldOps{
 
 namespace impl {
 
-Field field_create(Scene s, const FieldDesc &d) {
+namespace {
+
+// A field that owns its buffer: pushed by Update, or fed by a host
+// source the frame asks. The one difference is who fills the staging.
+Field field_new(Scene s, const FieldDesc &d, HostSource host) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
@@ -163,8 +202,23 @@ Field field_create(Scene s, const FieldDesc &d) {
                               .lo = d.lo,
                               .hi = d.hi,
                               .buf = buf,
-                              .staging = staging};
+                              .staging = staging,
+                              .host = host};
     return Field{&it};
+}
+
+} // namespace
+
+Field field_create(Scene s, const FieldDesc &d) {
+    return field_new(s, d, HostSource{});
+}
+
+Field field_from_host(Scene s, HostSource src, const FieldDesc &d) {
+    if (!src)
+        return set_error("a field needs a source that can answer — the "
+                         "HostSource's fn is null"),
+               Field{};
+    return field_new(s, d, src);
 }
 
 bool field_update(Field f, const void *data, DType t, std::size_t count) {
@@ -182,6 +236,10 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
         return set_error("this field reads a caller-owned source, "
                          "re-resolved each frame — update the producer, "
                          "not the field"),
+               false;
+    if (fs.host)
+        return set_error("this field reads a Sync — publish to it, not "
+                         "the field"),
                false;
     if (t != DType::f32)
         return set_error("fields hold f32 values only for now"), false;

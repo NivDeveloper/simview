@@ -24,6 +24,7 @@ struct Field {
 };
 
 Field field_create(Scene, const FieldDesc &);
+Field field_from_host(Scene, HostSource, const FieldDesc &);
 bool field_update(Field, const void *data, DType, std::size_t count);
 
 }

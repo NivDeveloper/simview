@@ -9,6 +9,7 @@
 #include "bytecode/lines_vsmain_spirv.h"
 
 #include <cstring>
+#include <string>
 
 namespace sv {
 namespace {
@@ -21,6 +22,8 @@ struct LinesState {
     bool dirty = false;
     bool external = false;
     gpud::BufferSource src{};
+    HostSource host{};
+    std::uint64_t host_gen = 0;
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     float width = 1.5f;
 };
@@ -39,14 +42,66 @@ LinesState &state_of(impl::SceneItem &it) {
     return *static_cast<LinesState *>(it.state);
 }
 
+// Stage the segments: grow rather than refuse, then fill the staging.
+// Shared by Update and the host pull.
+bool upload(LinesState &ls, SDL_GPUDevice *dev, const float *xyxy,
+            std::size_t count) {
+    if (!count) {
+        ls.count = 0;
+        return true;
+    }
+
+    if (count > ls.capacity) {
+        if (ls.buf)
+            SDL_ReleaseGPUBuffer(dev, ls.buf);
+        if (ls.staging)
+            SDL_ReleaseGPUTransferBuffer(dev, ls.staging);
+        const Uint32 bytes = Uint32(count * 16);
+        SDL_GPUBufferCreateInfo bci{};
+        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+        bci.size = bytes;
+        ls.buf = SDL_CreateGPUBuffer(dev, &bci);
+        SDL_GPUTransferBufferCreateInfo tci{};
+        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tci.size = bytes;
+        ls.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
+        if (!ls.buf || !ls.staging) {
+            ls.capacity = ls.count = 0;
+            return set_error(SDL_GetError()), false;
+        }
+        ls.capacity = count;
+    }
+
+    void *map = SDL_MapGPUTransferBuffer(dev, ls.staging, true);
+    if (!map)
+        return set_error(SDL_GetError()), false;
+    std::memcpy(map, xyxy, count * 16);
+    SDL_UnmapGPUTransferBuffer(dev, ls.staging);
+    ls.count = count;
+    ls.dirty = true;
+    return true;
+}
+
+// The buffer IS the set of segments: four floats each, whichever
+// source it came from.
+void pull_host(LinesState &ls, SDL_GPUDevice *dev) {
+    std::size_t bytes = 0;
+    std::uint64_t gen = 0;
+    const void *data = ls.host.fn(ls.host.user, &bytes, &gen);
+    if (!data || gen == ls.host_gen)
+        return;
+    ls.host_gen = gen;
+    if (bytes % 16)
+        return set_error("a segment is four floats, and " +
+                         std::to_string(bytes / 4) +
+                         " floats were published — not a multiple of four");
+    upload(ls, dev, static_cast<const float *>(data), bytes / 16);
+}
+
 void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
     LinesState &ls = state_of(it);
-    if (ls.external) {
-        // The buffer IS the set of segments: four floats each.
-        gpud::Buffer *b = ls.src.current();
-        ls.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
-        ls.count = b ? b->bytes() / 16 : 0;
-    }
+    if (ls.host)
+        pull_host(ls, it.dev);
     if (ls.dirty && !ls.external && ls.buf && ls.count) {
         SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
         const SDL_GPUTransferBufferLocation loc{ls.staging, 0};
@@ -61,6 +116,12 @@ void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
 void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
           SDL_GPURenderPass *pass, const Placement &at) {
     LinesState &ls = state_of(it);
+    // Resolved at the bind, count included.
+    if (ls.external) {
+        gpud::Buffer *b = ls.src.current();
+        ls.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+        ls.count = b ? b->bytes() / 16 : 0;
+    }
     if (!ls.buf || !ls.count)
         return;
     SDL_GPUGraphicsPipeline *pipe =
@@ -117,7 +178,9 @@ const KindOps kLinesOps{
 
 namespace impl {
 
-Lines lines_create(Scene s, const LinesDesc &d) {
+namespace {
+
+Lines lines_new(Scene s, const LinesDesc &d, HostSource host) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
@@ -132,11 +195,26 @@ Lines lines_create(Scene s, const LinesDesc &d) {
     it.pipelines = sc->pipelines;
     it.ops = &kLinesOps;
     LinesState *ls = new LinesState{};
+    ls->host = host;
     for (int c = 0; c < 4; ++c)
         ls->color[c] = d.color[c];
     ls->width = d.width;
     it.state = ls;
     return Lines{&it};
+}
+
+} // namespace
+
+Lines lines_create(Scene s, const LinesDesc &d) {
+    return lines_new(s, d, HostSource{});
+}
+
+Lines lines_from_host(Scene s, HostSource src, const LinesDesc &d) {
+    if (!src)
+        return set_error("lines need a source that can answer — the "
+                         "HostSource's fn is null"),
+               Lines{};
+    return lines_new(s, d, src);
 }
 
 bool lines_update(Lines l, const float *xyxy, std::size_t count) {
@@ -152,40 +230,11 @@ bool lines_update(Lines l, const float *xyxy, std::size_t count) {
                          "re-resolved each frame — update the producer, "
                          "not the item"),
                false;
-    if (!count) {
-        ls.count = 0;
-        return true;
-    }
-
-    if (count > ls.capacity) {
-        if (ls.buf)
-            SDL_ReleaseGPUBuffer(dev, ls.buf);
-        if (ls.staging)
-            SDL_ReleaseGPUTransferBuffer(dev, ls.staging);
-        const Uint32 bytes = Uint32(count * 16);
-        SDL_GPUBufferCreateInfo bci{};
-        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-        bci.size = bytes;
-        ls.buf = SDL_CreateGPUBuffer(dev, &bci);
-        SDL_GPUTransferBufferCreateInfo tci{};
-        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tci.size = bytes;
-        ls.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
-        if (!ls.buf || !ls.staging) {
-            ls.capacity = ls.count = 0;
-            return set_error(SDL_GetError()), false;
-        }
-        ls.capacity = count;
-    }
-
-    void *map = SDL_MapGPUTransferBuffer(dev, ls.staging, true);
-    if (!map)
-        return set_error(SDL_GetError()), false;
-    std::memcpy(map, xyxy, count * 16);
-    SDL_UnmapGPUTransferBuffer(dev, ls.staging);
-    ls.count = count;
-    ls.dirty = true;
-    return true;
+    if (ls.host)
+        return set_error("these lines read a Sync — publish to it, not "
+                         "the item"),
+               false;
+    return upload(ls, dev, xyxy, count);
 }
 
 Lines lines_from_source(Scene s, gpud::BufferSource src, const LinesDesc &d) {

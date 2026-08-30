@@ -3,6 +3,7 @@
 // refusal fires with its sentence.
 #include "harness/Harness.h"
 
+#include <string>
 #include <vector>
 
 int main() {
@@ -136,6 +137,87 @@ int main() {
                 CHECK_GT(box.h(), img.h / 2);
             }
         }
+    }
+
+    // A Sync of host floats: the frame uploads a NEW generation and
+    // only a new one. A wrong-sized publish is refused by name, once,
+    // and the last good grid stays; the next right-sized publish draws.
+    {
+        App app4({.headless = true});
+        REQUIRE(bool(app4));
+        Sync<std::vector<float>> hs{std::vector<float>(N * N)};
+        auto hf = app4.Field(hs, {.extent = {N, N}});
+        REQUIRE(bool(hf));
+        Bmp none;
+        CHECK(harness::shot(app4, "host_none", none));
+        CHECK_EQ(app4.Stats().uploads, std::uint64_t(0));
+
+        hs.Next() = v;
+        hs.Publish();
+        Bmp one;
+        CHECK(harness::shot(app4, "host_one", one));
+        CHECK_EQ(app4.Stats().uploads, std::uint64_t(1));
+        if (!one.px.empty()) {
+            const unsigned lo = one.w / 8, hi = one.w - one.w / 8;
+            const unsigned t = one.h / 8, b = one.h - one.h / 8;
+            CHECK_GT(one.diff(lo, t, hi, b), 150);
+            CHECK_LT(one.diff(hi, t, lo, b), 60);
+        }
+        Bmp again;
+        CHECK(harness::shot(app4, "host_again", again));
+        CHECK_EQ(app4.Stats().uploads, std::uint64_t(1)); // no publish
+        hs.Next() = v;
+        hs.Publish();
+        CHECK(harness::shot(app4, "host_two", again));
+        CHECK_EQ(app4.Stats().uploads, std::uint64_t(2));
+
+        CHECK(!hf.Update(v)); // fed by the Sync, not pushed
+        CHECK(std::string(LastError()).find("publish") != std::string::npos);
+
+        hs.Next().resize(N * N / 2);
+        hs.Publish();
+        Bmp bad;
+        CHECK(harness::shot(app4, "host_bad", bad));
+        CHECK(std::string(LastError()).find("disagree") != std::string::npos);
+        CHECK_EQ(app4.Stats().uploads, std::uint64_t(2));
+        CHECK(similar(one, bad));
+
+        hs.Next().assign(N * N, 0.0f);
+        hs.Publish();
+        Bmp flat;
+        CHECK(harness::shot(app4, "host_flat", flat));
+        CHECK_EQ(app4.Stats().uploads, std::uint64_t(3));
+        CHECK(!similar(one, flat));
+    }
+
+    // A cloud and segments fed by Syncs: the count comes from the
+    // published size, and nothing draws before the first publish.
+    {
+        App app5({.headless = true});
+        REQUIRE(bool(app5));
+        auto bg = app5.Field({.extent = {32, 32}});
+        std::vector<float> flat(32 * 32, 0.0f);
+        CHECK(bg.Update(flat));
+        Sync<std::vector<float>> cloud;
+        Sync<std::vector<float>> segs;
+        CHECK(bool(app5.Particles(
+            cloud, {.color = {1.0f, 1.0f, 1.0f, 1.0f}, .radius = 6.0f})));
+        CHECK(bool(app5.Lines(
+            segs, {.color = {1.0f, 1.0f, 1.0f, 1.0f}, .width = 3.0f})));
+        Bmp before;
+        CHECK(harness::shot(app5, "synced_none", before));
+        CHECK_EQ(app5.Stats().draws, std::uint64_t(1)); // the field only
+
+        cloud.Publish({16.0f, 16.0f, 8.0f, 8.0f, 24.0f, 24.0f});
+        segs.Publish({2.0f, 2.0f, 30.0f, 30.0f});
+        Bmp after;
+        CHECK(harness::shot(app5, "synced_some", after));
+        CHECK_EQ(app5.Stats().draws, std::uint64_t(4)); // 1 + 3 items
+        CHECK(!similar(before, after));
+
+        cloud.Publish({16.0f, 16.0f, 8.0f}); // an odd count, refused by name
+        CHECK(harness::shot(app5, "synced_odd", after));
+        CHECK(std::string(LastError()).find("odd") != std::string::npos);
     }
 
     return check::summary("field");
