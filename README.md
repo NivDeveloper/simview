@@ -15,9 +15,11 @@ shaders — Gray/Hue/Viridis), and headless capture as API (`step()` +
 Vulkan driver on macOS; native MSL/DXIL are one named follow-up).
 
 The examples are the showcase: `hello-window` (an animated field in
-~45 lines), `ising` (the Ising model evaluated by the tensor library
-on the GPU, on the Executor's thread, driven by the transport panel —
-a standalone subproject like xy-gpu), `gas` (2000
+~45 lines), `ising-cpu` (the Ising model in plain C++ on the Executor's
+thread, handed to the window through `sv::Sync` — simview's
+independence proof), `ising` (the same lattice evaluated by the tensor
+library on the GPU through `sv::Sync` over a resident tensor, a
+standalone subproject like xy-gpu), `gas` (2000
 particles in the window itself, the same particles in phase space in
 a panel, a live histogram and the controls — both arrangements at
 once), and `xy-gpu` (a GPU sim drawn zero-copy through the

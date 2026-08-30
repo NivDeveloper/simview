@@ -16,11 +16,12 @@ exactly as gpud is (third_party/ stays EMPTY — its README says why),
 behind one boundary that no public header names and whose include
 directories are PRIVATE to this build: plots, panels and views are
 builders. Examples:
-gas (plain C++ arrays, no tensor — the independence canary; the
-scene in the window AND a second scene in a view), and two standalone
-tensor-on-gpud subprojects, xy-gpu (the pull model) and ising (the
-Executor's thread + the transport panel, evaluating on the device). Next: 3-D scene kinds, and
-more than one window.
+ising-cpu (plain C++ arrays through sv::Sync on the Executor's thread
+— the independence canary), gas (the scene in the window AND a second
+scene in a view), and two standalone tensor-on-gpud subprojects, xy-gpu
+(the bare pull, stepped on the render thread) and ising (the same
+lattice as ising-cpu through sv::Sync over a device-resident tensor).
+Next: 3-D scene kinds, and more than one window.
 
 ## Invariants (do not break)
 

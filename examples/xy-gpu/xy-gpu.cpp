@@ -137,6 +137,10 @@ int main() {
     if (!field)
         return 1;
 
+    // The bare pull, on the render thread: the sim steps inside the
+    // frame callback, so nothing re-parks theta while a frame reads
+    // it. A sim on its own thread wraps its state in sv::Sync instead
+    // — examples/ising is that shape.
     bool paused = false;
     std::uint64_t frame = 0;
     app.OnFrame([&] {

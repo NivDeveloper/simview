@@ -9,6 +9,13 @@
 // of a colour flips together with probability min(1, exp(-dE/T)),
 // dE = 2 s sum(neighbours), which is one fused expression.
 //
+// The sim runs on the Executor's thread and the frame on the main
+// one, and they share the lattice through sv::Sync: three slots with
+// roles, the sim reading Current() and publishing a fresh lattice
+// each sweep, the field drawing Shown(), which the frame flips once
+// and the sim never writes. No copy, no lock around the data, and no
+// buffer re-parked under a reader.
+//
 // Space toggles, Up/Down move temperature, R restarts, Esc quits —
 // through the Executor, as the transport panel does.
 #include <simview/gpud.h>
@@ -51,19 +58,23 @@ Spins neighbours(tensor::SlotDevice &sdev, const Spins &s) {
                           s[i, wrap(j + 1_c)] + s[i, wrap(j - 1_c)]);
 }
 
-// One checkerboard Metropolis sweep: both colours, each a fused
-// accept-or-keep over the whole lattice.
-void sweep(tensor::SlotDevice &sdev, Spins &s, const Mask &colour, float T) {
+// One colour of a Metropolis sweep: a fused accept-or-keep over the
+// whole lattice, reading one lattice and producing the next.
+Spins pass(tensor::SlotDevice &sdev, const Spins &s, const Mask &colour,
+           int col, float T) {
     using namespace tensor;
     using namespace tensor::indices;
-    for (int col = 0; col < 2; ++col) {
-        auto u = eval(sdev, rng::Uniform<float, L, L>());
-        auto nn = neighbours(sdev, s);
-        auto de = 2.0f * s[i, j] * nn[i, j];
-        auto acc =
-            (colour[i, j] == col) && (u[i, j] < math::Exp(de * (-1.0f / T)));
-        s = eval(sdev, where(acc, -s[i, j], s[i, j]));
-    }
+    auto u = eval(sdev, rng::Uniform<float, L, L>());
+    auto nn = neighbours(sdev, s);
+    auto de = 2.0f * s[i, j] * nn[i, j];
+    auto acc = (colour[i, j] == col) && (u[i, j] < math::Exp(de * (-1.0f / T)));
+    return eval(sdev, where(acc, -s[i, j], s[i, j]));
+}
+
+// One checkerboard sweep: both colours.
+Spins sweep(tensor::SlotDevice &sdev, const Spins &s, const Mask &colour,
+            float T) {
+    return pass(sdev, pass(sdev, s, colour, 0, T), colour, 1, T);
 }
 
 int main() {
@@ -73,30 +84,34 @@ int main() {
         return 1;
 
     tensor::SlotDevice sdev{sv::Device(app)};
-
-    // The state, resident on the device for the whole run.
     Mask colour = checkerboard(sdev);
-    Spins spins = random_spins(sdev);
+
+    // The state: three resident lattices the sim and the frame share
+    // by role. Publish the initial condition before anyone reads.
+    sv::Sync<Spins> spins;
+    spins.Publish(random_spins(sdev));
 
     // The slider moves a plain float on the main thread; the frame
     // publishes it to the atomic the sim thread reads.
     float temperature = 2.269f; // the critical point
     std::atomic<float> T{temperature};
 
-    // One registration; the engine pulls the freshest resident buffer
-    // at every draw, however often eval re-parks the spins.
+    // One registration: the field draws whichever lattice the frame
+    // flipped to, and the frame flips once, first thing.
     auto field = app.Field(spins, {.extent = {L, L}, .lo = -1.0f, .hi = 1.0f});
     if (!field)
         return 1;
 
     // The sim on its own thread. The Executor keeps the clock; one
-    // tick is one sweep, evaluated on the device.
+    // tick is one sweep, evaluated on the device from the lattice the
+    // sim published last.
     sv::Executor sim([&](const sv::Tick &) {
-        sweep(sdev, spins, colour, T.load(std::memory_order_relaxed));
+        spins.Publish(sweep(sdev, spins.Current(), colour,
+                            T.load(std::memory_order_relaxed)));
     });
     // Restart re-randomises on the worker, between ticks — it can never
     // overlap a sweep.
-    sim.OnRestart([&] { spins = random_spins(sdev); });
+    sim.OnRestart([&] { spins.Publish(random_spins(sdev)); });
     sim.Play();
 
     app.Controls(sim).Slider("temperature", temperature, 0.05f, 4.5f);
@@ -112,7 +127,7 @@ int main() {
         .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
-    // Teardown is the lifetime rule: the Executor (which reads spins)
+    // Teardown is the lifetime rule: the Executor (which writes spins)
     // dies before spins, which dies before app — the device's owner —
     // in reverse declaration order.
 }
