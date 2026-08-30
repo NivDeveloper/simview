@@ -228,7 +228,10 @@ matters — **its own command buffer, recorded and submitted inside
 
 - **The frame's main command buffer is submitted BEFORE the viewports
   render.** A secondary viewport samples the view textures the main
-  buffer wrote, so the main buffer has to be on the queue first.
+  buffer wrote, so the main buffer has to be on the queue first. That
+  order now lives in exactly one function, `frame_render`, which every
+  path drives through the Presenter port — breaking it there is the
+  only way to break it, and `viewport_check` catches that.
   Upstream's example renders viewports before submitting, and is
   right to for its own case: its secondary windows sample nothing the
   main buffer produced. Ours do, which makes the ordering ours to

@@ -11,6 +11,7 @@
 #include <SDL3/SDL.h>
 #include <gpud/Sdl.h>
 
+#include <algorithm>
 #include <forward_list>
 #include <list>
 #include <memory>
@@ -218,6 +219,15 @@ void views_draw(impl::App *, SDL_GPUCommandBuffer *);
 
 // Release a scene's items and, for a view, its texture.
 void scene_release(impl::App *, impl::App::SceneState &);
+
+// forward_list push_front reversed registration; fire in registration
+// order by walking a copied reverse. The COPY matters: a callback that
+// registers another does not see its own registration this frame.
+// Lists are tiny; per frame is fine.
+template <typename L, typename F> void in_order(const L &l, F f) {
+    std::vector<typename L::value_type> v(l.begin(), l.end());
+    std::for_each(v.rbegin(), v.rend(), f);
+}
 
 // Plots.cpp: is this window title spoken for? Plots, panels and views
 // open ImGui windows and share one title namespace.

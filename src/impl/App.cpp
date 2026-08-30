@@ -2,6 +2,7 @@
 // over the engine.
 
 #include "../engine/Engine.h"
+#include "../engine/Frame.h"
 #include "../engine/Ui.h"
 
 #include <simview/gpud.h>
@@ -114,13 +115,6 @@ void app_request_quit(App *a) {
 
 namespace {
 
-// forward_list push_front reversed registration; fire in registration
-// order by walking a copied reverse. Lists are tiny; per frame is fine.
-template <typename L, typename F> void in_order(const L &l, F f) {
-    std::vector<typename L::value_type> v(l.begin(), l.end());
-    std::for_each(v.rbegin(), v.rend(), f);
-}
-
 // Events posted through the automation seam, delivered exactly where
 // SDL's own are: same callbacks, same order, same frame.
 void deliver_posted(App *a) {
@@ -168,51 +162,13 @@ void app_run(App *a) {
     while (!a->quit) {
         poll(a);
         in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
+        // A frame callback may quit; nothing after this point should
+        // run when it did.
         if (a->quit)
             break;
 
-        // Before the UI frame: a draw list must never record a texture
-        // this frame is about to release.
-        views_resize(a);
-        const bool ui = ui_on(a);
-        if (ui) {
-            ui_begin(a);
-            in_order(a->ui_cbs, [](const App::Cb &c) { c.fn(c.user); });
-            ui_end(a);
-        }
-
-        SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
-        SDL_GPUTexture *swap = nullptr;
-        const bool have = SDL_WaitAndAcquireGPUSwapchainTexture(
-                              cmd, a->win, &swap, nullptr, nullptr) &&
-                          swap;
-        if (have) {
-            int tw = 0, th = 0;
-            SDL_GetWindowSizeInPixels(a->win, &tw, &th);
-            ++a->stats.frames;
-            views_draw(a, cmd);
-            scene_draw(a->scene, cmd, swap, Uint32(tw), Uint32(th),
-                       SDL_GetGPUSwapchainTextureFormat(a->dev, a->win));
-            if (ui)
-                ui_draw(a, cmd, swap);
-        }
-        // SUBMIT FIRST, then the torn-out windows. Each secondary
-        // viewport records and submits a command buffer of its own,
-        // and what it samples includes the view textures THIS buffer
-        // wrote — so this buffer has to be on the queue before those
-        // run. Upstream's example renders viewports first, and is
-        // right to: its secondary windows sample nothing the main
-        // buffer produced. Ours do.
-        //
-        // Still outside the acquire, because a torn-out panel is its
-        // own window and must keep presenting while this one is
-        // minimized.
-        if (have)
-            SDL_SubmitGPUCommandBuffer(cmd);
-        else
-            SDL_CancelGPUCommandBuffer(cmd); // minimized: not an error
-        if (ui)
-            ui_viewports(a);
+        frame_build(a);
+        frame_render(a, swapchain_presenter(a));
     }
 }
 
@@ -279,17 +235,13 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
 void app_step(App *a) {
     if (!a)
         return;
-    views_resize(a);
     deliver_posted(a);
     in_order(a->frame_cbs, [](const App::Cb &c) { c.fn(c.user); });
     // A headless frame builds the UI too: the panels run, their
     // geometry exists, and nothing is drawn — which is what makes the
-    // callbacks testable without a display.
-    if (ui_on(a)) {
-        ui_begin(a);
-        in_order(a->ui_cbs, [](const App::Cb &c) { c.fn(c.user); });
-        ui_end(a);
-    }
+    // callbacks testable without a display. It does NOT render, which
+    // is why a Step counts no frame.
+    frame_build(a);
 }
 
 void app_post_event(App *a, const Event &e) {
@@ -342,40 +294,26 @@ bool app_shot(App *a, const char *path) {
         return false;
     }
 
-    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(a->dev);
-    ++a->stats.frames;
-    views_draw(a, cmd);
-    scene_draw(a->scene, cmd, tex, w, h, ti.format);
-    // A headless shot is the COMPOSITED frame: what a test can see
-    // must be what the window shows. Viewports come after the submit
-    // below, for the same reason app_run does it that way.
-    if (composited)
-        ui_draw(a, cmd, tex);
-    SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
-    SDL_GPUTextureRegion reg{};
-    reg.texture = tex;
-    reg.w = w;
-    reg.h = h;
-    reg.d = 1;
-    SDL_GPUTextureTransferInfo dst{};
-    dst.transfer_buffer = tb;
-    SDL_DownloadFromGPUTexture(cp, &reg, &dst);
-    SDL_EndGPUCopyPass(cp);
-    SDL_GPUFence *fe = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-    SDL_WaitForGPUFences(a->dev, true, &fe, 1);
-    SDL_ReleaseGPUFence(a->dev, fe);
-    // Submitted: the torn-out windows may now sample what it wrote.
-    if (composited)
-        ui_viewports(a);
+    // The same frame app_run draws, into a texture instead of a
+    // window. The order lives in frame_render, once — the readback
+    // included, because it has to be recorded after the drawing and
+    // before the submit.
+    ShotTarget st{a, tex, tb, w, h, ti.format};
+    frame_render(a, shot_presenter(&st));
 
     void *pixels = SDL_MapGPUTransferBuffer(a->dev, tb, false);
-    SDL_Surface *s = SDL_CreateSurfaceFrom(
-        int(w), int(h), SDL_PIXELFORMAT_RGBA32, pixels, int(w * 4));
-    const bool ok = SDL_SaveBMP(s, path);
-    if (!ok)
+    bool ok = pixels != nullptr;
+    if (!ok) {
         set_error(SDL_GetError());
-    SDL_DestroySurface(s);
-    SDL_UnmapGPUTransferBuffer(a->dev, tb);
+    } else {
+        SDL_Surface *s = SDL_CreateSurfaceFrom(
+            int(w), int(h), SDL_PIXELFORMAT_RGBA32, pixels, int(w * 4));
+        ok = s && SDL_SaveBMP(s, path);
+        if (!ok)
+            set_error(SDL_GetError());
+        SDL_DestroySurface(s);
+        SDL_UnmapGPUTransferBuffer(a->dev, tb);
+    }
     SDL_ReleaseGPUTransferBuffer(a->dev, tb);
     SDL_ReleaseGPUTexture(a->dev, tex);
     return ok;

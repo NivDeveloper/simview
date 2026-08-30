@@ -113,6 +113,7 @@ endif()
 add_library(simview STATIC
     src/impl/App.cpp
     src/engine/Draw.cpp
+    src/engine/Frame.cpp
     src/engine/Plots.cpp
     src/engine/Ui.cpp
     src/impl/Plots.cpp
@@ -153,10 +154,12 @@ if(SIMVIEW_BUILD_TESTS)
     # contain sv::probe because this target is never built and never
     # shipped, and tests/installed_surface proves the absence by
     # looking for the file.
+    # It READS App's layout from a header and calls nothing, so it
+    # links no library — only the include paths that header needs.
     add_library(simview_probe STATIC src/testing/Probe.cpp)
-    target_link_libraries(simview_probe PRIVATE simview::simview)
     target_include_directories(simview_probe PRIVATE
-        ${imgui_SOURCE_DIR} ${implot_SOURCE_DIR})
+        ${CMAKE_CURRENT_SOURCE_DIR}/include ${imgui_SOURCE_DIR}
+        ${implot_SOURCE_DIR})
     target_link_libraries(simview_probe PRIVATE SDL3::SDL3 gpud::sdl)
     set_target_properties(simview_probe PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)

@@ -249,7 +249,7 @@ symptom to hardcode.
 
 | pass | change | why then |
 | --- | --- | --- |
-| 1 | `tests/` fold + `Palette.h`; `sv::probe` + its gate; the Presenter port and one frame order | Clears the ground, then puts the loop a user runs under the harness |
+| 1 | `tests/` fold + `Palette.h`; `sv::probe` + its gate; the Presenter port and one frame order | **Shipped.** Clears the ground, then puts the loop a user runs under the harness |
 | 2 | Scene kinds → the ops table | Unblocks 3-D kinds; 13 branch sites become 0 |
 | 3 | Fold `src/` by layer; split `App.cpp` along the seams already in it | Mostly falls out of pass 1 and 2 |
 | 4 | Compose `impl::App` from subsystem states | Falls out of pass 3 |
