@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Scene.h"
 #include "Types.h"
 
 #include <algorithm>
@@ -25,10 +26,36 @@ struct AxisDesc {
     bool invert = false;
 };
 
+enum class Palette : std::int8_t {
+    Auto = -1,
+    Deep,
+    Dark,
+    Pastel,
+    Paired,
+    Viridis,
+    Plasma,
+    Hot,
+    Cool,
+    Pink,
+    Jet,
+    Twilight,
+    RdBu,
+    BrBG,
+    PiYG,
+    Spectral,
+    Greys
+};
+
 struct PlotDesc {
     const char *title = "plot";
     AxisDesc x{};
     AxisDesc y{};
+    Palette palette = Palette::Auto;
+};
+
+struct GridDesc {
+    double scale_min = 0.0, scale_max = 0.0;
+    double x0 = 0.0, y0 = 0.0, x1 = 1.0, y1 = 1.0;
 };
 
 struct SeriesStyle {
@@ -51,7 +78,19 @@ namespace impl {
 
 struct App;
 
-enum class SeriesKind : std::int32_t { Line, Scatter, Histogram };
+enum class SeriesKind : std::int32_t {
+    Line,
+    Scatter,
+    Histogram,
+    Stairs,
+    Shaded,
+    Bars,
+    Stems,
+    InfLines,
+    Digital,
+    ErrorBars,
+    Heatmap
+};
 
 struct SeriesData {
     const void *a = nullptr;
@@ -77,6 +116,7 @@ struct SeriesDesc {
     SeriesData (*src)(void *) = nullptr;
     void *user = nullptr;
     void (*free)(void *) = nullptr;
+    Range2 bounds{0.0, 0.0, 1.0, 1.0};
     SeriesStyle style{};
 };
 
@@ -159,7 +199,217 @@ class Plot {
                       bins);
     }
 
+    template <std::ranges::contiguous_range R>
+    Plot &Stairs(const char *name, const R &y, const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Stairs, name, nullptr,
+                        std::ranges::data(y), std::ranges::size(y),
+                        series_dtype<std::ranges::range_value_t<R>>(), s);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY>
+    Plot &Stairs(const char *name, const RX &x, const RY &y,
+                 const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Stairs, name, std::ranges::data(x),
+                        std::ranges::data(y),
+                        std::min(std::ranges::size(x), std::ranges::size(y)),
+                        series_dtype<std::ranges::range_value_t<RY>>(), s);
+    }
+
+    template <std::invocable F>
+    Plot &Stairs(const char *name, F pull, const SeriesStyle &s = {}) {
+        return pulled(impl::SeriesKind::Stairs, name, std::move(pull), s);
+    }
+
+    template <std::ranges::contiguous_range R>
+    Plot &Shaded(const char *name, const R &y, double yref = 0.0,
+                 const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Shaded, name, nullptr,
+                        std::ranges::data(y), std::ranges::size(y),
+                        series_dtype<std::ranges::range_value_t<R>>(), s, yref);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY>
+    Plot &Shaded(const char *name, const RX &x, const RY &y, double yref = 0.0,
+                 const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Shaded, name, std::ranges::data(x),
+                        std::ranges::data(y),
+                        std::min(std::ranges::size(x), std::ranges::size(y)),
+                        series_dtype<std::ranges::range_value_t<RY>>(), s,
+                        yref);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range R1,
+              std::ranges::contiguous_range R2>
+    Plot &Band(const char *name, const RX &x, const R1 &lo, const R2 &hi,
+               const SeriesStyle &s = {}) {
+        const std::size_t n =
+            std::min({std::ranges::size(x), std::ranges::size(lo),
+                      std::ranges::size(hi)});
+        return borrowed3(impl::SeriesKind::Shaded, name, std::ranges::data(x),
+                         std::ranges::data(lo), std::ranges::data(hi), n,
+                         series_dtype<std::ranges::range_value_t<R1>>(), s);
+    }
+
+    template <std::ranges::contiguous_range R>
+    Plot &Bars(const char *name, const R &y, double width = 0.67,
+               const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Bars, name, nullptr,
+                        std::ranges::data(y), std::ranges::size(y),
+                        series_dtype<std::ranges::range_value_t<R>>(), s,
+                        width);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY>
+    Plot &Bars(const char *name, const RX &x, const RY &y, double width = 0.67,
+               const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Bars, name, std::ranges::data(x),
+                        std::ranges::data(y),
+                        std::min(std::ranges::size(x), std::ranges::size(y)),
+                        series_dtype<std::ranges::range_value_t<RY>>(), s,
+                        width);
+    }
+
+    template <std::invocable F>
+    Plot &Bars(const char *name, F pull, double width = 0.67,
+               const SeriesStyle &s = {}) {
+        return pulled(impl::SeriesKind::Bars, name, std::move(pull), s, width);
+    }
+
+    template <std::ranges::contiguous_range R>
+    Plot &Stems(const char *name, const R &y, double ref = 0.0,
+                const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Stems, name, nullptr,
+                        std::ranges::data(y), std::ranges::size(y),
+                        series_dtype<std::ranges::range_value_t<R>>(), s, ref);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY>
+    Plot &Stems(const char *name, const RX &x, const RY &y, double ref = 0.0,
+                const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Stems, name, std::ranges::data(x),
+                        std::ranges::data(y),
+                        std::min(std::ranges::size(x), std::ranges::size(y)),
+                        series_dtype<std::ranges::range_value_t<RY>>(), s, ref);
+    }
+
+    template <std::ranges::contiguous_range R>
+    Plot &InfLines(const char *name, const R &v, const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::InfLines, name, nullptr,
+                        std::ranges::data(v), std::ranges::size(v),
+                        series_dtype<std::ranges::range_value_t<R>>(), s);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY>
+    Plot &Digital(const char *name, const RX &x, const RY &y,
+                  const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Digital, name, std::ranges::data(x),
+                        std::ranges::data(y),
+                        std::min(std::ranges::size(x), std::ranges::size(y)),
+                        series_dtype<std::ranges::range_value_t<RY>>(), s);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY,
+              std::ranges::contiguous_range RE>
+    Plot &ErrorBars(const char *name, const RX &x, const RY &y, const RE &err,
+                    const SeriesStyle &s = {}) {
+        const std::size_t n =
+            std::min({std::ranges::size(x), std::ranges::size(y),
+                      std::ranges::size(err)});
+        return borrowed3(impl::SeriesKind::ErrorBars, name,
+                         std::ranges::data(x), std::ranges::data(y),
+                         std::ranges::data(err), n,
+                         series_dtype<std::ranges::range_value_t<RY>>(), s);
+    }
+
+    template <
+        std::ranges::contiguous_range RX, std::ranges::contiguous_range RY,
+        std::ranges::contiguous_range RN, std::ranges::contiguous_range RP>
+    Plot &ErrorBars(const char *name, const RX &x, const RY &y, const RN &neg,
+                    const RP &pos, const SeriesStyle &s = {}) {
+        const std::size_t n =
+            std::min({std::ranges::size(x), std::ranges::size(y),
+                      std::ranges::size(neg), std::ranges::size(pos)});
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = impl::SeriesKind::ErrorBars,
+                    .dtype = series_dtype<std::ranges::range_value_t<RY>>(),
+                    .data = {.a = std::ranges::data(x),
+                             .b = std::ranges::data(y),
+                             .c = std::ranges::data(neg),
+                             .d = std::ranges::data(pos),
+                             .count = n},
+                    .style = s});
+        return *this;
+    }
+
+    template <std::ranges::contiguous_range R>
+    Plot &Heatmap(const char *name, const R &values, std::size_t rows,
+                  std::size_t cols, const GridDesc &g = {},
+                  const SeriesStyle &s = {}) {
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = impl::SeriesKind::Heatmap,
+                    .dtype = series_dtype<std::ranges::range_value_t<R>>(),
+                    .param = {g.scale_min, g.scale_max, 0.0, 0.0},
+                    .data = {.b = std::ranges::data(values),
+                             .count = rows,
+                             .count2 = cols},
+                    .bounds = {g.x0, g.y0, g.x1, g.y1},
+                    .style = s});
+        return *this;
+    }
+
+    template <std::invocable F>
+    Plot &Heatmap(const char *name, F pull, std::size_t rows, std::size_t cols,
+                  const GridDesc &g = {}, const SeriesStyle &s = {}) {
+        using Ret = std::remove_cvref_t<std::invoke_result_t<F>>;
+        struct Cell {
+            F f;
+            std::size_t rows, cols;
+        };
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = impl::SeriesKind::Heatmap,
+                    .dtype = series_dtype<std::ranges::range_value_t<Ret>>(),
+                    .param = {g.scale_min, g.scale_max, 0.0, 0.0},
+                    .src =
+                        [](void *u) {
+                            auto *c = static_cast<Cell *>(u);
+                            decltype(auto) r = c->f();
+                            return impl::SeriesData{.b = std::ranges::data(r),
+                                                    .count = c->rows,
+                                                    .count2 = c->cols};
+                        },
+                    .user = new Cell{std::move(pull), rows, cols},
+                    .free = [](void *u) { delete static_cast<Cell *>(u); },
+                    .bounds = {g.x0, g.y0, g.x1, g.y1},
+                    .style = s});
+        return *this;
+    }
+
   private:
+    Plot &borrowed3(impl::SeriesKind k, const char *name, const void *a,
+                    const void *b, const void *c, std::size_t n, DType dt,
+                    const SeriesStyle &s) {
+        impl::plot_series(
+            p_, impl::SeriesDesc{.name = name,
+                                 .kind = k,
+                                 .dtype = dt,
+                                 .data = {.a = a, .b = b, .c = c, .count = n},
+                                 .style = s});
+        return *this;
+    }
+
     Plot &borrowed(impl::SeriesKind k, const char *name, const void *x,
                    const void *y, std::size_t n, DType dt, const SeriesStyle &s,
                    double p0 = -2.0) {

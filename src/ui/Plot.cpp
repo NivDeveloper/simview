@@ -69,6 +69,7 @@ Plot plot_create(App *a, const PlotDesc &d) {
 
     PlotState &st = a->plots.emplace_back();
     st.title = d.title;
+    st.palette = d.palette;
     copy_axis(st.x, d.x);
     copy_axis(st.y, d.y);
 
@@ -104,6 +105,7 @@ bool plot_series(Plot p, const SeriesDesc &d) {
     s.dtype = d.dtype;
     for (int i = 0; i < 4; ++i)
         s.param[i] = d.param[i];
+    s.bounds = d.bounds;
     s.data = d.data;
     s.src = d.src;
     s.user = d.user;

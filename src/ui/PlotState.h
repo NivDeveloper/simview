@@ -23,6 +23,7 @@ struct SeriesState {
     SeriesKind kind = SeriesKind::Line;
     DType dtype = DType::f32;
     double param[4] = {-2.0, 0.0, 0.0, 0.0};
+    Range2 bounds{0.0, 0.0, 1.0, 1.0};
     SeriesData data{};
     SeriesData (*src)(void *) = nullptr;
     void *user = nullptr;
@@ -47,6 +48,7 @@ struct AxisState {
 
 struct PlotState {
     std::string title;
+    Palette palette = Palette::Auto;
     AxisState x, y;
     std::list<SeriesState> series;
 };

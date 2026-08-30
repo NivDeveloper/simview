@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <implot.h>
 
+#include <array>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -101,6 +102,125 @@ int main() {
     p.Histogram("dist", ys, 16);
     settle(app);
     CHECK_GT(total_vertices(), before_kinds);
+
+    // The eight array-shaped kinds, one per block, each proven the
+    // same way: it puts geometry on the frame the plot did not have
+    // before. Each block is the cost of its kind's test.
+    std::vector<float> err(xs.size(), 0.1f), lo(xs.size()), hi(xs.size());
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+        lo[i] = ys[i] - 0.2f;
+        hi[i] = ys[i] + 0.2f;
+    }
+    const std::vector<float> marks = {2.0f, 5.0f};
+    std::vector<float> bits(xs.size());
+    for (std::size_t i = 0; i < bits.size(); ++i)
+        bits[i] = float(i % 2);
+
+    int before = total_vertices();
+    p.Stairs("steps", xs, ys);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.Shaded("area", xs, ys, 0.0);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.Band("band", xs, lo, hi);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.Bars("bars", xs, ys, 0.5);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.Stems("stems", xs, ys, 0.0);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.InfLines("marks", marks);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.Digital("bits", xs, bits);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.ErrorBars("err", xs, ys, err);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    before = total_vertices();
+    p.ErrorBars("err2", xs, ys, err, err);
+    settle(app);
+    CHECK_GT(total_vertices(), before);
+
+    // Heatmap is the one new DATA SHAPE — a grid, not arrays — and it
+    // is proven by pixels rather than by vertex count: a grid whose
+    // left column is cold and right column is hot must render a
+    // cold-to-hot gradient across the shot. Swapping rows and cols
+    // would break it, which is the point.
+    {
+        App hm({.headless = true, .size = {400, 300}});
+        constexpr std::size_t R = 4, C = 8;
+        std::vector<float> grid(R * C);
+        for (std::size_t r = 0; r < R; ++r)
+            for (std::size_t c = 0; c < C; ++c)
+                grid[r * C + c] = float(c) / float(C - 1);
+        hm.Plot({.title = "heat", .palette = Palette::Viridis})
+            .Heatmap("grid", grid, R, C, {.scale_min = 0.0, .scale_max = 1.0});
+        settle(hm);
+        int hv = total_vertices();
+        CHECK_GT(hv, 0);
+        Bmp img;
+        REQUIRE(harness::shot(hm, "heat", img));
+        // The shot holds the window, its axes and the COLOURBAR too —
+        // a thin strip of the same palette, so its cold end looks like
+        // a cell's. Tell them apart by shape: a cell in a 4x8 grid is
+        // taller than it is wide; the bar is a 60px-wide strip. Find
+        // the cold purple whose vertical run is the tallest.
+        const std::array<int, 3> cold{68, 1, 84};
+        auto is_cold = [&](unsigned x, unsigned y) {
+            const auto &p = img.at(x, y);
+            return std::abs(p[0] - cold[0]) + std::abs(p[1] - cold[1]) +
+                       std::abs(p[2] - cold[2]) <
+                   30;
+        };
+        unsigned cx0 = 0, cy0 = 0, best_h = 0;
+        for (unsigned x = 0; x < img.w; ++x) {
+            unsigned y = 0;
+            while (y < img.h) {
+                if (!is_cold(x, y)) {
+                    ++y;
+                    continue;
+                }
+                unsigned y1 = y;
+                while (y1 + 1 < img.h && is_cold(x, y1 + 1))
+                    ++y1;
+                if (y1 - y + 1 > best_h) {
+                    best_h = y1 - y + 1;
+                    cx0 = x;
+                    cy0 = y;
+                }
+                y = y1 + 1;
+            }
+        }
+        REQUIRE(best_h > 0);
+        // Two things, and the second catches a transposed grid. Across
+        // a row the colour must CHANGE a lot — a gradient, not a fill.
+        // And the cold cell must be TALL: 4 rows over 8 columns makes
+        // each cell taller than wide, so its cold run is the whole cell
+        // height; read as 8x4 the cell is wide and short.
+        const unsigned y_in = cy0 + best_h / 2;
+        CHECK_GT(img.diff(cx0 + 2, y_in, cx0 + best_h, y_in), 100);
+        CHECK_GT(best_h, 40u);
+    }
 
     // An empty source is not an error — a sim that has produced no
     // samples yet simply draws nothing.

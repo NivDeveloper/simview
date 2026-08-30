@@ -89,8 +89,100 @@ double emit_series(const impl::SeriesState &s, const impl::SeriesData &d,
     case impl::SeriesKind::Histogram: // b = values; param[0] = bins
         return ImPlot::PlotHistogram(name, b, n, int(s.param[0]), 1.0,
                                      ImPlotRange(), spec);
+    case impl::SeriesKind::Stairs: // a = x (optional), b = y
+        if (a)
+            ImPlot::PlotStairs(name, a, b, n, spec);
+        else
+            ImPlot::PlotStairs(name, b, n, 1, 0, spec);
+        return 0.0;
+    case impl::SeriesKind::Shaded: // a = x, b = y (+ c = hi: a band);
+                                   // param[0] = yref
+        if (d.c)
+            ImPlot::PlotShaded(name, a, b, static_cast<const T *>(d.c), n,
+                               spec);
+        else if (a)
+            ImPlot::PlotShaded(name, a, b, n, s.param[0], spec);
+        else
+            ImPlot::PlotShaded(name, b, n, s.param[0], 1, 0, spec);
+        return 0.0;
+    case impl::SeriesKind::Bars: // a = x (optional), b = y; param[0] = width
+        if (a)
+            ImPlot::PlotBars(name, a, b, n, s.param[0], spec);
+        else
+            ImPlot::PlotBars(name, b, n, s.param[0], 0, spec);
+        return 0.0;
+    case impl::SeriesKind::Stems: // a = x (optional), b = y; param[0] = ref
+        if (a)
+            ImPlot::PlotStems(name, a, b, n, s.param[0], spec);
+        else
+            ImPlot::PlotStems(name, b, n, s.param[0], 1, 0, spec);
+        return 0.0;
+    case impl::SeriesKind::InfLines: // b = positions
+        ImPlot::PlotInfLines(name, b, n, spec);
+        return 0.0;
+    case impl::SeriesKind::Digital: // a = x, b = y
+        ImPlot::PlotDigital(name, a, b, n, spec);
+        return 0.0;
+    case impl::SeriesKind::ErrorBars: // a = x, b = y, c = err | c = neg, d =
+                                      // pos
+        if (d.d)
+            ImPlot::PlotErrorBars(name, a, b, static_cast<const T *>(d.c),
+                                  static_cast<const T *>(d.d), n, spec);
+        else
+            ImPlot::PlotErrorBars(name, a, b, static_cast<const T *>(d.c), n,
+                                  spec);
+        return 0.0;
+    case impl::SeriesKind::Heatmap: // b = values, count = rows, count2 = cols;
+                                    // param[0..1] = scale, bounds = rect
+        ImPlot::PlotHeatmap(name, b, int(d.count), int(d.count2), s.param[0],
+                            s.param[1], nullptr,
+                            ImPlotPoint(s.bounds.x0, s.bounds.y0),
+                            ImPlotPoint(s.bounds.x1, s.bounds.y1), spec);
+        return 0.0;
     }
     return 0.0;
+}
+
+// A kind's flag lives on the spec, set from the style: horizontal is
+// the one every bar-shaped kind shares.
+void apply_flags(ImPlotSpec &spec, impl::SeriesKind k, const SeriesStyle &st) {
+    if (!st.horizontal)
+        return;
+    switch (k) {
+    case impl::SeriesKind::Bars:
+        spec.Flags |= ImPlotBarsFlags_Horizontal;
+        break;
+    case impl::SeriesKind::Stems:
+        spec.Flags |= ImPlotStemsFlags_Horizontal;
+        break;
+    case impl::SeriesKind::InfLines:
+        spec.Flags |= ImPlotInfLinesFlags_Horizontal;
+        break;
+    case impl::SeriesKind::ErrorBars:
+        spec.Flags |= ImPlotErrorBarsFlags_Horizontal;
+        break;
+    case impl::SeriesKind::Histogram:
+        spec.Flags |= ImPlotHistogramFlags_Horizontal;
+        break;
+    default:
+        break;
+    }
+}
+
+// simview's Palette enum is its own, so implot.h stays off the public
+// surface. The values line up with ImPlotColormap_ by construction —
+// asserted, because that is the kind of fact that drifts silently.
+static_assert(int(Palette::Deep) == ImPlotColormap_Deep);
+static_assert(int(Palette::Greys) == ImPlotColormap_Greys);
+
+// Does this plot show a colourbar? A Heatmap with an explicit scale
+// does; ImPlot's ColormapScale is an ImGui widget that must sit
+// OUTSIDE the plot bracket, so plot_draw asks before it begins.
+const impl::SeriesState *colourbar_of(const impl::PlotState &p) {
+    for (const impl::SeriesState &s : p.series)
+        if (s.kind == impl::SeriesKind::Heatmap && s.param[1] > s.param[0])
+            return &s;
+    return nullptr;
 }
 
 } // namespace
@@ -101,7 +193,15 @@ void plot_draw(impl::PlotState &p) {
         ImGui::End();
         return;
     }
-    if (ImPlot::BeginPlot("##canvas", ImVec2(-1, -1))) {
+    // PushColormap wraps the whole bracket — and the colourbar beside
+    // it, which is why a heatmap's bar reserves its width up front.
+    const bool mapped = p.palette != Palette::Auto;
+    if (mapped)
+        ImPlot::PushColormap(int(p.palette));
+    const impl::SeriesState *bar = colourbar_of(p);
+    const float bar_w = bar ? 60.0f + ImGui::GetStyle().ItemSpacing.x : 0.0f;
+
+    if (ImPlot::BeginPlot("##canvas", ImVec2(-1 - bar_w, -1))) {
         setup_axis(ImAxis_X1, p.x);
         setup_axis(ImAxis_Y1, p.y);
         ImPlot::SetupFinish();
@@ -110,7 +210,8 @@ void plot_draw(impl::PlotState &p) {
             const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
             if (!d.b || !d.count)
                 continue;
-            const ImPlotSpec spec = spec_of(s.style);
+            ImPlotSpec spec = spec_of(s.style);
+            apply_flags(spec, s.kind, s.style);
             if (s.dtype == DType::f32)
                 emit_series<float>(s, d, spec);
             else
@@ -118,6 +219,13 @@ void plot_draw(impl::PlotState &p) {
         }
         ImPlot::EndPlot();
     }
+    if (bar) {
+        ImGui::SameLine();
+        ImPlot::ColormapScale("##scale", bar->param[0], bar->param[1],
+                              ImVec2(60, -1));
+    }
+    if (mapped)
+        ImPlot::PopColormap();
     ImGui::End();
 }
 
