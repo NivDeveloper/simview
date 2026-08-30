@@ -47,9 +47,10 @@ struct AxisState {
 };
 
 struct PlotState {
+    Family family = Family::Plot2D;
     std::string title;
     Palette palette = Palette::Auto;
-    AxisState x, y;
+    AxisState x, y, z;
     std::list<SeriesState> series;
 };
 

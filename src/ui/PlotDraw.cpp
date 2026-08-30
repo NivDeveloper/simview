@@ -16,6 +16,7 @@
 
 #include <imgui.h>
 #include <implot.h>
+#include <implot3d.h>
 
 #include <algorithm>
 #include <climits>
@@ -169,6 +170,71 @@ void apply_flags(ImPlotSpec &spec, impl::SeriesKind k, const SeriesStyle &st) {
     }
 }
 
+// The 3D twins. Same shape as their 2D counterparts, against the
+// other library: the axis setup lifts Fit unchanged (the Cond and the
+// AutoFit/Invert flags mirror ImPlot's), and AxisScale is a no-op —
+// ImPlot3D has no log axis, so a 3D axis asked for one gets linear,
+// which is said here rather than left to be discovered.
+void setup_axis3(ImAxis3D ax, const impl::AxisState &a) {
+    ImPlot3DAxisFlags flags = ImPlot3DAxisFlags_None;
+    if (a.desc.fit == Fit::Stream)
+        flags |= ImPlot3DAxisFlags_AutoFit;
+    if (a.desc.invert)
+        flags |= ImPlot3DAxisFlags_Invert;
+    ImPlot3D::SetupAxis(ax, a.label.empty() ? nullptr : a.label.c_str(), flags);
+    if (a.desc.fit == Fit::Start)
+        ImPlot3D::SetupAxisLimits(ax, a.desc.min, a.desc.max,
+                                  ImPlot3DCond_Once);
+    else if (a.desc.fit == Fit::Fixed)
+        ImPlot3D::SetupAxisLimits(ax, a.desc.min, a.desc.max,
+                                  ImPlot3DCond_Always);
+}
+
+ImPlot3DSpec spec3_of(const SeriesStyle &st) {
+    ImPlot3DSpec spec;
+    if (st.color[3] >= 0.0f)
+        spec.LineColor =
+            ImVec4(st.color[0], st.color[1], st.color[2], st.color[3]);
+    if (st.fill[3] >= 0.0f)
+        spec.FillColor = ImVec4(st.fill[0], st.fill[1], st.fill[2], st.fill[3]);
+    spec.FillAlpha = st.fill_alpha;
+    spec.LineWeight = st.weight;
+    spec.Marker = st.marker;
+    spec.MarkerSize = st.marker_size;
+    return spec;
+}
+
+template <class T>
+void emit_series3(const impl::SeriesState &s, const impl::SeriesData &d,
+                  const ImPlot3DSpec &spec) {
+    const char *name = s.name.c_str();
+    const int n = int(std::min<std::size_t>(d.count, INT_MAX));
+    const T *a = static_cast<const T *>(d.a);
+    const T *b = static_cast<const T *>(d.b);
+    const T *c = static_cast<const T *>(d.c);
+    switch (s.kind) {
+    case impl::SeriesKind::Line3: // a, b, c = xs, ys, zs
+        ImPlot3D::PlotLine(name, a, b, c, n, spec);
+        return;
+    case impl::SeriesKind::Scatter3: // a, b, c = xs, ys, zs
+        ImPlot3D::PlotScatter(name, a, b, c, n, spec);
+        return;
+    case impl::SeriesKind::Surface: // a, b, c = xs, ys, zs over a grid;
+                                    // count, count2 = x_count, y_count;
+                                    // param[0..1] = scale
+        ImPlot3D::PlotSurface(name, a, b, c, int(d.count), int(d.count2),
+                              s.param[0], s.param[1], spec);
+        return;
+    case impl::SeriesKind::Mesh: // a, b, c = vertices; idx = triangles;
+                                 // count, count2 = vtx_count, idx_count
+        ImPlot3D::PlotMesh(name, a, b, c, d.idx, int(d.count),
+                           int(std::min<std::size_t>(d.count2, INT_MAX)), spec);
+        return;
+    default:
+        return; // a 2D kind cannot reach here: plot_series refused it
+    }
+}
+
 // simview's Palette enum is its own, so implot.h stays off the public
 // surface. The values line up with ImPlotColormap_ by construction —
 // asserted, because that is the kind of fact that drifts silently.
@@ -200,6 +266,37 @@ void plot_draw(impl::PlotState &p) {
         ImPlot::PushColormap(int(p.palette));
     const impl::SeriesState *bar = colourbar_of(p);
     const float bar_w = bar ? 60.0f + ImGui::GetStyle().ItemSpacing.x : 0.0f;
+
+    // ONE function, ONE place the family is switched: the bracket.
+    // The window, the title namespace, the source pull, the dtype
+    // erasure and the list addressing are shared; only the library
+    // that opens the plot and draws the items differs.
+    if (p.family == impl::Family::Plot3D) {
+        if (p.palette != Palette::Auto)
+            ImPlot3D::PushColormap(int(p.palette));
+        if (ImPlot3D::BeginPlot("##canvas", ImVec2(-1, -1))) {
+            setup_axis3(ImAxis3D_X, p.x);
+            setup_axis3(ImAxis3D_Y, p.y);
+            setup_axis3(ImAxis3D_Z, p.z);
+            for (impl::SeriesState &s : p.series) {
+                const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
+                if (!d.c || !d.count)
+                    continue;
+                const ImPlot3DSpec spec = spec3_of(s.style);
+                if (s.dtype == DType::f32)
+                    emit_series3<float>(s, d, spec);
+                else
+                    emit_series3<double>(s, d, spec);
+            }
+            ImPlot3D::EndPlot();
+        }
+        if (p.palette != Palette::Auto)
+            ImPlot3D::PopColormap();
+        if (mapped)
+            ImPlot::PopColormap();
+        ImGui::End();
+        return;
+    }
 
     if (ImPlot::BeginPlot("##canvas", ImVec2(-1 - bar_w, -1))) {
         setup_axis(ImAxis_X1, p.x);

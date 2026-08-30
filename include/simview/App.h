@@ -113,6 +113,10 @@ class App {
         return sv::Plot{impl::plot_create(a_, d)};
     }
 
+    sv::Plot3D Plot3D(const Plot3DDesc &d) {
+        return sv::Plot3D{impl::plot3d_create(a_, d)};
+    }
+
     sv::Particles Particles(const ParticlesDesc &d = {}) {
         return Scene().Particles(d);
     }

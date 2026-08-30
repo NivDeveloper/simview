@@ -74,9 +74,24 @@ template <class T> struct Points {
     using value_type = T;
 };
 
+template <class T> struct Points3 {
+    std::span<const T> x, y, z;
+    using value_type = T;
+};
+
+struct Plot3DDesc {
+    const char *title = "plot";
+    AxisDesc x{};
+    AxisDesc y{};
+    AxisDesc z{};
+    Palette palette = Palette::Auto;
+};
+
 namespace impl {
 
 struct App;
+
+enum class Family : std::int32_t { Plot2D, Plot3D };
 
 enum class SeriesKind : std::int32_t {
     Line,
@@ -89,7 +104,11 @@ enum class SeriesKind : std::int32_t {
     InfLines,
     Digital,
     ErrorBars,
-    Heatmap
+    Heatmap,
+    Line3,
+    Scatter3,
+    Surface,
+    Mesh
 };
 
 struct SeriesData {
@@ -121,6 +140,7 @@ struct SeriesDesc {
 };
 
 Plot plot_create(App *, const PlotDesc &);
+Plot plot3d_create(App *, const Plot3DDesc &);
 bool plot_series(Plot, const SeriesDesc &);
 
 }
@@ -464,6 +484,133 @@ class Plot {
                         .free = [](void *u) { delete static_cast<F *>(u); },
                         .style = s});
         }
+        return *this;
+    }
+
+    impl::Plot p_;
+};
+
+class Plot3D {
+  public:
+    Plot3D() = default;
+    explicit Plot3D(impl::Plot p) : p_(p) {}
+
+    explicit operator bool() const { return bool(p_); }
+    impl::Plot Raw() const { return p_; }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY,
+              std::ranges::contiguous_range RZ>
+    Plot3D &Line(const char *name, const RX &x, const RY &y, const RZ &z,
+                 const SeriesStyle &s = {}) {
+        return triple(impl::SeriesKind::Line3, name, x, y, z, s);
+    }
+
+    template <std::invocable F>
+    Plot3D &Line(const char *name, F pull, const SeriesStyle &s = {}) {
+        return pulled3(impl::SeriesKind::Line3, name, std::move(pull), s);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY,
+              std::ranges::contiguous_range RZ>
+    Plot3D &Scatter(const char *name, const RX &x, const RY &y, const RZ &z,
+                    const SeriesStyle &s = {}) {
+        return triple(impl::SeriesKind::Scatter3, name, x, y, z, s);
+    }
+
+    template <std::invocable F>
+    Plot3D &Scatter(const char *name, F pull, const SeriesStyle &s = {}) {
+        return pulled3(impl::SeriesKind::Scatter3, name, std::move(pull), s);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY,
+              std::ranges::contiguous_range RZ>
+    Plot3D &Surface(const char *name, const RX &x, const RY &y, const RZ &z,
+                    std::size_t x_count, std::size_t y_count,
+                    const GridDesc &g = {}, const SeriesStyle &s = {}) {
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = impl::SeriesKind::Surface,
+                    .dtype = series_dtype<std::ranges::range_value_t<RZ>>(),
+                    .param = {g.scale_min, g.scale_max, 0.0, 0.0},
+                    .data = {.a = std::ranges::data(x),
+                             .b = std::ranges::data(y),
+                             .c = std::ranges::data(z),
+                             .count = x_count,
+                             .count2 = y_count},
+                    .style = s});
+        return *this;
+    }
+
+    template <
+        std::ranges::contiguous_range RX, std::ranges::contiguous_range RY,
+        std::ranges::contiguous_range RZ, std::ranges::contiguous_range RI>
+    Plot3D &Mesh(const char *name, const RX &x, const RY &y, const RZ &z,
+                 const RI &indices, const SeriesStyle &s = {}) {
+        static_assert(
+            std::is_same_v<std::ranges::range_value_t<RI>, unsigned>,
+            "mesh indices are unsigned ints, one per triangle corner");
+        const std::size_t n = std::min(
+            {std::ranges::size(x), std::ranges::size(y), std::ranges::size(z)});
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = impl::SeriesKind::Mesh,
+                    .dtype = series_dtype<std::ranges::range_value_t<RZ>>(),
+                    .data = {.a = std::ranges::data(x),
+                             .b = std::ranges::data(y),
+                             .c = std::ranges::data(z),
+                             .idx = std::ranges::data(indices),
+                             .count = n,
+                             .count2 = std::ranges::size(indices)},
+                    .style = s});
+        return *this;
+    }
+
+  private:
+    template <class RX, class RY, class RZ>
+    Plot3D &triple(impl::SeriesKind k, const char *name, const RX &x,
+                   const RY &y, const RZ &z, const SeriesStyle &s) {
+        const std::size_t n = std::min(
+            {std::ranges::size(x), std::ranges::size(y), std::ranges::size(z)});
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = k,
+                    .dtype = series_dtype<std::ranges::range_value_t<RZ>>(),
+                    .data = {.a = std::ranges::data(x),
+                             .b = std::ranges::data(y),
+                             .c = std::ranges::data(z),
+                             .count = n},
+                    .style = s});
+        return *this;
+    }
+
+    template <class F>
+    Plot3D &pulled3(impl::SeriesKind k, const char *name, F pull,
+                    const SeriesStyle &s) {
+        using Ret = std::remove_cvref_t<std::invoke_result_t<F>>;
+        impl::plot_series(
+            p_, impl::SeriesDesc{
+                    .name = name,
+                    .kind = k,
+                    .dtype = series_dtype<typename Ret::value_type>(),
+                    .src =
+                        [](void *u) {
+                            decltype(auto) r = (*static_cast<F *>(u))();
+                            return impl::SeriesData{
+                                .a = r.x.data(),
+                                .b = r.y.data(),
+                                .c = r.z.data(),
+                                .count = std::min(
+                                    {r.x.size(), r.y.size(), r.z.size()})};
+                        },
+                    .user = new F(std::move(pull)),
+                    .free = [](void *u) { delete static_cast<F *>(u); },
+                    .style = s});
         return *this;
     }
 

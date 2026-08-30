@@ -78,6 +78,50 @@ Plot plot_create(App *a, const PlotDesc &d) {
     return Plot{&st};
 }
 
+Plot plot3d_create(App *a, const Plot3DDesc &d) {
+    if (!a)
+        return {};
+    if (!d.title || !*d.title)
+        return set_error("a plot needs a title — it names the panel and "
+                         "scopes its series"),
+               Plot{};
+    if (title_taken(a, d.title))
+        return set_error(std::string("\"") + d.title +
+                         "\" is already the title of a plot or panel, and "
+                         "two windows of one name draw into each other"),
+               Plot{};
+    if (!axis_ok(d.x, "x") || !axis_ok(d.y, "y") || !axis_ok(d.z, "z"))
+        return Plot{};
+
+    PlotState &st = a->plots.emplace_back();
+    st.family = Family::Plot3D;
+    st.title = d.title;
+    st.palette = d.palette;
+    copy_axis(st.x, d.x);
+    copy_axis(st.y, d.y);
+    copy_axis(st.z, d.z);
+
+    a->ui.cbs.push_front(
+        {[](void *u) { plot_draw(*static_cast<PlotState *>(u)); }, &st});
+    return Plot{&st};
+}
+
+// The family a kind belongs to. The family is on the PLOT, the kind
+// on the SERIES, and the two must agree — a 3D kind never reaches the
+// 2D emitter and vice versa, which is what lets each emitter cast its
+// slots without a second check.
+Family family_of(SeriesKind k) {
+    switch (k) {
+    case SeriesKind::Line3:
+    case SeriesKind::Scatter3:
+    case SeriesKind::Surface:
+    case SeriesKind::Mesh:
+        return Family::Plot3D;
+    default:
+        return Family::Plot2D;
+    }
+}
+
 bool plot_series(Plot p, const SeriesDesc &d) {
     PlotState *st = static_cast<PlotState *>(p.p);
     // The source is consumed either way: a refusal must not leak the
@@ -86,6 +130,17 @@ bool plot_series(Plot p, const SeriesDesc &d) {
         if (d.free)
             d.free(d.user);
         return set_error("a series needs a plot and a name"), false;
+    }
+    if (family_of(d.kind) != st->family) {
+        if (d.free)
+            d.free(d.user);
+        return set_error(st->family == Family::Plot3D
+                             ? "this is a 3D plot and that is a 2D series "
+                               "kind — a Plot3D takes Line, Scatter, Surface "
+                               "and Mesh over three coordinates"
+                             : "this is a 2D plot and that is a 3D series "
+                               "kind — use app.Plot3D for three coordinates"),
+               false;
     }
     for (const SeriesState &s : st->series)
         if (s.name == d.name) {

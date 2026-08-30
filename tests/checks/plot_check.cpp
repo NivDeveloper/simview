@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 #include <implot.h>
+#include <implot3d.h>
 
 #include <array>
 #include <cmath>
@@ -265,6 +266,102 @@ int main() {
     // A long series must SPLIT rather than wrap its indices: headless
     // claims RendererHasVtxOffset precisely so its geometry matches
     // the window's.
+    // The second plot FAMILY. Plot3D is a sibling builder over the
+    // same impl: same window, same title namespace, same source pull,
+    // same dtype erasure — and a different library opening the plot
+    // and drawing the items. Each kind is proven the way the 2D ones
+    // are: it puts geometry on the frame the plot did not have.
+    {
+        App a3({.headless = true});
+        if (a3) {
+            std::vector<float> px = {0.0f, 1.0f, 2.0f, 3.0f};
+            std::vector<float> py = {0.0f, 1.0f, 0.0f, 1.0f};
+            std::vector<float> pz = {0.0f, 0.5f, 1.0f, 1.5f};
+            auto p3 = a3.Plot3D({.title = "orbit",
+                                 .x = {.label = "x"},
+                                 .y = {.label = "y"},
+                                 .z = {.label = "z"}});
+            REQUIRE(bool(p3));
+            settle(a3);
+            const int empty3 = total_vertices();
+            CHECK_GT(empty3, 0); // an empty 3D plot still draws its box
+
+            int before3 = total_vertices();
+            p3.Line("path", px, py, pz);
+            settle(a3);
+            CHECK_GT(total_vertices(), before3);
+
+            before3 = total_vertices();
+            p3.Scatter("pts", px, py, pz);
+            settle(a3);
+            CHECK_GT(total_vertices(), before3);
+
+            // Surface: three coordinate grids of x_count*y_count. Not a
+            // z-grid over bounds — that is Heatmap's shape, and the two
+            // are deliberately not one vocabulary.
+            constexpr std::size_t XC = 6, YC = 5;
+            std::vector<float> gx(XC * YC), gy(XC * YC), gz(XC * YC);
+            for (std::size_t j = 0; j < YC; ++j)
+                for (std::size_t i = 0; i < XC; ++i) {
+                    gx[j * XC + i] = float(i);
+                    gy[j * XC + i] = float(j);
+                    gz[j * XC + i] = std::sin(float(i)) * std::cos(float(j));
+                }
+            before3 = total_vertices();
+            p3.Surface("wave", gx, gy, gz, XC, YC);
+            settle(a3);
+            CHECK_GT(total_vertices(), before3);
+
+            // Mesh: ImPlot3D's own cube, de-interleaved into the three
+            // arrays a sim would hold, plus its index buffer.
+            std::vector<float> mx, my, mz;
+            for (int i = 0; i < ImPlot3D::CUBE_VTX_COUNT; ++i) {
+                mx.push_back(ImPlot3D::cube_vtx[i].x);
+                my.push_back(ImPlot3D::cube_vtx[i].y);
+                mz.push_back(ImPlot3D::cube_vtx[i].z);
+            }
+            std::vector<unsigned> mi(ImPlot3D::cube_idx,
+                                     ImPlot3D::cube_idx +
+                                         ImPlot3D::CUBE_IDX_COUNT);
+            before3 = total_vertices();
+            p3.Mesh("cube", mx, my, mz, mi);
+            settle(a3);
+            CHECK_GT(total_vertices(), before3);
+
+            // The family is on the PLOT and the kind is on the SERIES,
+            // and a mismatch is refused BY NAME — the sentence, not the
+            // false, because a bare `!x` here would pass for the wrong
+            // reason once the emitter ignored the kind.
+            CHECK(!impl::plot_series(
+                p3.Raw(), impl::SeriesDesc{
+                              .name = "wrong",
+                              .kind = impl::SeriesKind::Line,
+                              .data = {.b = py.data(), .count = py.size()}}));
+            CHECK(refused("3D plot and that is a 2D series"));
+            auto p2 = a3.Plot({.title = "flat"});
+            REQUIRE(bool(p2));
+            CHECK(!impl::plot_series(
+                p2.Raw(), impl::SeriesDesc{.name = "wrong",
+                                           .kind = impl::SeriesKind::Line3,
+                                           .data = {.a = px.data(),
+                                                    .b = py.data(),
+                                                    .c = pz.data(),
+                                                    .count = px.size()}}));
+            CHECK(refused("2D plot and that is a 3D series"));
+
+            // A pulled 3D series, asked once per frame like the 2D ones.
+            int pulls3 = 0;
+            p3.Line("live", [&] {
+                ++pulls3;
+                return Points3<float>{px, py, pz};
+            });
+            settle(a3);
+            const int after_two = pulls3;
+            a3.Step();
+            CHECK_EQ(pulls3, after_two + 1);
+        }
+    }
+
     {
         App big({.headless = true});
         std::vector<float> many(100000);
