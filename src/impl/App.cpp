@@ -202,8 +202,13 @@ Field field_create(Scene s, const FieldDesc &d) {
     App::SceneItem &it = sc->items.emplace_back();
     it.app = a;
     it.kind = App::ItemKind::Field;
-    it.field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo,
-                d.hi,       buf,        staging,       false};
+    it.field = {.w = d.extent.w,
+                .h = d.extent.h,
+                .cmap = Sint32(d.map),
+                .lo = d.lo,
+                .hi = d.hi,
+                .buf = buf,
+                .staging = staging};
     return Field{&it};
 }
 
@@ -432,9 +437,13 @@ Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
     App::SceneItem &it = sc->items.emplace_back();
     it.app = sc->app;
     it.kind = App::ItemKind::Field;
-    it.field = {d.extent.w, d.extent.h, Sint32(d.map), d.lo, d.hi,
-                nullptr,    nullptr,    false,         true};
-    it.field.src = src;
+    it.field = {.w = d.extent.w,
+                .h = d.extent.h,
+                .cmap = Sint32(d.map),
+                .lo = d.lo,
+                .hi = d.hi,
+                .external = true,
+                .src = src};
     return Field{&it};
 }
 

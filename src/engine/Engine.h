@@ -125,9 +125,7 @@ struct App {
     };
     std::list<ViewState> views;
 
-    // The UI layer. Appended last on purpose: FieldState's aggregate
-    // initialisers are positional, so a member inserted above them
-    // mis-assigns in silence.
+    // The UI layer.
     struct UiState {
         ::ImGuiContext *ctx = nullptr;
         ::ImPlotContext *plot = nullptr;
