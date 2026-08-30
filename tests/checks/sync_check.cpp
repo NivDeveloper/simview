@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <thread>
+#include <vector>
 
 using namespace sv;
 using namespace std::chrono_literals;
@@ -39,6 +40,58 @@ int main() {
     CHECK_GT(t1, std::uint64_t(1));
     std::this_thread::sleep_for(50ms);
     CHECK_EQ(ex.Ticks(), t1);
+
+    // The Executor keeps the CLOCK. A timed body reads n and time; it
+    // never fabricates its own counter. Three Advance(1)s see n = 0,
+    // 1, 2 — the value BEFORE each tick.
+    std::vector<std::uint64_t> seen;
+    Executor timed([&](const Tick &t) { seen.push_back(t.n); });
+    timed.SetDt(0.5);
+    for (int i = 0; i < 3; ++i) {
+        timed.Advance(1);
+        std::this_thread::sleep_for(30ms);
+    }
+    CHECK_EQ(seen.size(), std::size_t(3));
+    if (seen.size() == 3) {
+        CHECK_EQ(seen[0], std::uint64_t(0));
+        CHECK_EQ(seen[2], std::uint64_t(2));
+    }
+    CHECK_EQ(timed.Now().n, std::uint64_t(3));
+    CHECK_EQ(timed.Now().time, 1.5); // n * dt, exactly representable
+
+    // Advance(N) from Paused ends Paused with EXACTLY N more ticks: the
+    // worker pauses itself at the target. An uncapped body would
+    // overshoot by thousands if the check were "when the caller
+    // notices", which is the bug this pins.
+    const auto before = timed.Now().n;
+    timed.Advance(50);
+    std::this_thread::sleep_for(100ms);
+    CHECK_EQ(timed.Now().n, before + 50);
+    CHECK(!timed.Playing());
+
+    // Restart runs its callback on the WORKER thread, between ticks,
+    // and zeros the clock. Restarted() reports it once, then not.
+    std::thread::id restart_thread;
+    timed.OnRestart([&] { restart_thread = std::this_thread::get_id(); });
+    timed.Restart();
+    std::this_thread::sleep_for(30ms);
+    CHECK(restart_thread != std::thread::id{});
+    CHECK(restart_thread != std::this_thread::get_id());
+    CHECK_EQ(timed.Now().n, std::uint64_t(0));
+    CHECK_EQ(timed.Now().time, 0.0);
+    CHECK(timed.Restarted());
+    CHECK(!timed.Restarted());
+
+    // Rate is achieved ticks per second, measured: a body throttled to
+    // ~100/s reads near 100, and a paused one decays to zero.
+    Executor paced([] {});
+    paced.SetDelayNs(10'000'000); // 10 ms
+    paced.Play();
+    std::this_thread::sleep_for(600ms);
+    const double r = paced.Rate();
+    paced.Pause();
+    CHECK_GT(r, 50.0);
+    CHECK_LT(r, 150.0);
 
     // The channel: generations never go backwards and a reader never
     // sees a half-written slab — the writer fills the whole slab with

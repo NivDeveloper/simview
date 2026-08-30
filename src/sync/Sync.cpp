@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <thread>
 
@@ -25,17 +26,96 @@ struct ChannelImpl {
     std::mutex m;                   // guards the state<->transfer pair
 };
 
+// The Executor KEEPS THE CLOCK. The body may read n and time; it never
+// fabricates its own counter — that is what makes a step counter, a
+// time readout and "advance N" derivable rather than hand-rolled, and
+// what the transport panel is built from.
 struct ExecutorImpl {
-    void (*tick)(void *);
-    void *user;
-    enum class St { Paused, Playing, Step, Stopped };
+    void (*tick)(void *) = nullptr;
+    void (*timed)(const Tick &, void *) = nullptr;
+    void *user = nullptr;
+    // Restart is a STATE the worker observes at the loop head, so the
+    // callback runs on the worker thread between ticks and can never
+    // overlap one — the race the predecessor's restart had.
+    enum class St { Paused, Playing, Step, Restart, Stopped };
     St st = St::Paused;
     std::mutex m;
     std::condition_variable cv;
     std::atomic<std::uint64_t> delay_ns{0};
     std::atomic<std::uint64_t> ticks{0};
+    // "Advance N": play until ticks reaches this, then the worker pauses
+    // ITSELF. Checked >= at the loop head, so a target already passed
+    // fires at once rather than never.
+    std::atomic<std::uint64_t> target{0};
+    std::atomic<bool> has_target{false};
+    std::atomic<bool> restarted{false};
+    void (*on_restart)(void *) = nullptr;
+    void *restart_user = nullptr;
+    double dt = 0.0;
+    double time = 0.0;
+    // Achieved rate: ticks completed in the last second of wall time.
+    std::deque<std::chrono::steady_clock::time_point> recent;
     std::thread worker;
+
+    void run_body() {
+        if (timed) {
+            const Tick t{ticks.load(std::memory_order_relaxed), time, dt};
+            timed(t, user);
+        } else {
+            tick(user);
+        }
+    }
 };
+
+namespace {
+
+void worker_loop(ExecutorImpl *e) {
+    using St = ExecutorImpl::St;
+    for (;;) {
+        {
+            std::unique_lock lk(e->m);
+            e->cv.wait(lk, [e] { return e->st != St::Paused; });
+            if (e->st == St::Stopped)
+                return;
+            if (e->st == St::Restart) {
+                // Between ticks by construction: nothing is in flight.
+                if (e->on_restart)
+                    e->on_restart(e->restart_user);
+                e->ticks.store(0, std::memory_order_release);
+                e->time = 0.0;
+                e->recent.clear();
+                e->has_target.store(false, std::memory_order_relaxed);
+                e->restarted.store(true, std::memory_order_release);
+                e->st = St::Paused;
+                continue;
+            }
+            if (e->has_target.load(std::memory_order_relaxed) &&
+                e->ticks.load(std::memory_order_relaxed) >=
+                    e->target.load(std::memory_order_relaxed)) {
+                e->has_target.store(false, std::memory_order_relaxed);
+                e->st = St::Paused;
+                continue;
+            }
+            if (e->st == St::Step)
+                e->st = St::Paused; // one-shot
+        }
+        e->run_body();
+        {
+            std::lock_guard lk(e->m);
+            e->ticks.fetch_add(1, std::memory_order_release);
+            e->time += e->dt;
+            const auto now = std::chrono::steady_clock::now();
+            e->recent.push_back(now);
+            while (!e->recent.empty() &&
+                   now - e->recent.front() > std::chrono::seconds(1))
+                e->recent.pop_front();
+        }
+        if (const auto d = e->delay_ns.load(std::memory_order_relaxed))
+            std::this_thread::sleep_for(std::chrono::nanoseconds(d));
+    }
+}
+
+} // namespace
 
 } // namespace
 
@@ -93,24 +173,20 @@ const void *channel_latest(Channel ch, std::uint64_t *gen) {
 Executor executor_create(void (*tick)(void *), void *user) {
     if (!tick)
         return {};
-    auto *e = new ExecutorImpl{tick, user};
-    e->worker = std::thread([e] {
-        using St = ExecutorImpl::St;
-        for (;;) {
-            {
-                std::unique_lock lk(e->m);
-                e->cv.wait(lk, [e] { return e->st != St::Paused; });
-                if (e->st == St::Stopped)
-                    return;
-                if (e->st == St::Step)
-                    e->st = St::Paused; // one-shot
-            }
-            e->tick(e->user);
-            e->ticks.fetch_add(1, std::memory_order_release);
-            if (const auto d = e->delay_ns.load(std::memory_order_relaxed))
-                std::this_thread::sleep_for(std::chrono::nanoseconds(d));
-        }
-    });
+    auto *e = new ExecutorImpl;
+    e->tick = tick;
+    e->user = user;
+    e->worker = std::thread([e] { worker_loop(e); });
+    return {e};
+}
+
+Executor executor_create_timed(void (*tick)(const Tick &, void *), void *user) {
+    if (!tick)
+        return {};
+    auto *e = new ExecutorImpl;
+    e->timed = tick;
+    e->user = user;
+    e->worker = std::thread([e] { worker_loop(e); });
     return {e};
 }
 
@@ -142,9 +218,73 @@ void set_state(Executor ex, ExecutorImpl::St st) {
 }
 } // namespace
 
-void executor_play(Executor ex) { set_state(ex, ExecutorImpl::St::Playing); }
+void executor_play(Executor ex) {
+    if (auto *e = static_cast<ExecutorImpl *>(ex.p))
+        e->has_target.store(false, std::memory_order_relaxed);
+    set_state(ex, ExecutorImpl::St::Playing);
+}
 void executor_pause(Executor ex) { set_state(ex, ExecutorImpl::St::Paused); }
 void executor_step(Executor ex) { set_state(ex, ExecutorImpl::St::Step); }
+
+void executor_advance(Executor ex, std::uint64_t n) {
+    auto *e = static_cast<ExecutorImpl *>(ex.p);
+    if (!e || !n)
+        return;
+    // Set the target BEFORE playing, so the worker cannot run past it
+    // in the gap.
+    e->target.store(e->ticks.load(std::memory_order_acquire) + n,
+                    std::memory_order_relaxed);
+    e->has_target.store(true, std::memory_order_release);
+    set_state(ex, ExecutorImpl::St::Playing);
+}
+
+void executor_restart(Executor ex) { set_state(ex, ExecutorImpl::St::Restart); }
+
+void executor_on_restart(Executor ex, void (*fn)(void *), void *user) {
+    auto *e = static_cast<ExecutorImpl *>(ex.p);
+    if (!e)
+        return;
+    std::lock_guard lk(e->m);
+    e->on_restart = fn;
+    e->restart_user = user;
+}
+
+bool executor_restarted(Executor ex) {
+    auto *e = static_cast<ExecutorImpl *>(ex.p);
+    return e && e->restarted.exchange(false, std::memory_order_acq_rel);
+}
+
+std::uint64_t executor_delay_ns(Executor ex) {
+    auto *e = static_cast<ExecutorImpl *>(ex.p);
+    return e ? e->delay_ns.load(std::memory_order_relaxed) : 0;
+}
+
+void executor_set_dt(Executor ex, double dt) {
+    if (auto *e = static_cast<ExecutorImpl *>(ex.p)) {
+        std::lock_guard lk(e->m);
+        e->dt = dt;
+    }
+}
+
+Tick executor_tick(Executor ex) {
+    auto *e = static_cast<ExecutorImpl *>(ex.p);
+    if (!e)
+        return {};
+    std::lock_guard lk(e->m);
+    return {e->ticks.load(std::memory_order_relaxed), e->time, e->dt};
+}
+
+double executor_rate(Executor ex) {
+    auto *e = static_cast<ExecutorImpl *>(ex.p);
+    if (!e)
+        return 0.0;
+    std::lock_guard lk(e->m);
+    if (e->recent.size() < 2)
+        return 0.0;
+    const auto span = e->recent.back() - e->recent.front();
+    const double secs = std::chrono::duration<double>(span).count();
+    return secs > 0.0 ? double(e->recent.size() - 1) / secs : 0.0;
+}
 
 bool executor_playing(Executor ex) {
     auto *e = static_cast<ExecutorImpl *>(ex.p);
