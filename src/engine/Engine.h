@@ -6,6 +6,7 @@
 #include <simview/App.h>
 #include <simview/Panel.h>
 #include <simview/Plots.h>
+#include <simview/Scene.h>
 
 #include <SDL3/SDL.h>
 #include <gpud/Sdl.h>
@@ -47,15 +48,18 @@ struct App {
     // next Step or loop iteration exactly like SDL's own.
     std::vector<Event> posted;
     sv::Stats stats;
+    // What a scene is made of. The switch in item_draw is where a
+    // new kind lands, beside its pipeline and shader.
+    enum class ItemKind : std::int32_t { Field, Particles };
+
+    // Keyed on BOTH: a particles request that matched on format
+    // alone would silently bind the field's pipeline.
     struct PipelineEntry {
+        ItemKind kind;
         SDL_GPUTextureFormat format;
         SDL_GPUGraphicsPipeline *pipeline;
     };
-    std::vector<PipelineEntry> pipelines; // one per target format
-
-    // What a scene is made of. One kind today; the switch in
-    // item_draw is where a second one lands.
-    enum class ItemKind : std::int32_t { Field };
+    std::vector<PipelineEntry> pipelines;
 
     struct FieldState {
         Uint32 w = 0, h = 0;
@@ -68,18 +72,35 @@ struct App {
         // The pull source an external field re-asks at every draw.
         gpud::BufferSource src{};
     };
+    struct ParticlesState {
+        SDL_GPUBuffer *buf = nullptr;
+        SDL_GPUTransferBuffer *staging = nullptr;
+        std::size_t count = 0;    // points the host last wrote
+        std::size_t capacity = 0; // points the buffer holds
+        bool dirty = false;
+        bool external = false;
+        gpud::BufferSource src{};
+        float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        float radius = 3.0f;
+    };
+
     // An item knows its App because an upload needs the device.
     struct SceneItem {
         App *app = nullptr;
         ItemKind kind = ItemKind::Field;
         FieldState field{};
+        ParticlesState particles{};
     };
 
     // The scene: what is drawn to a target, in registration order.
     // std::list because items are non-copyable in spirit and their
     // addresses are handed out as Field handles.
+    // The range every item maps into. Unset (x1 <= x0) means: the
+    // first field's grid in cells, so a lattice and the points over
+    // it share coordinates; with no field, the unit square.
     struct SceneState {
         std::list<SceneItem> items;
+        Range2 range{};
     };
     SceneState scene;
 

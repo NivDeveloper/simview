@@ -81,6 +81,10 @@ void app_quit(App *a) {
             SDL_ReleaseGPUBuffer(a->dev, it.field.buf);
         if (it.field.staging)
             SDL_ReleaseGPUTransferBuffer(a->dev, it.field.staging);
+        if (it.particles.buf && !it.particles.external)
+            SDL_ReleaseGPUBuffer(a->dev, it.particles.buf);
+        if (it.particles.staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, it.particles.staging);
     }
     if (a->win) {
         SDL_ReleaseWindowFromGPUDevice(a->dev, a->win);
@@ -347,6 +351,76 @@ bool app_shot(App *a, const char *path) {
     SDL_ReleaseGPUTransferBuffer(a->dev, tb);
     SDL_ReleaseGPUTexture(a->dev, tex);
     return ok;
+}
+
+void scene_range(App *a, const Range2 &r) {
+    if (a)
+        a->scene.range = r;
+}
+
+Particles particles_create(App *a, const ParticlesDesc &d) {
+    if (!a)
+        return {};
+    if (!(d.radius > 0.0f))
+        return set_error("particles need a radius above zero — they are "
+                         "drawn as discs, not as points"),
+               Particles{};
+
+    App::SceneItem &it = a->scene.items.emplace_back();
+    it.app = a;
+    it.kind = App::ItemKind::Particles;
+    for (int c = 0; c < 4; ++c)
+        it.particles.color[c] = d.color[c];
+    it.particles.radius = d.radius;
+    return Particles{&it};
+}
+
+bool particles_update(Particles p, const float *xy, std::size_t count) {
+    App::SceneItem *it = static_cast<App::SceneItem *>(p.p);
+    if (!it || (!xy && count))
+        return set_error("particles_update: null"), false;
+    App *a = it->app;
+    App::ParticlesState &ps = it->particles;
+    if (ps.external)
+        return set_error("these particles read a caller-owned source, "
+                         "re-resolved each frame — update the producer, "
+                         "not the item"),
+               false;
+    if (!count) {
+        ps.count = 0; // an empty cloud is not an error
+        return true;
+    }
+
+    // Grow rather than refuse: a cloud that gains points is ordinary.
+    if (count > ps.capacity) {
+        if (ps.buf)
+            SDL_ReleaseGPUBuffer(a->dev, ps.buf);
+        if (ps.staging)
+            SDL_ReleaseGPUTransferBuffer(a->dev, ps.staging);
+        const Uint32 bytes = Uint32(count * 8);
+        SDL_GPUBufferCreateInfo bci{};
+        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+        bci.size = bytes;
+        ps.buf = SDL_CreateGPUBuffer(a->dev, &bci);
+        SDL_GPUTransferBufferCreateInfo tci{};
+        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tci.size = bytes;
+        ps.staging = SDL_CreateGPUTransferBuffer(a->dev, &tci);
+        if (!ps.buf || !ps.staging) {
+            ps.capacity = ps.count = 0;
+            return set_error(SDL_GetError()), false;
+        }
+        ps.capacity = count;
+    }
+
+    void *map = SDL_MapGPUTransferBuffer(a->dev, ps.staging, true);
+    if (!map)
+        return set_error(SDL_GetError()), false;
+    std::memcpy(map, xy, count * 8);
+    SDL_UnmapGPUTransferBuffer(a->dev, ps.staging);
+    ps.count = count;
+    ps.dirty = true;
+    return true;
 }
 
 gpud::Device *app_device(App *a) { return a ? a->gdev.get() : nullptr; }

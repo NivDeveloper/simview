@@ -65,5 +65,34 @@ int main() {
     float shortv[8]{};
     CHECK(!impl::field_update(impl::Field{app.Raw()}, shortv, DType::f32, 8));
 
+    // Particles are the second scene kind: same list, same pass,
+    // composited over whatever came before them.
+    {
+        App app2({.headless = true});
+        auto bg = app2.Field({.extent = {32, 32}});
+        std::vector<float> flat(32 * 32, 0.0f);
+        CHECK(bg.Update(flat));
+        Bmp before;
+        CHECK(harness::shot(app2, "nopoints", before));
+
+        auto pts =
+            app2.Particles({.color = {1.0f, 1.0f, 1.0f, 1.0f}, .radius = 6.0f});
+        CHECK(bool(pts));
+        // Cell coordinates: the scene's range defaults to the field's
+        // grid, so a point at (16,16) sits at the lattice centre.
+        const float xy[] = {16.0f, 16.0f, 8.0f, 8.0f, 24.0f, 24.0f};
+        CHECK(pts.Update(xy));
+        Bmp after;
+        CHECK(harness::shot(app2, "points", after));
+
+        CHECK_EQ(app2.Stats().draws, std::uint64_t(3)); // 1 + 2 items
+        CHECK(!similar(before, after));                 // they really drew
+        CHECK_GT(after.distinct(), before.distinct());
+
+        // An empty cloud is not an error, and a radius must be real.
+        CHECK(pts.Update(std::span<const float>()));
+        CHECK(!app2.Particles({.radius = 0.0f}));
+    }
+
     return check::summary("field");
 }

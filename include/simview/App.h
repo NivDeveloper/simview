@@ -4,6 +4,7 @@
 #include "Field.h"
 #include "Panel.h"
 #include "Plots.h"
+#include "Scene.h"
 #include "Types.h"
 
 #include <cstdint>
@@ -107,6 +108,15 @@ class App {
 
     sv::Plot Plot(const PlotDesc &d) {
         return sv::Plot{impl::plot_create(a_, d)};
+    }
+
+    sv::Particles Particles(const ParticlesDesc &d = {}) {
+        return sv::Particles{impl::particles_create(a_, d)};
+    }
+
+    App &SceneRange(const Range2 &r) {
+        impl::scene_range(a_, r);
+        return *this;
     }
 
     sv::Panel Panel(const char *title) {
