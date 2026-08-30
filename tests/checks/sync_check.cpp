@@ -55,13 +55,16 @@ int main() {
         timed.Advance(1);
         std::this_thread::sleep_for(30ms);
     }
+    // Now() first: it takes the Executor's mutex, which the worker
+    // released AFTER its push_back — the edge that makes reading the
+    // vector here a read, not a race (TSan named it, weekly run 33326780387).
+    CHECK_EQ(timed.Now().n, std::uint64_t(3));
+    CHECK_EQ(timed.Now().time, 1.5); // n * dt, exactly representable
     CHECK_EQ(seen.size(), std::size_t(3));
     if (seen.size() == 3) {
         CHECK_EQ(seen[0], std::uint64_t(0));
         CHECK_EQ(seen[2], std::uint64_t(2));
     }
-    CHECK_EQ(timed.Now().n, std::uint64_t(3));
-    CHECK_EQ(timed.Now().time, 1.5); // n * dt, exactly representable
 
     // Advance(N) from Paused ends Paused with EXACTLY N more ticks: the
     // worker pauses itself at the target. An uncapped body would
@@ -79,10 +82,10 @@ int main() {
     timed.OnRestart([&] { restart_thread = std::this_thread::get_id(); });
     timed.Restart();
     std::this_thread::sleep_for(30ms);
+    CHECK_EQ(timed.Now().n, std::uint64_t(0)); // the mutex, before the id
+    CHECK_EQ(timed.Now().time, 0.0);
     CHECK(restart_thread != std::thread::id{});
     CHECK(restart_thread != std::this_thread::get_id());
-    CHECK_EQ(timed.Now().n, std::uint64_t(0));
-    CHECK_EQ(timed.Now().time, 0.0);
     CHECK(timed.Restarted());
     CHECK(!timed.Restarted());
 
