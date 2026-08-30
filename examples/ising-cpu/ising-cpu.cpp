@@ -57,6 +57,12 @@ int main() {
                 s[k] = -s[k];
         }
 
+        // Publish a SNAPSHOT. The sim keeps `s` as its working array
+        // across sweeps; the channel's State() slot is swapped away on
+        // every Publish, so it cannot BE the working array. One copy per
+        // tick is the price of a triple buffer over a persistent state —
+        // and it is what lets the frame read a consistent lattice while
+        // this thread keeps sweeping, without either one waiting.
         auto out = chan.State();
         std::copy(s.begin(), s.end(), out.begin());
         chan.Publish();
@@ -76,7 +82,9 @@ int main() {
     // The lattice as a PLOT, beside the field that draws it as a
     // SCENE: the same data, the plot family's answer. A plot gets
     // axes, a colourbar and mouse coordinates; the field gets pixels.
-    std::vector<float> lattice(L * L, 1.0f);
+    // The plot PULLS the same snapshot the frame hands the field —
+    // there is no second copy of the lattice on this side.
+    std::span<const float> snapshot;
     app.Plot({.title = "lattice",
               .x = {.label = "i",
                     .min = 0.0,
@@ -87,7 +95,7 @@ int main() {
                     .max = double(L),
                     .fit = sv::Fit::Fixed},
               .palette = sv::Palette::RdBu})
-        .Heatmap("spins", [&] { return std::span<const float>(lattice); }, L, L,
+        .Heatmap("spins", [&] { return snapshot; }, L, L,
                  {.scale_min = -1.0,
                   .scale_max = 1.0,
                   .x1 = double(L),
@@ -135,7 +143,10 @@ int main() {
 
         if (auto latest = chan.Latest(gen); !latest.empty()) {
             field.Update(latest);
-            lattice.assign(latest.begin(), latest.end());
+            // The draw slot stays valid until the NEXT Latest() swaps it
+            // out, which is the next frame — so a span into it is safe
+            // for everything this frame draws.
+            snapshot = latest;
             float sum = 0.0f;
             for (float s_ : latest)
                 sum += s_;
