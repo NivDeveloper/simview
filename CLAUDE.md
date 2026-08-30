@@ -121,6 +121,15 @@ more than one window.
 | **the flagship** | `make flagship` — builds examples/xy-gpu (needs g++-16); NO runner reaches it, so this is the local gate that keeps the door from rotting |
 | clean | `make clean` (build, build-san, build-tsan) |
 
+**Configure through `make`, never `cmake -B build` by hand.** SDL3 is
+found from `CMAKE_PREFIX_PATH=$(PREFIX)`, which only the Makefile
+sets; a bare `cmake -B build` fails the `find_package(SDL3 REQUIRED)`
+and leaves a `CMakeCache.txt` with no generated `Makefile` behind it.
+Make's rule keys on the cache file, so it then reports the tree as
+configured and every target dies with `No rule to make target
+'Makefile'`. **`rm -rf build` is the fix** — a half-configured tree
+cannot be repaired by rebuilding.
+
 **The pre-push rung is `make test && make lint && make flagship`.**
 The flagship is deliberately out of CI — no runner has tensor's
 compiler — so this local gate is the only thing that keeps the gpud
