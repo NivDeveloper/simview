@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdio>
 
 namespace sv {
 namespace {
@@ -125,6 +126,15 @@ void panel_draw(impl::App::PanelState &p) {
         case impl::WidgetKind::Checkbox:
             ImGui::Checkbox(w.label.c_str(), static_cast<bool *>(w.target));
             break;
+        case impl::WidgetKind::Value: {
+            // Bound or pulled, the same duality a series has.
+            const double v = w.value ? w.value(w.user)
+                                     : double(*static_cast<float *>(w.target));
+            char buf[64];
+            std::snprintf(buf, sizeof buf, w.fmt.c_str(), v);
+            ImGui::LabelText(w.label.c_str(), "%s", buf);
+            break;
+        }
         }
     }
     ImGui::End();

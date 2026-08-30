@@ -24,7 +24,11 @@ int main() {
 
     app.Panel("controls")
         .Slider("speed", speed, 0.0f, 4.0f)
-        .Checkbox("running", running);
+        .Checkbox("running", running)
+        .Separator()
+        .Value(
+            "frames", [&] { return double(app.Stats().frames); }, "%.0f")
+        .Value("uploads", [&] { return double(app.Stats().uploads); }, "%.0f");
 
     app.OnFrame([&] {
         if (running)

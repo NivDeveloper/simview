@@ -117,9 +117,11 @@ struct App {
 
     struct WidgetState {
         std::string label;
+        std::string fmt;
         WidgetKind kind = WidgetKind::Text;
         void *target = nullptr;
         float min = 0.0f, max = 1.0f;
+        double (*value)(void *) = nullptr;
         void (*on_click)(void *) = nullptr;
         void *user = nullptr;
         void (*free)(void *) = nullptr;

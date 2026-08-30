@@ -121,8 +121,16 @@ int main() {
     CHECK(bool(panel));
     panel.Text("a label").Separator().Slider("speed", speed, 0.0f, 4.0f);
     panel.Checkbox("running", on).Button("reset", [&] { ++clicks; });
+
+    // A value is bound or pulled — the same duality a series has.
+    int reads = 0;
+    panel.Value("speed", speed).Value("reads", [&] {
+        ++reads;
+        return 1.0;
+    });
     settle(app);
     CHECK_GT(total_vertices(), before_panel);
+    CHECK_EQ(reads, 2);            // pulled once a frame, like a series
     CHECK(!app.Panel("controls")); // same window
     CHECK(!app.Panel(""));
 

@@ -138,13 +138,22 @@ bool panel_widget(Panel p, const WidgetDesc &d) {
             d.free(d.user);
         return set_error("a checkbox needs a value to toggle"), false;
     }
+    if (d.kind == WidgetKind::Value && !d.target && !d.value) {
+        if (d.free)
+            d.free(d.user);
+        return set_error("a value needs something to read — bind a float or "
+                         "give a callable"),
+               false;
+    }
 
     App::WidgetState &w = st->widgets.emplace_back();
     w.label = d.label ? d.label : "";
+    w.fmt = d.fmt ? d.fmt : "%.3g";
     w.kind = d.kind;
     w.target = d.target;
     w.min = d.min;
     w.max = d.max;
+    w.value = d.value;
     w.on_click = d.on_click;
     w.user = d.user;
     w.free = d.free;

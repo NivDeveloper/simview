@@ -2,6 +2,7 @@
 
 #include "Types.h"
 
+#include <concepts>
 #include <cstdint>
 #include <utility>
 
@@ -16,7 +17,8 @@ enum class WidgetKind : std::int32_t {
     Separator,
     Button,
     Slider,
-    Checkbox
+    Checkbox,
+    Value
 };
 
 struct Panel {
@@ -29,6 +31,8 @@ struct WidgetDesc {
     WidgetKind kind = WidgetKind::Text;
     void *target = nullptr;
     float min = 0.0f, max = 1.0f;
+    const char *fmt = "%.3g";
+    double (*value)(void *) = nullptr;
     void (*on_click)(void *) = nullptr;
     void *user = nullptr;
     void (*free)(void *) = nullptr;
@@ -65,6 +69,29 @@ class Panel {
 
     Panel &Checkbox(const char *label, bool &value) {
         return add(impl::WidgetKind::Checkbox, label, &value);
+    }
+
+    Panel &Value(const char *label, float &value, const char *fmt = "%.3g") {
+        impl::panel_widget(p_, impl::WidgetDesc{.label = label,
+                                                .kind = impl::WidgetKind::Value,
+                                                .target = &value,
+                                                .fmt = fmt});
+        return *this;
+    }
+
+    template <std::invocable F>
+    Panel &Value(const char *label, F pull, const char *fmt = "%.3g") {
+        impl::panel_widget(
+            p_,
+            impl::WidgetDesc{
+                .label = label,
+                .kind = impl::WidgetKind::Value,
+                .fmt = fmt,
+                .value =
+                    [](void *u) { return double((*static_cast<F *>(u))()); },
+                .user = new F(std::move(pull)),
+                .free = [](void *u) { delete static_cast<F *>(u); }});
+        return *this;
     }
 
     template <class F> Panel &Button(const char *label, F on_click) {
