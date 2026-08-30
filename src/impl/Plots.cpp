@@ -94,6 +94,7 @@ bool plot_series(Plot p, const SeriesDesc &d) {
     s.name = d.name;
     s.kind = d.kind;
     s.dtype = d.dtype;
+    s.bins = d.bins;
     s.data = d.data;
     s.src = d.src;
     s.user = d.user;

@@ -94,6 +94,14 @@ int main() {
     settle(app);
     CHECK_GT(total_vertices(), before_both);
 
+    // The other kinds, each costing one enum value, one emitter case
+    // and one forwarder per data shape.
+    const int before_kinds = total_vertices();
+    p.Scatter("points", xs, ys);
+    p.Histogram("dist", ys, 16);
+    settle(app);
+    CHECK_GT(total_vertices(), before_kinds);
+
     // An empty source is not an error — a sim that has produced no
     // samples yet simply draws nothing.
     p.Line("empty", [] { return std::span<const float>(); });

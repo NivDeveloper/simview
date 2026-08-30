@@ -86,6 +86,7 @@ struct App {
         std::string name;
         SeriesKind kind = SeriesKind::Line;
         DType dtype = DType::f32;
+        int bins = -2;
         SeriesData data{};
         SeriesData (*src)(void *) = nullptr;
         void *user = nullptr;

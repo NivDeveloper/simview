@@ -65,6 +65,15 @@ void emit_series(const impl::App::SeriesState &s, const T *xs, const T *ys,
         xs ? ImPlot::PlotLine(s.name.c_str(), xs, ys, n, spec)
            : ImPlot::PlotLine(s.name.c_str(), ys, n, 1, 0, spec);
         break;
+    case impl::SeriesKind::Scatter:
+        xs ? ImPlot::PlotScatter(s.name.c_str(), xs, ys, n, spec)
+           : ImPlot::PlotScatter(s.name.c_str(), ys, n, 1, 0, spec);
+        break;
+    case impl::SeriesKind::Histogram:
+        // Returns the max bin count, which no caller has asked for yet.
+        (void)ImPlot::PlotHistogram(s.name.c_str(), ys, n, s.bins, 1.0,
+                                    ImPlotRange(), spec);
+        break;
     }
 }
 

@@ -2,6 +2,7 @@
 
 #include "Types.h"
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -46,7 +47,7 @@ namespace impl {
 
 struct App;
 
-enum class SeriesKind : std::int32_t { Line };
+enum class SeriesKind : std::int32_t { Line, Scatter, Histogram };
 
 struct SeriesData {
     const void *x = nullptr;
@@ -63,6 +64,7 @@ struct SeriesDesc {
     const char *name = nullptr;
     SeriesKind kind = SeriesKind::Line;
     DType dtype = DType::f32;
+    int bins = -2;
     SeriesData data{};
     SeriesData (*src)(void *) = nullptr;
     void *user = nullptr;
@@ -112,13 +114,51 @@ class Plot {
         return pulled(impl::SeriesKind::Line, name, std::move(pull), s);
     }
 
+    template <std::ranges::contiguous_range R>
+    Plot &Scatter(const char *name, const R &y, const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Scatter, name, nullptr,
+                        std::ranges::data(y), std::ranges::size(y),
+                        series_dtype<std::ranges::range_value_t<R>>(), s);
+    }
+
+    template <std::ranges::contiguous_range RX,
+              std::ranges::contiguous_range RY>
+    Plot &Scatter(const char *name, const RX &x, const RY &y,
+                  const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Scatter, name, std::ranges::data(x),
+                        std::ranges::data(y),
+                        std::min(std::ranges::size(x), std::ranges::size(y)),
+                        series_dtype<std::ranges::range_value_t<RY>>(), s);
+    }
+
+    template <std::invocable F>
+    Plot &Scatter(const char *name, F pull, const SeriesStyle &s = {}) {
+        return pulled(impl::SeriesKind::Scatter, name, std::move(pull), s);
+    }
+
+    template <std::ranges::contiguous_range R>
+    Plot &Histogram(const char *name, const R &v, int bins = -2,
+                    const SeriesStyle &s = {}) {
+        return borrowed(impl::SeriesKind::Histogram, name, nullptr,
+                        std::ranges::data(v), std::ranges::size(v),
+                        series_dtype<std::ranges::range_value_t<R>>(), s, bins);
+    }
+
+    template <std::invocable F>
+    Plot &Histogram(const char *name, F pull, int bins = -2,
+                    const SeriesStyle &s = {}) {
+        return pulled(impl::SeriesKind::Histogram, name, std::move(pull), s,
+                      bins);
+    }
+
   private:
     Plot &borrowed(impl::SeriesKind k, const char *name, const void *x,
-                   const void *y, std::size_t n, DType dt,
-                   const SeriesStyle &s) {
+                   const void *y, std::size_t n, DType dt, const SeriesStyle &s,
+                   int bins = -2) {
         impl::plot_series(p_, impl::SeriesDesc{.name = name,
                                                .kind = k,
                                                .dtype = dt,
+                                               .bins = bins,
                                                .data = {x, y, n},
                                                .style = s});
         return *this;
@@ -126,7 +166,7 @@ class Plot {
 
     template <class F>
     Plot &pulled(impl::SeriesKind k, const char *name, F pull,
-                 const SeriesStyle &s) {
+                 const SeriesStyle &s, int bins = -2) {
         using Ret = std::remove_cvref_t<std::invoke_result_t<F>>;
         if constexpr (std::ranges::contiguous_range<Ret>) {
             impl::plot_series(
@@ -135,6 +175,7 @@ class Plot {
                     .name = name,
                     .kind = k,
                     .dtype = series_dtype<std::ranges::range_value_t<Ret>>(),
+                    .bins = bins,
                     .src =
                         [](void *u) {
                             decltype(auto) r = (*static_cast<F *>(u))();
@@ -151,6 +192,7 @@ class Plot {
                         .name = name,
                         .kind = k,
                         .dtype = series_dtype<typename Ret::value_type>(),
+                        .bins = bins,
                         .src =
                             [](void *u) {
                                 decltype(auto) r = (*static_cast<F *>(u))();
