@@ -17,6 +17,12 @@ struct Config {
     bool headless = false;
 };
 
+struct HostSource {
+    const void *(*fn)(const void *, std::size_t *, std::uint64_t *) = nullptr;
+    const void *user = nullptr;
+    explicit operator bool() const { return fn != nullptr; }
+};
+
 namespace impl {
 
 struct App;

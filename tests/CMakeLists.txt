@@ -4,7 +4,11 @@ add_subdirectory(installed_surface)
 # image vocabulary, fakes/ the backends a display would otherwise be
 # needed for, probe/ the declared test surface, checks/ the tests.
 #
-# Plain mains; a missing device prints SKIP and exits 0.
+# Plain mains; a missing device prints SKIP and exits 0. A check is
+# `pure` by being NAMED here — an exact-match test on one name silently
+# filed every later device-free check under `device`, where the
+# sanitizer job never runs it.
+set(pure_checks sync_check)
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             view_check resize_check viewport_check lines_check)
     add_executable(${t} checks/${t}.cpp)
@@ -49,7 +53,7 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
     # 77 is check::skip_code: a machine that cannot host the test
     # reports Skipped, never Passed.
     set_tests_properties(headless.${t} PROPERTIES SKIP_RETURN_CODE 77)
-    if(t STREQUAL "sync_check")
+    if(t IN_LIST pure_checks)
         set_tests_properties(headless.${t} PROPERTIES LABELS "pure")
     else()
         set_tests_properties(headless.${t} PROPERTIES LABELS "device")

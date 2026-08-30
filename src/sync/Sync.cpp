@@ -1,13 +1,13 @@
-// The sync layer's engine: pure std, no SDL. Correctness first — the
-// swap pair sits under a mutex, fine at per-frame rates; the wait-free
-// refinement waits for a measurement that wants it.
+// The sync layer's engine: pure std, no SDL. Two things live here, the
+// Executor and the gate; both are small critical sections under a
+// mutex, fine at per-tick and per-frame rates — the wait-free refinement
+// waits for a measurement that wants it.
 
 #include <simview/sync/Sync.h>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cstring>
 #include <deque>
 #include <mutex>
 #include <thread>
@@ -17,13 +17,22 @@ namespace impl {
 
 namespace {
 
-struct ChannelImpl {
-    std::size_t bytes;
-    void *state, *transfer, *draw;
-    std::uint64_t transfer_gen = 0; // guarded by m
-    std::uint64_t draw_gen = 0;     // consumer-thread-only
-    std::uint64_t next_gen = 1;     // sim-thread-only
-    std::mutex m;                   // guards the state<->transfer pair
+// The gate: three slot INDICES with roles next / current / shown, and
+// the one mutex that orders the two threads. Publish moves current
+// onto next and picks a fresh next outside {current, shown}; flip moves
+// shown onto current. next is never current or shown, so the sim
+// writes what nobody reads and the frame reads what nobody writes.
+// Nothing is swapped or copied here — the slots belong to the template,
+// the gate only says which one plays which role. Lifetime is a
+// refcount: the owning Sync holds one, every registry that flips it
+// holds one, so a Sync destroyed mid-run leaves a dead gate the frame
+// skips rather than a dangling handle.
+struct GateImpl {
+    std::mutex m;
+    int next = 0, current = 1, shown = 2;
+    std::uint64_t current_gen = 0, shown_gen = 0, next_gen = 1;
+    bool live = true;
+    std::atomic<int> refs{1};
 };
 
 // The Executor KEEPS THE CLOCK. The body may read n and time; it never
@@ -119,55 +128,90 @@ void worker_loop(ExecutorImpl *e) {
 
 } // namespace
 
-Channel channel_create(std::size_t bytes) {
-    if (!bytes)
-        return {};
-    auto *c = new ChannelImpl{bytes, ::operator new(bytes),
-                              ::operator new(bytes), ::operator new(bytes)};
-    std::memset(c->state, 0, bytes);
-    std::memset(c->transfer, 0, bytes);
-    std::memset(c->draw, 0, bytes);
-    return {c};
+SyncGate sync_gate_create() { return {new GateImpl}; }
+
+void sync_gate_retain(SyncGate g) {
+    if (auto *s = static_cast<GateImpl *>(g.p))
+        s->refs.fetch_add(1, std::memory_order_relaxed);
 }
 
-void channel_destroy(Channel ch) {
-    auto *c = static_cast<ChannelImpl *>(ch.p);
-    if (!c)
+void sync_gate_release(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (s && s->refs.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        delete s;
+}
+
+// The owner's release: the gate stops flipping first, so a registry
+// that still holds it sees a no-op, never a slot the Sync took away.
+void sync_gate_destroy(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
         return;
-    ::operator delete(c->state);
-    ::operator delete(c->transfer);
-    ::operator delete(c->draw);
-    delete c;
-}
-
-void *channel_state(Channel ch) {
-    auto *c = static_cast<ChannelImpl *>(ch.p);
-    return c ? c->state : nullptr;
-}
-
-void channel_publish(Channel ch) {
-    auto *c = static_cast<ChannelImpl *>(ch.p);
-    if (!c)
-        return;
-    std::lock_guard lk(c->m);
-    std::swap(c->state, c->transfer);
-    c->transfer_gen = c->next_gen++;
-}
-
-const void *channel_latest(Channel ch, std::uint64_t *gen) {
-    auto *c = static_cast<ChannelImpl *>(ch.p);
-    if (!c)
-        return nullptr;
     {
-        std::lock_guard lk(c->m);
-        if (c->transfer_gen > c->draw_gen) {
-            std::swap(c->transfer, c->draw);
-            c->draw_gen = c->transfer_gen;
-        }
+        std::lock_guard lk(s->m);
+        s->live = false;
     }
-    if (gen)
-        *gen = c->draw_gen;
-    return c->draw_gen ? c->draw : nullptr;
+    sync_gate_release(g);
+}
+
+void sync_gate_publish(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return;
+    std::lock_guard lk(s->m);
+    s->current = s->next;
+    s->current_gen = s->next_gen++;
+
+    // The smallest index that is neither current nor shown; with three
+    // slots there is always one.
+    for (int i = 0; i < 3; ++i)
+        if (i != s->current && i != s->shown) {
+            s->next = i;
+            break;
+        }
+}
+
+void sync_gate_flip(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return;
+    std::lock_guard lk(s->m);
+    if (s->live && s->current_gen > s->shown_gen) {
+        s->shown = s->current;
+        s->shown_gen = s->current_gen;
+    }
+}
+
+int sync_gate_next(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return 0;
+    std::lock_guard lk(s->m);
+    return s->next;
+}
+
+int sync_gate_current(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return 0;
+    std::lock_guard lk(s->m);
+    return s->current;
+}
+
+int sync_gate_shown(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return 0;
+    std::lock_guard lk(s->m);
+    return s->shown;
+}
+
+std::uint64_t sync_gate_generation(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return 0;
+    std::lock_guard lk(s->m);
+    return s->shown_gen;
 }
 
 Executor executor_create(void (*tick)(void *), void *user) {

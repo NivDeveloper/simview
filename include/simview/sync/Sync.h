@@ -1,9 +1,12 @@
 #pragma once
 
-#include <cstddef>
+#include "../Types.h"
+
+#include <concepts>
 #include <cstdint>
 #include <functional>
-#include <span>
+#include <ranges>
+#include <utility>
 
 namespace sv {
 
@@ -15,16 +18,21 @@ struct Tick {
 
 namespace impl {
 
-struct Channel {
+struct SyncGate {
     void *p = nullptr;
     explicit operator bool() const { return p != nullptr; }
 };
 
-Channel channel_create(std::size_t bytes);
-void channel_destroy(Channel);
-void *channel_state(Channel);
-void channel_publish(Channel);
-const void *channel_latest(Channel, std::uint64_t *gen);
+SyncGate sync_gate_create();
+void sync_gate_destroy(SyncGate);
+void sync_gate_retain(SyncGate);
+void sync_gate_release(SyncGate);
+void sync_gate_publish(SyncGate);
+void sync_gate_flip(SyncGate);
+int sync_gate_next(SyncGate);
+int sync_gate_current(SyncGate);
+int sync_gate_shown(SyncGate);
+std::uint64_t sync_gate_generation(SyncGate);
 
 struct Executor {
     void *p = nullptr;
@@ -51,31 +59,57 @@ std::uint64_t executor_ticks(Executor);
 
 }
 
-template <typename T> class Channel {
+template <typename T> class Sync {
   public:
-    explicit Channel(std::size_t count)
-        : c_(impl::channel_create(count * sizeof(T))), count_(count) {}
+    Sync() : g_(impl::sync_gate_create()) {}
 
-    ~Channel() { impl::channel_destroy(c_); }
-    Channel(const Channel &) = delete;
-    Channel &operator=(const Channel &) = delete;
-
-    std::span<T> State() {
-        return {static_cast<T *>(impl::channel_state(c_)), count_};
+    explicit Sync(const T &init)
+        requires std::copy_constructible<T>
+        : Sync() {
+        for (auto &s : s_)
+            s = init;
     }
 
-    void Publish() { impl::channel_publish(c_); }
+    ~Sync() { impl::sync_gate_destroy(g_); }
+    Sync(const Sync &) = delete;
+    Sync &operator=(const Sync &) = delete;
 
-    std::span<const T> Latest(std::uint64_t &gen) {
-        const void *d = impl::channel_latest(c_, &gen);
-        return d ? std::span<const T>{static_cast<const T *>(d), count_}
-                 : std::span<const T>{};
+    T &Next() { return s_[impl::sync_gate_next(g_)]; }
+    const T &Current() const { return s_[impl::sync_gate_current(g_)]; }
+    void Publish() { impl::sync_gate_publish(g_); }
+
+    void Publish(T &&v) {
+        Next() = std::move(v);
+        Publish();
     }
+
+    const T &Shown() const { return s_[impl::sync_gate_shown(g_)]; }
+    std::uint64_t Generation() const { return impl::sync_gate_generation(g_); }
+    impl::SyncGate Gate() const { return g_; }
 
   private:
-    impl::Channel c_;
-    std::size_t count_;
+    T s_[3];
+    impl::SyncGate g_;
 };
+
+template <typename T>
+    requires std::ranges::contiguous_range<const T> &&
+             std::ranges::sized_range<const T> &&
+             std::same_as<std::ranges::range_value_t<const T>, float>
+HostSource host_of(const Sync<T> &s) {
+    return {+[](const void *u, std::size_t *bytes,
+                std::uint64_t *gen) -> const void * {
+                const auto &sync = *static_cast<const Sync<T> *>(u);
+                *bytes = 0;
+                *gen = sync.Generation();
+                if (!*gen)
+                    return nullptr;
+                const T &r = sync.Shown();
+                *bytes = std::ranges::size(r) * sizeof(float);
+                return std::ranges::data(r);
+            },
+            &s};
+}
 
 class Executor {
   public:
