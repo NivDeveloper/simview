@@ -162,6 +162,29 @@ int main() {
     settle(app);
     CHECK_GT(total_vertices(), before);
 
+    // ErrorBars DECORATE: ImPlot binds whiskers to their host by a
+    // shared name, so that one reuse is allowed — and only that one.
+    // Two plain kinds on a name still merge, and still refuse.
+    // Asserted on ACCEPTANCE, not on vertex growth: a refused series
+    // still leaves the host drawing, so the frame grows either way and
+    // a vertex count would pass with the exception removed. Measured.
+    CHECK(bool(p.Bars("host", xs, ys, 0.5)));
+    CHECK(impl::plot_series(
+        p.Raw(),
+        impl::SeriesDesc{.name = "host",
+                         .kind = impl::SeriesKind::ErrorBars,
+                         .data = {.a = xs.data(),
+                                  .b = ys.data(),
+                                  .c = err.data(),
+                                  .count = xs.size()}})); // decorates: allowed
+    CHECK(!impl::plot_series(
+        p.Raw(),
+        impl::SeriesDesc{.name = "host",
+                         .kind = impl::SeriesKind::Bars,
+                         .data = {.b = ys.data(),
+                                  .count = ys.size()}})); // a second Bars: not
+    CHECK(refused("already has a series named"));
+
     // Heatmap is the one new DATA SHAPE — a grid, not arrays — and it
     // is proven by pixels rather than by vertex count: a grid whose
     // left column is cold and right column is hot must render a

@@ -116,8 +116,11 @@ cost is per item per frame, which is nothing beside the draw.
 **Plot series deliberately do not get this.** A series is
 `{kind, dtype, source, style}` — one shared struct differing only in
 the emit call, so a switch is right, and its measured cost is one enum
-value plus one `case` plus one forwarder. Same-looking problem,
-different shape.
+value plus one `case` plus one forwarder — held across eleven 2D kinds.
+Same-looking problem, different shape. And a plot FAMILY — a second
+library with its own bracket — costs one enum value, one bracket arm,
+one emitter and one builder, with the draw path staying one function.
+That was the question ImPlot3D was brought in to ask.
 
 ### Builder
 

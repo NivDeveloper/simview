@@ -269,8 +269,13 @@ keeps series names from colliding.
 
 - **A series is a POD** (kind, element type, source, style) and **the
   scalar is erased once**: `emit_series<T>` switches on kind, and a
-  single line turns `DType` into `T`. A new kind costs one enum value,
-  one case and one builder method; supporting float AND double costs
+  single line turns `DType` into `T`. The erasure is one struct wide
+  enough for every kind — four value slots, an index channel, two
+  counts, positional BY KIND — widened once before any kind needed it,
+  and one shared `param[4]` carries every per-kind scalar so a Bars
+  width or a Stems reference costs no descriptor field. Eleven 2D
+  kinds ship: a kind costs one enum value, one case and one builder
+  method per data shape; supporting float AND double costs
   nothing per kind.
 - **Data is borrowed or pulled**, one impl path. A span is zero-copy
   and must outlive the plot; a callable is asked at draw time, on the
@@ -290,6 +295,18 @@ keeps series names from colliding.
   would merge them into one legend entry, colour and visibility. A
   duplicate window title is refused: ImGui appends into the existing
   window.
+- **A second plot FAMILY costs one bracket arm, not a second draw
+  path.** `Plot3D` is a sibling builder over the same impl: ImPlot3D
+  is a separate library with its own context and its own `BeginPlot`,
+  so `plot_draw` stays ONE function and switches the family in ONE
+  place — the bracket. The window, the title namespace, the source
+  pull, the dtype erasure and the list addressing are shared. The
+  family is on the PLOT, the kind on the SERIES, and a mismatch is
+  refused by name before either emitter sees it. Four 3D kinds: Line
+  and Scatter lifted to three arrays, Surface (three coordinate grids
+  — NOT Heatmap's z-over-bounds shape; the two are deliberately not
+  one vocabulary), Mesh (vertices plus an index buffer). `Fit` lifts
+  to 3D unchanged; `AxisScale` is a no-op there, and says so.
 - **Removal is a later move, not an oversight.** ImPlot's item pool is
   immortal within a context, so re-adding a name resurrects its old
   colour and visibility, and the colormap cursor never rewinds. The

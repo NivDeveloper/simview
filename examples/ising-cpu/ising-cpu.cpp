@@ -68,6 +68,48 @@ int main() {
     // Executor.
     std::vector<float> mag;
 
+    // The lattice as a PLOT, beside the field that draws it as a
+    // SCENE: the same data, the plot family's answer. A plot gets
+    // axes, a colourbar and mouse coordinates; the field gets pixels.
+    std::vector<float> lattice(L * L, 1.0f);
+    app.Plot({.title = "lattice",
+              .x = {.label = "i",
+                    .min = 0.0,
+                    .max = double(L),
+                    .fit = sv::Fit::Fixed},
+              .y = {.label = "j",
+                    .min = 0.0,
+                    .max = double(L),
+                    .fit = sv::Fit::Fixed},
+              .palette = sv::Palette::RdBu})
+        .Heatmap("spins", [&] { return std::span<const float>(lattice); }, L, L,
+                 {.scale_min = -1.0,
+                  .scale_max = 1.0,
+                  .x1 = double(L),
+                  .y1 = double(L)});
+
+    // The spatial correlation <s(0) s(r)> over a window of the
+    // lattice, as a surface: near Tc it lifts into a broad hill, far
+    // from Tc it collapses to a spike at the origin. Three coordinate
+    // grids of CW*CW, the shape a Surface takes.
+    constexpr unsigned CW = 24;
+    std::vector<float> cx(CW * CW), cy(CW * CW), cz(CW * CW);
+    for (unsigned j = 0; j < CW; ++j)
+        for (unsigned i = 0; i < CW; ++i) {
+            cx[j * CW + i] = float(i);
+            cy[j * CW + i] = float(j);
+        }
+    app.Plot3D({.title = "correlation",
+                .x = {.label = "dx"},
+                .y = {.label = "dy"},
+                .z = {.label = "<s s>",
+                      .min = -0.2,
+                      .max = 1.0,
+                      .fit = sv::Fit::Fixed},
+                .palette = sv::Palette::Viridis})
+        .Surface("<s(0)s(r)>", cx, cy, cz, CW, CW,
+                 {.scale_min = -0.2, .scale_max = 1.0});
+
     app.Plot({.title = "magnetisation",
               .x = {.label = "sample", .fit = sv::Fit::Stream},
               .y = {.label = "m",
@@ -99,12 +141,30 @@ int main() {
 
         if (auto latest = chan.Latest(gen); !latest.empty()) {
             field.Update(latest);
+            lattice.assign(latest.begin(), latest.end());
             float sum = 0.0f;
             for (float s_ : latest)
                 sum += s_;
             mag.push_back(sum / float(L * L));
             if (mag.size() > 4096)
                 mag.erase(mag.begin());
+
+            // <s(0) s(r)>: sample the origin over a coarse stride so a
+            // frame's worth stays cheap, and average the product with
+            // the spin at offset (dx, dy).
+            constexpr unsigned S = 8;
+            for (unsigned dy = 0; dy < CW; ++dy)
+                for (unsigned dx = 0; dx < CW; ++dx) {
+                    float acc = 0.0f;
+                    unsigned n = 0;
+                    for (unsigned y = 0; y < L; y += S)
+                        for (unsigned x = 0; x < L; x += S) {
+                            const unsigned x2 = (x + dx) % L, y2 = (y + dy) % L;
+                            acc += latest[y * L + x] * latest[y2 * L + x2];
+                            ++n;
+                        }
+                    cz[dy * CW + dx] = acc / float(n);
+                }
         }
     });
 

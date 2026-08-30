@@ -142,8 +142,20 @@ bool plot_series(Plot p, const SeriesDesc &d) {
                                "kind — use app.Plot3D for three coordinates"),
                false;
     }
+    // Identity is the name — with ONE exception, and it is ImPlot's own
+    // idiom: ErrorBars DECORATE a series, and are bound to it by
+    // sharing its name, so the whiskers take the host's colour and
+    // legend entry. The exception is narrow on purpose: only ErrorBars
+    // may reuse a name, only a name that exists, and only on a kind
+    // whiskers can sit on.
     for (const SeriesState &s : st->series)
         if (s.name == d.name) {
+            const bool decorates =
+                d.kind == SeriesKind::ErrorBars &&
+                (s.kind == SeriesKind::Bars || s.kind == SeriesKind::Line ||
+                 s.kind == SeriesKind::Scatter || s.kind == SeriesKind::Stairs);
+            if (decorates)
+                break;
             if (d.free)
                 d.free(d.user);
             return set_error(std::string("this plot already has a series "

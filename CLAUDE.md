@@ -69,8 +69,12 @@ more than one window.
   builder, not a door. If raw access is ever needed it comes back as a
   deliberate decision with a reason, not as a leftover.
 - **A new series kind costs three sites**: one enum value, one `case`
-  in `emit_series<T>`, one builder method. The scalar is erased once,
-  so float and double cost nothing per kind. If a kind ever costs
+  in `emit_series<T>`, one builder method per data shape. The scalar
+  is erased once, so float and double cost nothing per kind, and the
+  erasure (`SeriesData`: four slots, an index channel, two counts,
+  positional BY KIND) plus a shared `param[4]` mean a new kind adds
+  no descriptor field. A new plot FAMILY is one bracket arm in the
+  one `plot_draw`, never a second draw path. If a kind ever costs
   more, say so in the commit rather than quietly paying it.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
   ImGui composites over it in a second LOAD pass; the dockspace's

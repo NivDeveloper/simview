@@ -77,17 +77,16 @@ the widget builder beside it (`Text`/`Separator`/`Slider`/`Checkbox`/
 builder is the API, exactly as the predecessor's was, and the raw door
 is only the escape hatch for what the vocabulary does not model.
 
-**3. The second and third plot types.** Scatter and Heatmap, as the
-PROOF that a type costs three sites. The honest prediction, recorded
-before the work rather than after: **Scatter and Stairs will cost
-three each** (one enum value, one `case` in `emit_series`, one builder
-method). **Heatmap will cost about five** — it has no `(xs, ys, count)`
-form, so it needs rows/cols and a scale range in the descriptor, and
-its colorbar (`ColormapScale`) is an ImGui widget that must sit
-OUTSIDE `BeginPlot`/`EndPlot` with `PushColormap` wrapping both.
-Predicting five and being right beats claiming three and being
-surprised; five for structural reasons rather than eighteen for
-architectural ones is the architecture vindicated.
+**3. The array-shaped plot kinds** (shipped). The prediction was
+recorded BEFORE the work: Scatter and Stairs at three sites each,
+Heatmap at about five. The measurement: Stairs cost three. Heatmap
+cost the colourbar bracket plus one `Range2` field — five. Every
+scalar-tailed kind (Bars, Stems, Shaded) rode a shared `param[0]` and
+paid nothing in the descriptor. Eleven 2D kinds in four files, and the
+one deviation named rather than absorbed: `apply_flags` is a second
+switch, because horizontal is a flag on the SPEC, not a data slot.
+Five for structural reasons rather than eighteen for architectural
+ones is the architecture vindicated.
 
 **4. The scene is a list** (shipped). What is drawn to the swapchain is
 N items, not one welded-in field: `scene_draw` prepares them, begins
@@ -105,9 +104,13 @@ out of them.
  N panels rather than one field per App;
 the refusal that exists today becomes a list.
 
-**6. 3D.** ImPlot3D for plot-shaped 3D, and — for particle/volume
-work — the one genuinely excellent piece of vklib worth stealing: its
-BDA-addressed particle path with Slang shaders, zero readback.
+**6. 3D.** ImPlot3D for plot-shaped 3D (shipped: `app.Plot3D()` as a
+sibling builder over the same impl — one draw path, the family
+switched at the bracket; Line, Scatter, Surface, Mesh, each proven by
+geometry and the family mismatch refused by name). Still to come, for
+particle/volume work — the one genuinely excellent piece of vklib
+worth stealing: its BDA-addressed particle path with Slang shaders,
+zero readback.
 
 ## Non-goals
 

@@ -7,6 +7,7 @@
 // hands over each step.
 #include <simview/simview.h>
 
+#include <algorithm>
 #include <cmath>
 #include <random>
 #include <span>
@@ -33,6 +34,14 @@ int main() {
         return 1;
 
     std::vector<float> xy(N * 2), vel(N * 2), speed(N), phase(N * 2);
+    // The 3D view: every particle at (x, y, |v|) — real space with
+    // speed as height. Three arrays, one per axis, filled each frame.
+    std::vector<float> sx(N), sy(N), sz(N);
+    // The binned speed distribution as mean +/- spread per bin, for
+    // ErrorBars over Bars: the two kinds SHARE a name on purpose, so
+    // ImPlot binds the bars and their whiskers into one legend entry.
+    constexpr std::size_t NB = 16;
+    std::vector<float> bin_x(NB), bin_mean(NB), bin_err(NB);
     std::vector<float> arrows((N / STRIDE) * 4);
     std::mt19937 rng(2026);
     std::uniform_real_distribution<float> place(2.0f, BOX - 2.0f);
@@ -79,6 +88,24 @@ int main() {
         .Histogram(
             "distribution", [&] { return std::span<const float>(speed); }, 32);
 
+    // Binned: each bin's mean speed as a bar, its spread as a whisker.
+    // Same series name binds the two into one legend entry.
+    app.Plot({.title = "speed by bin",
+              .x = {.label = "bin", .fit = sv::Fit::Stream},
+              .y = {.label = "mean |v|", .fit = sv::Fit::Stream}})
+        .Bars("binned", bin_x, bin_mean, 0.8)
+        .ErrorBars("binned", bin_x, bin_mean, bin_err);
+
+    // The third axis the 2D phase view could not show: the whole gas
+    // in real space, lifted by speed. Drag to rotate.
+    app.Plot3D(
+           {.title = "gas in 3D",
+            .x = {.label = "x", .min = 0.0, .max = BOX, .fit = sv::Fit::Fixed},
+            .y = {.label = "y", .min = 0.0, .max = BOX, .fit = sv::Fit::Fixed},
+            .z = {.label = "|v|", .fit = sv::Fit::Stream}})
+        .Scatter("particles", sx, sy, sz,
+                 {.color = {0.55f, 0.8f, 1.0f, 0.9f}, .marker_size = 1.5f});
+
     app.Panel("controls")
         .Slider("dt", dt, 0.0f, 0.01f)
         .Slider("gravity", gravity, 0.0f, GMAX)
@@ -115,6 +142,31 @@ int main() {
 
         points.Update(xy);
         orbits.Update(phase);
+
+        // The 3D scatter and the binned bars are re-derived from the
+        // same arrays the scene draws — no second source of truth.
+        float vmax = 1e-3f;
+        for (std::size_t i = 0; i < N; ++i)
+            vmax = std::max(vmax, speed[i]);
+        std::vector<float> bin_sum(NB, 0.0f), bin_sq(NB, 0.0f);
+        std::vector<int> bin_n(NB, 0);
+        for (std::size_t i = 0; i < N; ++i) {
+            sx[i] = xy[2 * i];
+            sy[i] = xy[2 * i + 1];
+            sz[i] = speed[i];
+            const std::size_t b =
+                std::min(NB - 1, std::size_t(speed[i] / vmax * float(NB)));
+            bin_sum[b] += speed[i];
+            bin_sq[b] += speed[i] * speed[i];
+            ++bin_n[b];
+        }
+        for (std::size_t b = 0; b < NB; ++b) {
+            bin_x[b] = float(b);
+            const float n = float(std::max(1, bin_n[b]));
+            const float mean = bin_sum[b] / n;
+            bin_mean[b] = mean;
+            bin_err[b] = std::sqrt(std::max(0.0f, bin_sq[b] / n - mean * mean));
+        }
 
         // An empty set is not an error: switching vectors off is an
         // Update of nothing, and the kind draws nothing.
