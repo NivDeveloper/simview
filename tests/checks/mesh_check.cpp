@@ -245,6 +245,58 @@ int main() {
     CHECK_GT(solid, std::size_t(500));
     CHECK_GT(partial, std::size_t(40));
 
+    // ── two shapes in ONE world ──────────────────────────────────────
+    // The registry hands an item the address of the shape it resolved
+    // and the item keeps it. A second shape appearing in the same
+    // world used to move the first one, and the next frame drew from
+    // freed memory — every world in this check until now held exactly
+    // one shape, so none of them could have found it. An example did.
+    sv::World both = app.World({.title = "both", .grid = false, .axes = false});
+    REQUIRE(bool(both));
+    both.Camera({.focus = {0.0f, 0.0f, 0.0f},
+                 .distance = 6.0f,
+                 .azimuth_deg = -30.0f,
+                 .elevation_deg = 15.0f});
+    app.OnUi([] {
+        ImGui::SetWindowPos("both", ImVec2(430, 350));
+        ImGui::SetWindowSize("both", ImVec2(260, 140));
+    });
+    sv::Cloud b_sphere = both.Cloud({.color = {0.95f, 0.4f, 0.35f, 1.0f},
+                                     .radius = 0.55f,
+                                     .shape = CloudShape::Sphere});
+    sv::Cloud b_cube = both.Cloud({.color = {0.4f, 0.9f, 0.5f, 1.0f},
+                                   .radius = 0.5f,
+                                   .shape = CloudShape::Cube});
+    REQUIRE(bool(b_sphere));
+    REQUIRE(bool(b_cube));
+    CHECK(b_sphere.Update(one(-1.1f, 0.0f, 0.0f)));
+    CHECK(b_cube.Update(one(1.1f, 0.0f, 0.0f)));
+
+    // Several frames: the crash was on the frame AFTER the second
+    // shape arrived, not the one that added it.
+    for (int i = 0; i < 4; ++i)
+        app.Step();
+    Bmp pair;
+    REQUIRE(harness::shot(app, "mesh_pair", pair));
+    unsigned tri2[4] = {0, 0, 0, 0};
+    const std::size_t n2 = probe::mesh_tiers(app.Raw(), "both", tri2, 4);
+    std::printf("  two shapes in one world: %zu meshes resident\n", n2);
+    CHECK_EQ(n2, std::size_t(2));
+    // And both are still drawn — a dangling shape draws nothing or
+    // draws the other one.
+    std::size_t red = 0, green = 0;
+    for (unsigned y = 380; y < 486 && y < pair.h; ++y)
+        for (unsigned x = 436; x < 684 && x < pair.w; ++x) {
+            const auto &q = pair.at(x, y);
+            if (q[0] > q[1] + 40 && q[0] > 90)
+                ++red;
+            if (q[1] > q[0] + 40 && q[1] > 90)
+                ++green;
+        }
+    std::printf("  sphere %zu px, cube %zu px\n", red, green);
+    CHECK_GT(red, std::size_t(200));
+    CHECK_GT(green, std::size_t(200));
+
     if (probe::validation_on(app.Raw()))
         CHECK_EQ(probe::validation_errors(app.Raw()), std::size_t(0));
 

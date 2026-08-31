@@ -233,6 +233,11 @@ The grid is the floor of the scene, so solid things occlude it and
 translucent things wash over it; in the overlay it painted over a
 cloud that was in front of it.
 
+`examples/shapes` is where the three are side by side — a lattice of
+cubes, a shell of spheres coloured by direction, the same shell as
+billboards — with a slider that walks the sphere count across the tier
+boundary. `examples/orbit` is the same world in one panel-free window.
+
 ## Stated limitations
 
 - **Transparency is sorted per ITEM, not per particle.** Two

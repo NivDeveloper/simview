@@ -45,8 +45,12 @@ int main() {
         .Light({.direction = {0.3f, 0.5f, 1.0f}, .intensity = 0.85f})
         .Ambient(0.18f, 0.19f, 0.22f);
 
-    auto core = world.Cloud({.radius = 0.06f,
+    // Real geometry for the core — the triangle budget drops itself as
+    // the count grows — and billboards for the halo, where a disc is
+    // all a translucent speck needs to be.
+    auto core = world.Cloud({.radius = 0.05f,
                              .mode = sv::CloudMode::Solid,
+                             .shape = sv::CloudShape::Sphere,
                              .map = sv::CloudMap::Direction});
     auto halo = world.Cloud({.color = {0.40f, 0.70f, 1.0f, 0.16f},
                              .radius = 0.075f,

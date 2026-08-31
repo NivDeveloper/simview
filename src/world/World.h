@@ -14,6 +14,7 @@
 #include "Items.h"
 
 #include <cstdint>
+#include <deque>
 #include <list>
 #include <memory>
 #include <vector>
@@ -68,7 +69,11 @@ struct WorldState {
         std::uint32_t index_count = 0;
         std::uint32_t triangles = 0;
     };
-    std::vector<Mesh> meshes;
+    // A deque, not a vector: an item KEEPS the address of the shape it
+    // resolved, and a second shape appearing in the same world would
+    // move the first one out from under it. The same reason
+    // SceneState holds its items in a list.
+    std::deque<Mesh> meshes;
 
     // Where the world actually draws when the device can multisample:
     // a colour and depth pair carrying several samples a pixel, which
