@@ -59,3 +59,28 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
         set_tests_properties(headless.${t} PROPERTIES LABELS "device")
     endif()
 endforeach()
+
+# S2's bring-up gate: the app-owned Vulkan stack with NVRHI and gpud
+# both adopting it, headless. It speaks src/ internals on purpose —
+# the App does not drive this stack until the swap commit — so it gets
+# the src include dir and the renderer targets the foreach checks
+# deliberately lack.
+add_executable(platform_check checks/platform_check.cpp)
+target_include_directories(platform_check PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(platform_check PRIVATE simview::simview SDL3::SDL3
+    gpud::vulkan nvrhi nvrhi_vk Vulkan::Headers)
+set_target_properties(platform_check PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(NOT MSVC)
+    target_compile_options(platform_check PRIVATE ${SIMVIEW_WARNINGS})
+endif()
+if(WIN32)
+    add_custom_command(TARGET platform_check POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:platform_check> $<TARGET_FILE_DIR:platform_check>
+        COMMAND_EXPAND_LISTS)
+endif()
+add_test(NAME headless.platform_check COMMAND platform_check)
+set_tests_properties(headless.platform_check PROPERTIES SKIP_RETURN_CODE 77
+    LABELS "device")

@@ -180,6 +180,7 @@ endif()
 add_library(simview STATIC
     src/core/Error.cpp
     src/platform/Device.cpp
+    src/platform/Vk.cpp
     src/platform/Frame.cpp
     src/platform/Input.cpp
     src/scene/Field.cpp
@@ -199,7 +200,7 @@ target_include_directories(simview PUBLIC
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(simview PUBLIC gpud::gpud simview_imgui simview_implot
                               simview_implot3d
-                              PRIVATE gpud::sdl SDL3::SDL3)
+                              PRIVATE gpud::sdl SDL3::SDL3 Vulkan::Headers)
 target_include_directories(simview PRIVATE
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}
     ${implot3d_SOURCE_DIR})
