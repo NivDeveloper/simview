@@ -11,6 +11,7 @@
 #include "World.h"
 
 #include "../core/Error.h"
+#include "../platform/Device.h"
 
 #include <algorithm>
 #include <cstring>
@@ -38,20 +39,41 @@ void copy_mat(float (&dst)[16], const impl::Mat4 &m) {
     std::memcpy(dst, m.m, sizeof m.m);
 }
 
-// The camera, resolved against the target this frame is drawn into.
-WorldView view_of(const impl::WorldState &w, std::uint32_t tw,
-                  std::uint32_t th) {
+// Everything the items reported about where they are. The near plane
+// and the frustum both come out of it, which is why it is collected
+// once, after prepare — an item's extent is only settled when its
+// uploads are.
+impl::Aabb scene_bounds(const impl::WorldState &w) {
+    impl::Aabb b{};
+    for (const impl::WorldItem &it : w.items) {
+        impl::Vec3 lo{}, hi{};
+        if (it.ops && it.ops->bounds && it.ops->bounds(it, &lo, &hi))
+            impl::aabb_add(b, lo, hi);
+    }
+    return b;
+}
+
+// The camera, resolved against the target this frame is drawn into
+// and against what is in front of it.
+WorldView view_of(const impl::WorldState &w, std::uint32_t tw, std::uint32_t th,
+                  const impl::Aabb &scene) {
     const float aspect = th ? float(tw) / float(th) : 1.0f;
+    const float znear = impl::camera_znear(w.camera, scene);
     const impl::Mat4 v = impl::camera_view(w.camera);
-    const impl::Mat4 p = impl::camera_proj(w.camera, aspect);
-    return {.world_to_clip = impl::mat_mul(p, v),
+    const impl::Mat4 p = impl::camera_proj(w.camera, aspect, znear);
+    const impl::Mat4 vp = impl::mat_mul(p, v);
+    return {.world_to_clip = vp,
             .world_to_view = v,
             .view_to_clip = p,
             .camera_pos = impl::camera_position(w.camera),
-            .znear = impl::camera_znear(w.camera),
+            .znear = znear,
             .distance = w.camera.distance,
             .tw = tw,
-            .th = th};
+            .th = th,
+            .focal_px = impl::focal_px(w.camera, th),
+            .orthographic =
+                w.camera.projection == impl::Projection::Orthographic,
+            .frustum = impl::frustum_of(vp)};
 }
 
 bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
@@ -140,10 +162,10 @@ impl::WorldItem &world_item_add(impl::WorldState &w, const WorldItemOps *ops) {
     return it;
 }
 
-void world_draw(impl::WorldState &w, nvrhi::ICommandList *cl,
-                impl::RenderTarget &t) {
+void world_draw(impl::WorldState &w, impl::Platform &pl,
+                nvrhi::ICommandList *cl, impl::RenderTarget &t) {
     if (t.fb && t.depth)
-        world_draw_into(w, cl, t.fb, t.w, t.h);
+        world_draw_into(w, pl, cl, t.fb, t.w, t.h);
 }
 
 namespace {
@@ -202,9 +224,9 @@ bool ensure_msaa(impl::WorldState &w, nvrhi::IFramebuffer *fb, std::uint32_t tw,
 
 } // namespace
 
-void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
-                     nvrhi::IFramebuffer *out, std::uint32_t tw,
-                     std::uint32_t th) {
+void world_draw_into(impl::WorldState &w, impl::Platform &pl,
+                     nvrhi::ICommandList *cl, nvrhi::IFramebuffer *out,
+                     std::uint32_t tw, std::uint32_t th) {
     if (!out || !out->getDesc().depthAttachment.texture || !tw || !th)
         return;
 
@@ -218,15 +240,28 @@ void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
         if (it.ops && it.ops->prepare)
             it.ops->prepare(it, cl);
 
-    WorldView view = view_of(w, tw, th);
+    WorldView view = view_of(w, tw, th, scene_bounds(w));
     if (!write_view_cb(w, cl, view))
         return;
     view.view_cb = w.view_cb;
 
+    // Culling is the WORLD's, not the item's, for the same reason the
+    // ordering is: an item that had to remember would eventually
+    // forget, and the one that forgot would be the one drawn wrong.
+    // An item with no bounds is drawn — see WorldItemOps::bounds.
     w.cmds.clear();
-    for (impl::WorldItem &it : w.items)
-        if (it.ops && it.ops->submit)
-            it.ops->submit(it, view, w.cmds);
+    for (impl::WorldItem &it : w.items) {
+        if (!it.ops || !it.ops->submit)
+            continue;
+        impl::Vec3 lo{}, hi{};
+        if (w.cull && it.ops->bounds && it.ops->bounds(it, &lo, &hi) &&
+            !impl::frustum_intersects(view.frustum, {lo, hi, true})) {
+            if (w.stats)
+                ++w.stats->culled;
+            continue;
+        }
+        it.ops->submit(it, view, w.cmds);
+    }
     for (std::size_t i = 0; i < w.cmds.size(); ++i)
         w.cmds[i].seq = std::uint32_t(i);
 
@@ -258,12 +293,18 @@ void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
         while (j < w.cmds.size() && w.cmds[j].pass == id)
             ++j;
         if (pd.enabled && j > i) {
+            // A pass is a timing section as well as a marker. The
+            // marker names it in a capture; the section is what puts a
+            // number beside the name, which is the only way a claim
+            // about what a pass costs can be checked.
             cl->beginMarker(pd.name);
+            timing_begin(pl, cl, pd.name);
             for (std::size_t k = i; k < j; ++k) {
                 const DrawCmd &c = w.cmds[k];
                 if (c.item && c.item->ops && c.item->ops->draw)
                     c.item->ops->draw(*c.item, c, cl, fb, view);
             }
+            timing_end(pl, cl);
             cl->endMarker();
         }
         i = j;
@@ -278,11 +319,18 @@ void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
                            nvrhi::AllSubresources);
 }
 
-const impl::WorldState::Mesh *world_mesh(impl::WorldState &w, int shape,
-                                         int tier, nvrhi::ICommandList *cl) {
+const impl::WorldState::Mesh *world_mesh_ready(const impl::WorldState &w,
+                                               int shape, int tier) {
     for (const auto &m : w.meshes)
         if (m.shape == shape && m.tier == tier)
             return &m;
+    return nullptr;
+}
+
+const impl::WorldState::Mesh *world_mesh(impl::WorldState &w, int shape,
+                                         int tier, nvrhi::ICommandList *cl) {
+    if (const impl::WorldState::Mesh *m = world_mesh_ready(w, shape, tier))
+        return m;
 
     // Sphere tiers are a triangle budget: 108 triangles for a crowd,
     // 972 for a handful. A cube has one tier because twelve triangles

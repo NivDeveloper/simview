@@ -85,6 +85,11 @@ void mouse_modifier_shift(impl::App *, bool down);
 // triangle counts. A tier is chosen from how many instances there
 // are, so this is how a check asks whether that rule fired without
 // timing anything.
+void culling(impl::App *, bool on);
+
+std::size_t item_triangles(impl::App *, const char *title, std::uint64_t *out,
+                           std::size_t cap);
+
 std::size_t mesh_tiers(impl::App *, const char *title, unsigned *triangles,
                        std::size_t cap);
 

@@ -151,21 +151,47 @@ int main() {
     // Two worlds are on screen, so two draws — one each, not 8001.
     CHECK_LT(drew, std::uint64_t(4));
 
-    // ── the triangle budget follows the crowd ────────────────────────
-    // The single sphere gets the round one; eight thousand get the
-    // cheap one. vklib learned this at fifty thousand instances of a
-    // three-and-a-half-thousand-triangle sphere, and the frame went
-    // with it.
-    unsigned few[4] = {0, 0, 0, 0}, lots[4] = {0, 0, 0, 0};
-    const std::size_t nf = probe::mesh_tiers(app.Raw(), "mesh", few, 4);
-    const std::size_t nl = probe::mesh_tiers(app.Raw(), "many", lots, 4);
-    REQUIRE(nf > 0);
-    REQUIRE(nl > 0);
-    std::printf("  triangles: %u for one sphere, %u for %d\n", few[0], lots[0],
-                kN);
-    CHECK_LT(lots[0], few[0] / 4);
-    CHECK_GT(few[0], 400u);
-    CHECK_LT(lots[0], 200u);
+    // ── the tier follows how big they are, not how many ──────────────
+    // What the item ASKED FOR, not what the world has resident: both
+    // tiers of a shape are built up front, so residency stopped being
+    // an answer to this question the moment the choice moved to the
+    // camera.
+    const auto per_instance = [&](const char *title, int count) {
+        std::uint64_t t[4] = {0, 0, 0, 0};
+        const std::size_t n = probe::item_triangles(app.Raw(), title, t, 4);
+        CHECK_GT(n, std::size_t(0));
+        return count ? unsigned(t[0] / std::uint64_t(count)) : 0u;
+    };
+
+    // The single sphere fills a good part of its panel and gets the
+    // round mesh. Eight thousand at a radius of 0.09, thirty units
+    // out, are a pixel across each — nothing a round one would show.
+    const unsigned one_tri = per_instance("mesh", 1);
+    const unsigned crowd_far = per_instance("many", kN);
+    std::printf("  triangles each: %u for the near sphere, %u for %d far "
+                "ones\n",
+                one_tri, crowd_far, kN);
+    CHECK_GT(one_tri, 400u);
+    CHECK_LT(crowd_far, 200u);
+
+    // ── and the count alone gets that wrong ──────────────────────────
+    // The SAME eight thousand spheres, flown in until each covers real
+    // pixels. A rule reading the crowd size cannot tell this frame
+    // from the one above — it is the same crowd — and hands out the
+    // cheap mesh to shapes big enough to show every facet.
+    many.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 1.2f});
+    Bmp flown;
+    REQUIRE(harness::shot(app, "mesh_near", flown));
+    const unsigned crowd_near = per_instance("many", kN);
+    std::printf("  the same %d, flown in: %u triangles each\n", kN, crowd_near);
+    CHECK_GT(crowd_near, crowd_far * 4);
+
+    // Back out, and it drops again: the choice tracks the camera, it
+    // does not latch on the first frame that asked for detail.
+    many.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 30.0f});
+    Bmp backed;
+    REQUIRE(harness::shot(app, "mesh_back", backed));
+    CHECK_EQ(per_instance("many", kN), crowd_far);
 
     // ── a cube is made of flat faces ─────────────────────────────────
     // Three faces are visible from a corner and each takes the light
@@ -281,7 +307,10 @@ int main() {
     unsigned tri2[4] = {0, 0, 0, 0};
     const std::size_t n2 = probe::mesh_tiers(app.Raw(), "both", tri2, 4);
     std::printf("  two shapes in one world: %zu meshes resident\n", n2);
-    CHECK_EQ(n2, std::size_t(2));
+    // Three, not two: a sphere brings BOTH its tiers, because which
+    // one it wants is a question about the camera and the camera is
+    // not resolved when the meshes are made. A cube has one tier.
+    CHECK_EQ(n2, std::size_t(3));
     // And both are still drawn — a dangling shape draws nothing or
     // draws the other one.
     std::size_t red = 0, green = 0;

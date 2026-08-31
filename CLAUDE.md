@@ -136,7 +136,8 @@ Next: 3-D scene kinds, and more than one window.
   wait is unbounded, as a long dispatch needs.
 - **Where the time goes is measured on ONE clock, and nothing is
   measured that nobody asked for.** `SIMVIEW_TIMINGS=1` stamps every
-  frame's graphics sections (views, scene, ui, readback) with timestamp
+  frame's graphics sections (views, ui, readback, and either "scene"
+  for the 2D path or a section per PASS for a world) with timestamp
   queries on the frame's own command list and turns on gpud's batch
   stamps (`Options::profile`), both on the device clock; a
   once-a-second line reports frames, ms/frame, ms per section, and the
@@ -162,14 +163,23 @@ Next: 3-D scene kinds, and more than one window.
   check that fails without it, because vklib's equivalent sort was an
   identity function for its whole life. Limits are stated, not
   implied: transparency sorts per ITEM, a cloud keys on its centroid,
-  a billboard writes the quad's depth. **A world with no title IS the
+  a billboard writes the quad's depth. **The world culls, not the
+  item** — an item that had to remember would forget — and an item
+  reporting NO bounds is drawn, because "I do not know" is not
+  "empty" and a box invented for device-resident data would delete
+  it. A mesh tier follows how big a shape is ON SCREEN, with a
+  triangle budget beside it: each guards a failure the other cannot.
+  The near plane follows the geometry but only ever moves CLOSER than
+  the orbit-scale default, since unbounded items must not be sliced
+  away by a plane derived from bounded ones. **A world with no title IS the
   window** (the panels float over it); a titled one is a panel, for a
   layout with several views. A camera is perspective or orthographic
   and nothing else changes; a cloud may carry per-point VALUES beside
   its positions for a colormap, through the same three doors; up to
   four directional lights ride the view block, and an unlit world
-  keeps the light at the camera it always had. No multisampling
-  anywhere yet. `docs/3d-plan.md`.
+  keeps the light at the camera it always had. Four-sample
+  multisampling with a resolve, in the world stratum only.
+  `docs/3d-plan.md`.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive
@@ -218,10 +228,13 @@ Next: 3-D scene kinds, and more than one window.
   own events use — the automation seam. It is public API, not test
   scaffolding: scripted demos and reproducible bug reports want it too.
 - **`app.Stats()` counts what the engine did** — frames, uploads,
-  pipelines, draws. Behaviour a timing test could only guess at
-  becomes an exact assertion: an unchanged field uploads ONCE, a
-  second shot re-uploads nothing, one target format makes one
-  pipeline.
+  pipelines, draws, and what the view decided: `culled` items and
+  `triangles` submitted, the pair a level-of-detail rule is judged by
+  (`WorldItem::triangles` is the per-item drill-down, for a check
+  that needs to know what ONE item chose). Behaviour a timing test
+  could only guess at becomes an exact assertion: an unchanged field
+  uploads ONCE, a second shot re-uploads nothing, one target format
+  makes one pipeline.
 - **Examples are showcases, tests carry the verification.** No argv
   test modes, no probes in examples/ — that machinery lives in
   tests/checks/. And a showcase never prints — no stdout, no logs
@@ -245,7 +258,7 @@ Next: 3-D scene kinds, and more than one window.
 | **sanitizers** | `make san` / `make tsan` — ASan+UBSan over the suite, TSan over sync_check. **Neither runs on macOS 26+**: the AppleClang sanitizer runtime spins in `get_dyld_hdr()` during its own startup, before `main` — a runtime-vs-OS break, nothing to do with this code. `.github/workflows/weekly.yml` runs both on Linux |
 | **the flagship** | `make flagship` — builds examples/xy-gpu and examples/ising (need g++-16); NO runner reaches them, so this is the local gate that keeps the door from rotting |
 | **validation** | `make validate` — the suite and the four windowed showcases under `SIMVIEW_VVL=sync,abort`, then (Darwin) under Metal's API + shader validation; an error is an exit code, never a grep. CI's Linux leg runs its gates the same way on every push |
-| **bench** | `make bench` — what a crowd of instanced geometry costs, per shape and per count. A REPORT: it prints numbers and judges none of them |
+| **bench** | `make bench` — what a crowd of instanced geometry costs by shape and count, what the mesh tier is worth at a fixed crowd, and what the view cull saves with the camera held still and only the test switched. A REPORT: it prints numbers and judges none of them. Both constants in `choose_tier` come from it |
 | clean | `make clean` (build, build-san, build-tsan) |
 
 **Configure through `make`, never `cmake -B build` by hand.** SDL3 is
@@ -401,7 +414,9 @@ src/world/         the 3D stratum BESIDE scene, not inside it: a pass
                    table, items that submit draws, one sort, reverse-Z
                    depth, the camera. An item is ONE file, the same
                    shape as a kind. It borrows Gpu and RenderTarget
-                   from scene/ and the arrow points one way (lint).
+                   from scene/ and the arrow points one way (lint). A
+                   pass is also a TIMING section, so a frame says
+                   where its milliseconds went.
                    docs/3d-plan.md is the decision record
 src/testing/       sv::probe — the ONLY test-only code, in its own
                    never-installed archive (lint rule (i))

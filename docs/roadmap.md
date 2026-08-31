@@ -128,13 +128,18 @@ items — so the rest is additive:
   sits under transparency; and `make bench`, because two tiers is a
   performance claim and a claim wants a number. User meshes are the
   registry's next entry;
-- **W4** screen-size-driven tiers and culling, on the bounds hook the
-  item contract already declares;
+- **W4** (shipped 2026-08-31): `WorldItemOps::bounds` filled in, and
+  the three things that wanted it — a mesh tier chosen from how big a
+  shape is ON SCREEN rather than how many there are, view-frustum
+  culling done by the world so no item can forget it, and a near plane
+  that follows the geometry instead of the orbit. Per-pass GPU
+  timestamps went in first, because culling is a claim about cost and
+  a claim wants attribution: the cull measures 19.2x on a scene mostly
+  off screen;
 - **W5** the shadow pass, filling the row already reserved for it;
 - **W6** a flagship: a tensor sim producing device-resident N x 3.
 Named smaller ones live in 3d-plan.md: the `render/` hoist trigger,
-per-pass timestamps, a bounds-driven near plane, and a headless check
-for the camera gesture.
+and per-item culling granularity.
 
 **7. The transport** (shipped). The Executor keeps the clock — a
 `Tick` the body reads and never fabricates — and from that one fact

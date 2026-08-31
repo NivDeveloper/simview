@@ -167,5 +167,96 @@ int main() {
     // pipeline still sorts behind an earlier pipeline's far one.
     CHECK_LT(opaque_key(0, 0, d_far), opaque_key(1, 0, d_near));
 
+    // ── boxes ────────────────────────────────────────────────────────
+    // "I do not know" is a third answer, distinct from an empty box at
+    // the origin: an item that reports nothing must not be culled
+    // against a box somebody invented for it.
+    Aabb none{};
+    CHECK(!none.valid);
+    CHECK(frustum_intersects(Frustum{}, none));
+
+    Aabb b{};
+    aabb_add(b, {-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f});
+    CHECK(b.valid);
+    aabb_add(b, {0.0f, 0.0f, 4.0f}, {0.0f, 0.0f, 5.0f});
+    CHECK_LT(std::fabs(b.hi.z - 5.0f), 1e-6f);
+    CHECK_LT(std::fabs(b.lo.z + 1.0f), 1e-6f);
+
+    // Zero inside, and the true distance outside — not the distance to
+    // the centre, which is what a frustum test would over-cull by.
+    CHECK_LT(aabb_distance(b, {0.0f, 0.0f, 0.0f}), 1e-6f);
+    CHECK_LT(std::fabs(aabb_distance(b, {4.0f, 0.0f, 0.0f}) - 3.0f), 1e-5f);
+    CHECK_LT(std::fabs(aabb_distance(b, {-4.0f, -5.0f, 0.0f}) -
+                       std::sqrt(9.0f + 16.0f)),
+             1e-5f);
+
+    // ── the frustum ──────────────────────────────────────────────────
+    Camera3 fc{};
+    fc.focus = {0.0f, 0.0f, 0.0f};
+    fc.distance = 10.0f;
+    fc.q = camera_pose(0.0f, 0.0f);
+    const Mat4 F = mat_mul(camera_proj(fc, 1.0f), camera_view(fc));
+    const Frustum fr = frustum_of(F);
+    // Five, not six: the perspective projection runs to infinity, so
+    // its far plane comes out with a zero normal and is dropped rather
+    // than tested against at every box.
+    std::printf("  perspective frustum: %d planes\n", fr.count);
+    CHECK_EQ(fr.count, 5);
+
+    const auto at = [](Vec3 p, float r) {
+        return Aabb{
+            {p.x - r, p.y - r, p.z - r}, {p.x + r, p.y + r, p.z + r}, true};
+    };
+    CHECK(frustum_intersects(fr, at({0.0f, 0.0f, 0.0f}, 0.5f)));
+    // Far off to one side, and behind the eye: the two ways out.
+    CHECK(!frustum_intersects(fr, at({0.0f, 40.0f, 0.0f}, 0.5f)));
+    CHECK(!frustum_intersects(fr, at({40.0f, 0.0f, 0.0f}, 0.5f)));
+    // Straddling the eye — the case a corner test gets wrong, and the
+    // one the user is standing in.
+    CHECK(frustum_intersects(fr, at(camera_position(fc), 2.0f)));
+    // A box so large it contains the whole frustum.
+    CHECK(frustum_intersects(fr, at({0.0f, 0.0f, 0.0f}, 1000.0f)));
+
+    Camera3 orthoc = fc;
+    orthoc.projection = Projection::Orthographic;
+    const Frustum orf =
+        frustum_of(mat_mul(camera_proj(orthoc, 1.0f), camera_view(orthoc)));
+    // Six here: an orthographic depth is linear, so it HAS a far plane
+    // and the same extraction finds it.
+    std::printf("  orthographic frustum: %d planes\n", orf.count);
+    CHECK_EQ(orf.count, 6);
+    CHECK(frustum_intersects(orf, at({0.0f, 0.0f, 0.0f}, 0.5f)));
+    CHECK(!frustum_intersects(orf, at({0.0f, 40.0f, 0.0f}, 0.5f)));
+
+    // ── the near plane ───────────────────────────────────────────────
+    // It only ever moves CLOSER than the orbit-scale default. Items are
+    // free to report no bounds, and geometry nobody accounted for must
+    // not be sliced away by a plane derived from geometry somebody did.
+    Camera3 nc{};
+    nc.distance = 1000.0f;
+    const float base = camera_znear(nc);
+    CHECK_LT(std::fabs(camera_znear(nc, Aabb{}) - base), 1e-9f);
+    // A subject half a unit from the eye: the default would put the
+    // near plane a full unit out and clip it away entirely.
+    const Vec3 eye = camera_position(nc);
+    CHECK_GT(base, 0.5f);
+    CHECK_LT(camera_znear(nc, at(eye + camera_forward(nc) * 0.5f, 0.01f)),
+             0.5f);
+    // Nothing but distant geometry does NOT push it out.
+    CHECK_LT(camera_znear(nc, at({0.0f, 0.0f, 0.0f}, 1.0f)), base + 1e-6f);
+    // And it never reaches zero, whatever the box says.
+    CHECK_GT(camera_znear(nc, at(eye, 5.0f)), 0.0f);
+
+    // ── projected size ───────────────────────────────────────────────
+    // Halving the distance doubles the pixels; the orthographic camera
+    // does not care how far away anything is, which is the whole of
+    // the difference between them.
+    const float f1 = focal_px(fc, 400);
+    CHECK_GT(f1, 0.0f);
+    const float ortho_px = focal_px(orthoc, 400);
+    CHECK_GT(ortho_px, 0.0f);
+    std::printf("  focal: %.1f px per unit at unit depth, ortho %.1f flat\n",
+                double(f1), double(ortho_px));
+
     return check::summary("world math");
 }

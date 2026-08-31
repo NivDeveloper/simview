@@ -273,12 +273,18 @@ boundary. `examples/orbit` is the same world in one panel-free window.
   derived from the data: deriving it would need a reduction over the
   buffer every frame, and a scale that moves under you is worse than
   one you set.
-- **A mesh tier is chosen from the instance COUNT, not from how big
-  the shapes are on screen.** A dozen spheres filling the frame get
-  the round mesh and ten thousand specks get the cheap one, which is
-  right; ten thousand spheres each filling a quarter of the frame get
-  the cheap one too, which is not. Screen size would be the better
-  signal and needs a bounds the item does not yet compute.
+- **Culling and the tier are per ITEM, and a cloud is one item.** A
+  crowd half out of frame is drawn whole, and the tier comes from the
+  CENTROID's distance, so a cloud that stretches far in depth gets one
+  answer for all of it. Splitting an item into parts the view could
+  reject separately is the next thing here, and it wants a reason
+  first: the scenes that hurt are many crowds, which this already
+  handles, not one crowd that is very long.
+- **A cloud whose points only ever lived on the device reports no
+  bounds**, so it is never culled and never moves the near plane. The
+  host has nothing to walk and a box it invented could delete data
+  nobody can look at. Declaring them from the producer's side is the
+  escape hatch that would close this, and no workload has asked yet.
 - **No shadows** (W5), and no user meshes yet: the built-ins cover
   particles, and geometry a caller computed is the next thing the
   registry grows. The colour target is 8-bit UNORM, so tone mapping
@@ -292,13 +298,14 @@ boundary. `examples/orbit` is the same world in one panel-free window.
   them into their own layer, behaviour-preserving, under the pixel
   checks. Doing it now would churn three 2D kinds, the lint DAG and
   CMake for no behaviour.
-- **Per-pass GPU timestamps.** The passes carry debug markers today;
-  timing sections do not nest and a world already draws inside the
-  frame's "views" section, so attribution per pass wants its own
-  timestamp pair.
-- **A bounds-driven near plane.** `WorldItemOps::bounds` is declared
-  and null: the near plane follows the orbit distance for now, and a
-  world of very different scale would rather it followed the geometry.
+- ~~Per-pass GPU timestamps~~ — **closed in W4**. A world stamps a
+  section per pass instead of drawing inside one called "scene"; the
+  2D path keeps that name. Sections still do not nest, so a world's
+  passes ARE the attribution rather than a level below one.
+- ~~A bounds-driven near plane~~ — **closed in W4**. It only ever
+  moves the plane CLOSER than the orbit-scale default, never further:
+  items may report no bounds, and geometry nobody accounted for must
+  not be sliced away by a plane derived from geometry somebody did.
 - ~~A headless check for the controller~~ — **closed** by
   `input_check` and `tests/harness/Input.h`.
 
@@ -327,3 +334,86 @@ Every probe is restricted to its own panel's rectangle, pinned by the
 check. The first version searched the whole shot for a colour and
 found the OTHER panel's sphere — it passed, and it passed for the
 wrong reason, which the sort drill is what exposed.
+
+## W4 — what the view decides not to draw
+
+Three decisions, all reading one hook the item contract had declared
+and nobody filled: `WorldItemOps::bounds`.
+
+**Culling belongs to the world, not the item.** The world asks each
+item for its box, tests it against the frustum, and only then calls
+`submit`. Putting it in the items would mean every future item has to
+remember, and the one that forgot would be the one drawn wrong — the
+same argument that put the ordering in the world in W1.
+
+**`bounds` returning FALSE means "I do not know", not "empty".** A
+cloud whose points live on the device cannot walk them, and a box
+invented for it would delete geometry nobody can see. An item that
+reports nothing is drawn, and contributes nothing to the near plane.
+
+**The tier follows screen size, with a triangle budget beside it.**
+Both halves are needed and each guards a failure the other cannot:
+screen size alone hands a fine mesh to a crowd that cannot afford one,
+and the count alone gives the cheap mesh to a dozen spheres filling
+the frame — which is exactly what W3 shipped and what this replaces.
+The budget is measured (about half a millisecond per million
+triangles here, so twenty million is a frame's worth); the six-pixel
+threshold is read off the mesh, whose cheap sphere carries twelve
+segments around its silhouette.
+
+Making a mesh needs the frame's command list and picking one needs the
+camera, so `prepare` builds BOTH tiers of a shape and `submit` chooses
+between them. That is why a world with one sphere shape holds three
+meshes and not two.
+
+**The near plane only ever moves closer.** Under the old rule an orbit
+of a thousand units put it a full unit from the eye, and a subject
+panned close to the camera was simply not in the picture. It now
+follows the nearest bounded geometry — but never past the old default,
+because an item is free to report no bounds and its geometry must not
+be sliced away by a plane derived from somebody else's.
+
+### The numbers
+
+| what | measured |
+| --- | --- |
+| the cull, 64 crowds spread over 960 world units, camera on one corner, 60 off screen | 22.475 ms off, 1.173 ms on — **19.2x** |
+| the fine tier | 0.488 ms per million triangles, so a 16 ms frame is about 33 million |
+| 20000 spheres at 12.1 px of radius | 19.44 M triangles, 9.481 ms |
+| the same 20000 at 5.4 px | 2.16 M triangles, 1.061 ms |
+
+960x720, headless, 4x multisampled, best of 25 frames, on this
+machine's integrated GPU. What moves them: the device, the window size
+(fill is most of the first table), the sample count, and for the tier
+rows the camera distance, which is what chooses the mesh.
+
+### What the checks prove
+
+`cull_check` asks the only question that can fail usefully: **culling
+must not change the picture.** Each pose in the sweep is rendered
+twice, with the test off and on, and the two must be pixel-identical.
+
+The first version asserted instead that a culled item draws nothing —
+which is a tautology, since culling is what removed the pixels, and it
+passed a drill that threw away eleven thousand pixels of a sphere. The
+pair-of-renders form catches that drill at once. The sweep pans the
+subject out through a CORNER, which is where a plane-by-plane test is
+weakest and is an exit a turntable cannot produce at all.
+
+Around it: the camera standing inside the subject's own box (the case
+a corner test gets wrong, and the frame the user is closest to); a
+cloud with no host data left alone; and a sphere half a unit from an
+eye orbiting a thousand, which the old near plane clipped away
+entirely and which must still sort in front of the backdrop.
+
+`mesh_check` pins the tier claim as the count-based rule cannot: the
+SAME eight thousand spheres, far away and flown in, get 108 and 972
+triangles. It reads what the item ASKED FOR — `WorldItem::triangles`,
+the drill-down from `Stats::triangles` — because both tiers are now
+resident and residency stopped being an answer.
+
+Five drills, each watched red then restored: the frustum testing the
+nearest corner instead of the furthest; the near plane ignoring the
+bounds; the tier reading the count again; bounds guessed for device
+data; and a box too tight by the radius, which is the one the first
+version of the check could not see.

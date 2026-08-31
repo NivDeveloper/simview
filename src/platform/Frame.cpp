@@ -131,14 +131,18 @@ void frame_render(impl::App *a, const Presenter &p) {
         }
         {
             SV_ZONE("scene");
-            timing_begin(pl, cl, "scene");
             // One or the other into the window: a world owns the depth
             // buffer and the clear, so the two cannot share a target.
-            if (a->world)
-                world_draw_into(*a->world, cl, t.fb, t.w, t.h);
-            else
+            // A world stamps its OWN passes: sections do not nest, so
+            // there is no "scene" around them to nest inside, and a
+            // number per pass is the only form of it worth having.
+            if (a->world) {
+                world_draw_into(*a->world, pl, cl, t.fb, t.w, t.h);
+            } else {
+                timing_begin(pl, cl, "scene");
                 scene_draw(a->scene, cl, t.fb, t.w, t.h, t.format);
-            timing_end(pl, cl);
+                timing_end(pl, cl);
+            }
         }
         if (ui) {
             SV_ZONE("ui");

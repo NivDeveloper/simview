@@ -11,7 +11,8 @@ add_subdirectory(installed_surface)
 set(pure_checks sync_check)
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             view_check resize_check viewport_check lines_check decouple_check
-            hang_check timing_check world_check input_check grid_check mesh_check)
+            hang_check timing_check world_check input_check grid_check mesh_check
+            cull_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     # Quoted includes resolve against the INCLUDING file's directory,

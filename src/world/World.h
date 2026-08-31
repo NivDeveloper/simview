@@ -9,6 +9,7 @@
 // three data doors, the Sync gates, the untracked-pull accounting — is
 // the same machinery, because a world sits behind the same frame.
 
+#include "../platform/Timing.h"
 #include "../scene/Target.h"
 #include "Geometry.h"
 #include "Items.h"
@@ -32,6 +33,10 @@ struct WorldState {
     // here is its pipeline id.
     std::vector<const WorldItemOps *> ops_seen;
     int untracked_pulls = 0;
+    // Off only from the test probe. Culling is supposed to be
+    // invisible — the same picture, fewer draws — and the only way to
+    // assert that is to render both and compare.
+    bool cull = true;
 
     Camera3 camera{};
 
@@ -91,11 +96,16 @@ struct WorldState {
 // world, against whatever framebuffer it draws into — a view's target
 // or the window itself. The depth attachment is the framebuffer's
 // own: a world cannot draw without one.
-void world_draw_into(impl::WorldState &, nvrhi::ICommandList *,
-                     nvrhi::IFramebuffer *, std::uint32_t w, std::uint32_t h);
+// The Platform is here for its timing: a world stamps its passes
+// separately, which is the only way an attribution — this much in the
+// opaque pass, that much in the transparent — can be read off a frame
+// at all.
+void world_draw_into(impl::WorldState &, impl::Platform &,
+                     nvrhi::ICommandList *, nvrhi::IFramebuffer *,
+                     std::uint32_t w, std::uint32_t h);
 
 // The same, for a world shown in a panel.
-void world_draw(impl::WorldState &, nvrhi::ICommandList *,
+void world_draw(impl::WorldState &, impl::Platform &, nvrhi::ICommandList *,
                 impl::RenderTarget &);
 
 void world_release(impl::WorldState &);
@@ -118,5 +128,11 @@ impl::WorldItem &world_item_add(impl::WorldState &, const WorldItemOps *);
 // draw time the frame's already has a pass on it.
 const impl::WorldState::Mesh *world_mesh(impl::WorldState &, int shape,
                                          int tier, nvrhi::ICommandList *);
+
+// The same mesh if it has already been made, and null if it has not.
+// No command list, so it is what a submit can ask: by then the choice
+// is between things prepare already built.
+const impl::WorldState::Mesh *world_mesh_ready(const impl::WorldState &,
+                                               int shape, int tier);
 
 } // namespace sv

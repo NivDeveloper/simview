@@ -19,6 +19,8 @@ struct Stats {
     std::uint64_t uploads = 0;
     std::uint64_t pipelines = 0;
     std::uint64_t draws = 0;
+    std::uint64_t culled = 0;
+    std::uint64_t triangles = 0;
 };
 
 namespace impl {

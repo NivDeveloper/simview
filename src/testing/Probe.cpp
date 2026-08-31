@@ -130,6 +130,26 @@ std::size_t mesh_tiers(impl::App *a, const char *title, unsigned *triangles,
     return n;
 }
 
+void culling(impl::App *a, bool on) {
+    for (impl::View &v : a->views)
+        if (v.world)
+            v.world->cull = on;
+    if (a->world)
+        a->world->cull = on;
+}
+
+std::size_t item_triangles(impl::App *a, const char *title, std::uint64_t *out,
+                           std::size_t cap) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w)
+        return 0;
+    std::size_t n = 0;
+    for (const impl::WorldItem &it : w->items)
+        if (n < cap)
+            out[n++] = it.triangles;
+    return n;
+}
+
 bool camera_of(impl::App *a, const char *title, CameraState *out) {
     impl::WorldState *w = world_of(a, title);
     if (!w || !out)

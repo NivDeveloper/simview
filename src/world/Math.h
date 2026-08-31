@@ -341,6 +341,152 @@ inline Mat4 camera_proj(const Camera3 &c, float aspect) {
                : proj_reverse_z(c.fovy, aspect, camera_znear(c));
 }
 
+// An axis-aligned box in world units, and the union of nothing: a box
+// that has not been given a point yet is INVALID rather than empty at
+// the origin, because a zero-extent box at the origin is a real
+// answer and "I do not know" is not.
+struct Aabb {
+    Vec3 lo{}, hi{};
+    bool valid = false;
+};
+
+inline void aabb_add(Aabb &b, Vec3 lo, Vec3 hi) {
+    if (!b.valid) {
+        b.lo = lo;
+        b.hi = hi;
+        b.valid = true;
+        return;
+    }
+    b.lo = {b.lo.x < lo.x ? b.lo.x : lo.x, b.lo.y < lo.y ? b.lo.y : lo.y,
+            b.lo.z < lo.z ? b.lo.z : lo.z};
+    b.hi = {b.hi.x > hi.x ? b.hi.x : hi.x, b.hi.y > hi.y ? b.hi.y : hi.y,
+            b.hi.z > hi.z ? b.hi.z : hi.z};
+}
+
+// How far a point is from the nearest point of the box — zero when it
+// is inside, which is a case the near plane very much has.
+inline float aabb_distance(const Aabb &b, Vec3 p) {
+    if (!b.valid)
+        return 0.0f;
+    const float dx =
+        p.x < b.lo.x ? b.lo.x - p.x : (p.x > b.hi.x ? p.x - b.hi.x : 0.0f);
+    const float dy =
+        p.y < b.lo.y ? b.lo.y - p.y : (p.y > b.hi.y ? p.y - b.hi.y : 0.0f);
+    const float dz =
+        p.z < b.lo.z ? b.lo.z - p.z : (p.z > b.hi.z ? p.z - b.hi.z : 0.0f);
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// A half-space, `n . p + d >= 0` inside. Normalized, so `n . p + d` is
+// a DISTANCE in world units and a caller can push a plane out by a
+// radius without a second thought.
+struct Plane {
+    Vec3 n{};
+    float d = 0.0f;
+};
+
+// The five planes a point must be inside of to be drawn. Five, not
+// six: the perspective projection here runs to infinity, so its far
+// plane is degenerate — the extraction produces a zero normal and it
+// is dropped rather than special-cased at every test.
+//
+// Read straight off the combined matrix, which is what makes this
+// correct for BOTH projections without knowing which one it is: the
+// clip conditions are -w <= x,y <= w and 0 <= z <= w whatever produced
+// the matrix, and each is one row combination.
+struct Frustum {
+    Plane p[6]{};
+    int count = 0;
+};
+
+inline Frustum frustum_of(const Mat4 &m) {
+    // Column-major storage, so row i is m[i], m[4+i], m[8+i], m[12+i].
+    const auto row = [&](int i) {
+        return Plane{{m.m[i], m.m[4 + i], m.m[8 + i]}, m.m[12 + i]};
+    };
+    const auto add = [](Plane a, Plane b, float sign) {
+        return Plane{a.n + b.n * sign, a.d + b.d * sign};
+    };
+    const Plane r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
+    const Plane raw[6] = {
+        add(r3, r0, 1.0f),  // left:   x >= -w
+        add(r3, r0, -1.0f), // right:  x <= w
+        add(r3, r1, 1.0f),  // bottom: y >= -w
+        add(r3, r1, -1.0f), // top:    y <= w
+        add(r3, r2, -1.0f), // near:   z <= w
+        r2,                 // far:    z >= 0 — degenerate when infinite
+    };
+
+    Frustum f;
+    for (const Plane &q : raw) {
+        const float len = length(q.n);
+        if (len < 1e-12f)
+            continue;
+        f.p[f.count++] = {q.n * (1.0f / len), q.d / len};
+    }
+    return f;
+}
+
+// Whether any part of the box could be drawn. Conservative in the one
+// direction that is safe: a box that straddles a corner of the frustum
+// can pass every plane test and still be invisible, which costs a draw
+// nobody sees. The reverse — a false MISS — would delete geometry, so
+// the test is written to make it impossible rather than tight.
+inline bool frustum_intersects(const Frustum &f, const Aabb &b) {
+    if (!b.valid)
+        return true;
+    for (int i = 0; i < f.count; ++i) {
+        const Plane &q = f.p[i];
+        // The corner furthest ALONG the normal. If even that one is
+        // behind the plane, every corner is.
+        const Vec3 corner{q.n.x >= 0.0f ? b.hi.x : b.lo.x,
+                          q.n.y >= 0.0f ? b.hi.y : b.lo.y,
+                          q.n.z >= 0.0f ? b.hi.z : b.lo.z};
+        if (dot(q.n, corner) + q.d < 0.0f)
+            return false;
+    }
+    return true;
+}
+
+// The near plane, told what is actually out there. It only ever moves
+// CLOSER than the orbit-scale default, never further: items are free
+// to report no bounds at all, and geometry an item did not account for
+// must not be sliced away by a plane derived from geometry it did.
+//
+// The default alone is a real failure at range — orbiting a thousand
+// units out puts the near plane a whole unit from the eye, and a
+// subject panned close to the camera is simply gone.
+inline float camera_znear(const Camera3 &c, const Aabb &scene) {
+    const float base = camera_znear(c);
+    if (!scene.valid)
+        return base;
+    // Half the distance to the nearest thing: a plane exactly ON the
+    // geometry clips half of it away.
+    const float want = aabb_distance(scene, camera_position(c)) * 0.5f;
+    if (want >= base)
+        return base;
+    return want > 1e-5f ? want : 1e-5f;
+}
+
+inline Mat4 camera_proj(const Camera3 &c, float aspect, float znear) {
+    return c.projection == Projection::Orthographic
+               ? proj_ortho_reverse_z(camera_view_height(c), aspect, znear,
+                                      camera_zfar(c))
+               : proj_reverse_z(c.fovy, aspect, znear);
+}
+
+// How many pixels one world unit covers at one unit of view depth.
+// Perspective divides this by the depth; orthographic does not, which
+// is the whole difference between the two and the reason this is a
+// number and a flag rather than two functions.
+inline float focal_px(const Camera3 &c, std::uint32_t th) {
+    if (c.projection == Projection::Orthographic) {
+        const float h = camera_view_height(c);
+        return h > 0.0f ? float(th) / h : 0.0f;
+    }
+    return float(th) / (2.0f * std::tan(0.5f * c.fovy));
+}
+
 // The depth a point WOULD be written at, quantized — the sort key's
 // only ingredient. Taken through the REAL projection rather than a
 // formula of its own, so it is the number the depth buffer will hold

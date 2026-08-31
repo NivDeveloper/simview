@@ -66,6 +66,16 @@ struct CloudState {
     // The centroid the sort keys on. One number for the whole cloud:
     // a cloud is one draw, so it takes one place in the order.
     impl::Vec3 centre{};
+    // Where the points are, in the units they were given in — the
+    // radius is added when the box is handed out, so changing the
+    // radius cannot leave a stale box behind.
+    //
+    // `known` is false for a cloud whose points live on the device and
+    // were never declared: the host has nothing to walk, and a box it
+    // invented would cull geometry it cannot see.
+    impl::Vec3 lo{}, hi{};
+    bool known = false;
+    bool declared = false; // by the caller, for data the host never sees
 };
 
 // Matches cloud.slang's CParams, and mesh.slang's MParams less the
@@ -161,13 +171,42 @@ void channel_resolve(Channel &ch, const impl::Gpu &gpu, const char *name) {
             .setDebugName(name));
 }
 
-void recentre(CloudState &cs) {
+// One walk, both summaries. The centroid places the cloud in the draw
+// order and the box decides whether it is drawn at all, and walking
+// the points twice to learn two things about them would be silly.
+void resummarize(CloudState &cs) {
+    if (cs.declared)
+        return;
+
     impl::Vec3 sum{};
+    impl::Aabb box{};
     const Channel &ch = cs.pos;
-    for (std::size_t i = 0; i < ch.count && i * 3 + 2 < ch.shadow.size(); ++i)
-        sum = sum + impl::Vec3{ch.shadow[i * 3], ch.shadow[i * 3 + 1],
-                               ch.shadow[i * 3 + 2]};
-    cs.centre = ch.count ? sum * (1.0f / float(ch.count)) : impl::Vec3{};
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < ch.count && i * 3 + 2 < ch.shadow.size(); ++i) {
+        const impl::Vec3 p{ch.shadow[i * 3], ch.shadow[i * 3 + 1],
+                           ch.shadow[i * 3 + 2]};
+        sum = sum + p;
+        impl::aabb_add(box, p, p);
+        ++n;
+    }
+
+    cs.centre = n ? sum * (1.0f / float(n)) : impl::Vec3{};
+    cs.lo = box.lo;
+    cs.hi = box.hi;
+    cs.known = box.valid;
+}
+
+// The radius goes on here rather than into the stored box: a point is
+// drawn as a shape AROUND it, and the shape is what has to be inside
+// the frustum.
+bool bounds(const impl::WorldItem &it, impl::Vec3 *lo, impl::Vec3 *hi) {
+    const CloudState &cs = *static_cast<const CloudState *>(it.state);
+    if (!cs.known)
+        return false;
+    const impl::Vec3 r{cs.radius, cs.radius, cs.radius};
+    *lo = cs.lo + r * -1.0f;
+    *hi = cs.hi + r;
+    return true;
 }
 
 // Everything that touches memory happens here, with the frame's list
@@ -179,17 +218,52 @@ void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
     channel_prepare(cs.pos, it.gpu, cl, it.stats, "cloud positions");
     channel_prepare(cs.val, it.gpu, cl, it.stats, "cloud values");
     if (cs.pos.dirty != was_dirty)
-        recentre(cs);
+        resummarize(cs);
     channel_resolve(cs.pos, it.gpu, "cloud positions (external)");
     channel_resolve(cs.val, it.gpu, "cloud values (external)");
 
-    // The tier is chosen from the crowd, not by the caller: a hundred
-    // spheres want to look round and fifty thousand want to be cheap,
-    // and nobody should have to know the number where that flips.
+    // Both tiers of the shape, because WHICH one is a question about
+    // the camera and the camera is not resolved yet. Making a mesh
+    // needs this command list; picking one needs the view; so the
+    // making happens here and the picking in submit.
     if (cs.shape != 0 && it.owner) {
-        const int tier = cs.pos.count > 4096 ? 0 : 1;
-        cs.mesh = world_mesh(*it.owner, cs.shape, cs.shape == 2 ? 0 : tier, cl);
+        cs.mesh = world_mesh(*it.owner, cs.shape, 0, cl);
+        if (cs.shape != 2)
+            world_mesh(*it.owner, cs.shape, 1, cl);
     }
+}
+
+// A sphere is worth its triangles when it is big enough on screen for
+// them to show, and worth nothing when it is a speck — so the tier is
+// chosen from the projected RADIUS, not from how many there are. The
+// count still gets a say through a triangle budget, because the two
+// guard different failures: screen size alone would hand a fine mesh
+// to a crowd that cannot afford one, and a count alone gives a cheap
+// mesh to a dozen spheres filling the frame.
+//
+// The budget is measured (bench/instances.cpp: the fine tier runs at
+// about half a millisecond per million triangles here, so twenty
+// million is a frame's worth and the tier stops at some twenty
+// thousand large spheres). The pixel threshold is read off the mesh
+// instead: the cheap sphere carries twelve segments around its
+// silhouette, so at six pixels of radius a segment is about three
+// pixels — right where a facet starts to read as a facet.
+constexpr float kFineRadiusPx = 6.0f;
+constexpr std::size_t kTriangleBudget = 20u << 20;
+
+void choose_tier(impl::WorldItem &it, CloudState &cs, const WorldView &view) {
+    if (cs.shape == 0 || cs.shape == 2 || !it.owner)
+        return;
+
+    const float px = screen_radius(view, cs.centre, cs.radius);
+    const impl::WorldState::Mesh *fine =
+        world_mesh_ready(*it.owner, cs.shape, 1);
+    const bool affordable =
+        fine && cs.pos.count * fine->triangles <= kTriangleBudget;
+    const int tier = px >= kFineRadiusPx && affordable ? 1 : 0;
+    if (const impl::WorldState::Mesh *m =
+            world_mesh_ready(*it.owner, cs.shape, tier))
+        cs.mesh = m;
 }
 
 void submit(impl::WorldItem &it, const WorldView &view,
@@ -197,6 +271,7 @@ void submit(impl::WorldItem &it, const WorldView &view,
     CloudState &cs = state_of(it);
     if (!cs.pos.live())
         return;
+    choose_tier(it, cs, view);
 
     const std::uint16_t d = impl::depth_key(view.world_to_clip, cs.centre);
     const PassId pass = it.ops->pass;
@@ -264,6 +339,8 @@ void draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     cl->draw(
         nvrhi::DrawArguments().setVertexCount(std::uint32_t(cs.pos.count) * 6));
     ++it.stats->draws;
+    it.triangles = std::uint64_t(cs.pos.count) * 2;
+    it.stats->triangles += it.triangles;
 }
 
 // The same item, drawn as geometry: one instance of a built-in shape
@@ -327,6 +404,8 @@ void draw_mesh(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
                         .setVertexCount(mesh->index_count)
                         .setInstanceCount(std::uint32_t(cs.pos.count)));
     ++it.stats->draws;
+    it.triangles = std::uint64_t(cs.pos.count) * mesh->triangles;
+    it.stats->triangles += it.triangles;
 }
 
 void release(impl::WorldItem &it) {
@@ -362,7 +441,7 @@ const WorldItemOps kCloudSolidOps{
     .submit = submit,
     .draw = draw,
     .release = release,
-    .bounds = nullptr,
+    .bounds = bounds,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
     .blend = kOpaqueBlend,
@@ -378,7 +457,7 @@ const WorldItemOps kCloudAdditiveOps{
     .submit = submit,
     .draw = draw,
     .release = release,
-    .bounds = nullptr,
+    .bounds = bounds,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
     .blend = kAdditiveBlend,
@@ -394,7 +473,7 @@ const WorldItemOps kCloudAlphaOps{
     .submit = submit,
     .draw = draw,
     .release = release,
-    .bounds = nullptr,
+    .bounds = bounds,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
     .blend = kAlphaBlend,
@@ -412,7 +491,7 @@ const WorldItemOps kMeshSolidOps{
     .submit = submit,
     .draw = draw_mesh,
     .release = release,
-    .bounds = nullptr,
+    .bounds = bounds,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
     .blend = kOpaqueBlend,
@@ -428,7 +507,7 @@ const WorldItemOps kMeshAdditiveOps{
     .submit = submit,
     .draw = draw_mesh,
     .release = release,
-    .bounds = nullptr,
+    .bounds = bounds,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
     .blend = kAdditiveBlend,
@@ -444,7 +523,7 @@ const WorldItemOps kMeshAlphaOps{
     .submit = submit,
     .draw = draw_mesh,
     .release = release,
-    .bounds = nullptr,
+    .bounds = bounds,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
     .blend = kAlphaBlend,
@@ -551,7 +630,7 @@ bool cloud_update(Cloud c, const float *xyz, std::size_t count) {
     WorldItem *it = static_cast<WorldItem *>(c.p);
     if (!channel_upload(cs->pos, it->gpu, "cloud positions", xyz, count))
         return false;
-    recentre(*cs);
+    resummarize(*cs);
     return true;
 }
 

@@ -417,7 +417,7 @@ void ui_views_resize(impl::App *a) {
 void ui_views_draw(impl::App *a, nvrhi::ICommandList *cl) {
     for (impl::View &v : a->views) {
         if (v.world)
-            world_draw(*v.world, cl, v.target);
+            world_draw(*v.world, a->platform, cl, v.target);
         else
             target_draw(v.scene, cl, v.target);
     }

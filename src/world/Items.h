@@ -37,6 +37,16 @@ struct WorldView {
     // rather than to the world scales by.
     float distance = 1.0f;
     std::uint32_t tw = 0, th = 0;
+    // Pixels per world unit at one unit of view depth, and whether
+    // the depth divides it. Together they answer "how big is this
+    // going to be on screen", which is the question a level of detail
+    // is really asking.
+    float focal_px = 0.0f;
+    bool orthographic = false;
+    // The planes this frame draws inside of. The world tests items
+    // against it before their submit; an item that wants it for its
+    // own parts has it here.
+    impl::Frustum frustum{};
     // The world's constant buffer, holding exactly these numbers. An
     // item binds it beside its own storage, which is why the binding
     // set is the item's to make and not the world's.
@@ -82,9 +92,14 @@ struct WorldItemOps {
 
     void (*release)(impl::WorldItem &) = nullptr;
 
-    // The item's extent in world units, if it has one. Null in W1 and
-    // read by nobody: it is the hook a bounds-driven near plane and a
-    // shadow frustum both need, declared where they will look for it.
+    // The item's extent in world units, if it has one. Read by the
+    // world, not by the item: it is what decides whether `submit` is
+    // called at all, and where the near plane goes.
+    //
+    // FALSE means "I do not know", which is not the same as empty. An
+    // item whose data lives on the device cannot walk it to find out,
+    // and the answer to that is to draw it — never to guess a box and
+    // cull against the guess.
     bool (*bounds)(const impl::WorldItem &, impl::Vec3 *lo,
                    impl::Vec3 *hi) = nullptr;
 
@@ -116,6 +131,10 @@ struct WorldItem {
     // share this, and the sort key can group them without waiting for
     // the cache.
     std::uint32_t pipeline_id = 0;
+    // What this item asked the device for last frame. The drill-down
+    // from Stats::triangles, and the only way to ask a level-of-detail
+    // rule what it actually chose rather than what it could have.
+    std::uint64_t triangles = 0;
 };
 
 } // namespace impl
@@ -133,5 +152,18 @@ void world_pipelines_release(std::vector<WorldPipelineEntry> &);
 // Where a pipeline sits in the cache — the sort key's state field.
 std::uint32_t world_pipeline_id(const std::vector<WorldPipelineEntry> &,
                                 const WorldPipelineEntry *);
+
+// How big something of this world radius, at this world point, comes
+// out on screen — in pixels of radius. What a level of detail should
+// be chosen by: a shape is worth triangles when it is large enough
+// for them to show, and the count of shapes has nothing to do with it.
+inline float screen_radius(const WorldView &v, impl::Vec3 centre,
+                           float radius) {
+    if (v.orthographic)
+        return radius * v.focal_px;
+    // View space looks down -Z, so the depth is the negated z.
+    const float depth = -impl::transform_point(v.world_to_view, centre).z;
+    return depth > 1e-6f ? radius * v.focal_px / depth : 1e9f;
+}
 
 } // namespace sv

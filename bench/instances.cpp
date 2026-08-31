@@ -1,5 +1,7 @@
-// What a crowd of instanced geometry costs, measured rather than
-// assumed — the reason the sphere has two triangle tiers at all.
+// What a crowd of instanced geometry costs, and what the two things
+// that decide how much of it to draw are worth: the triangle tier and
+// the view cull. Measured rather than assumed — both constants in
+// Cloud.cpp's choose_tier come from this file.
 //
 // The number is the GPU time of the world's "scene" section, read off
 // the device clock through the same timing path a user gets with
@@ -43,9 +45,20 @@ double scene_ms(sv::App &app, int frames) {
             return -1.0;
         sv::probe::GpuSection s[16];
         const std::size_t n = sv::probe::gpu_sections(app.Raw(), s, 16);
-        for (std::size_t k = 0; k < n; ++k)
-            if (std::string(s[k].name) == "scene")
-                seen.push_back(double(s[k].end_ns - s[k].begin_ns) / 1e6);
+        // A world stamps a section per PASS, so the world's cost is
+        // their sum. "scene" is the 2D path's name and is not here.
+        double total = 0.0;
+        bool any = false;
+        for (std::size_t k = 0; k < n; ++k) {
+            const std::string name(s[k].name);
+            if (name == "opaque" || name == "ground" || name == "transparent" ||
+                name == "overlay") {
+                total += double(s[k].end_ns - s[k].begin_ns) / 1e6;
+                any = true;
+            }
+        }
+        if (any)
+            seen.push_back(total);
     }
     if (seen.empty())
         return -1.0;
@@ -59,16 +72,29 @@ struct Row {
     unsigned triangles;
 };
 
+// One world filled with `n` points of the given shape, posed so the
+// whole disc is in frame at `distance`.
+struct Scene {
+    sv::App app;
+    sv::World world;
+    sv::Cloud cloud;
+};
+
+unsigned per_instance(sv::App &app, const char *title, std::size_t n) {
+    std::uint64_t t[4] = {0, 0, 0, 0};
+    if (sv::probe::item_triangles(app.Raw(), title, t, 4) == 0 || !n)
+        return 0;
+    return unsigned(t[0] / std::uint64_t(n));
+}
+
 } // namespace
 
 int main() {
     harness::begin();
     using namespace sv;
 
-    // 4096 is where the tier flips, so the two counts either side of
-    // it sit next to each other in the table: that pair IS the
-    // argument for having two tiers.
-    const std::size_t counts[] = {1000, 4000, 5000, 20000, 100000, 500000};
+    // ── what a crowd costs, by shape ─────────────────────────────────
+    const std::size_t counts[] = {1000, 4000, 20000, 100000, 500000};
     std::vector<Row> rows;
 
     for (std::size_t n : counts) {
@@ -97,14 +123,11 @@ int main() {
             app.Step();
             app.Step();
             const double ms = scene_ms(app, 25);
-            if (pass)
-                row.sphere = ms;
-            else
-                row.billboard = ms;
             if (pass) {
-                unsigned tri[4] = {0, 0, 0, 0};
-                if (probe::mesh_tiers(app.Raw(), nullptr, tri, 4) > 0)
-                    row.triangles = tri[0];
+                row.sphere = ms;
+                row.triangles = per_instance(app, nullptr, n);
+            } else {
+                row.billboard = ms;
             }
         }
         rows.push_back(row);
@@ -112,8 +135,10 @@ int main() {
 
     std::printf("\ninstanced draw cost, one world, 960x720, headless, "
                 "4x multisampled\n");
-    std::printf("the number is the GPU time of the frame's scene section, "
-                "best of 25\n\n");
+    std::printf("the number is the GPU time of the world's passes, "
+                "best of 25 frames\n");
+    std::printf("every sphere here is 2.4 px of radius on screen, so the "
+                "tier is the cheap one\n\n");
     std::printf("  %-10s %-16s %-16s %s\n", "instances", "billboard",
                 "sphere mesh", "triangles/sphere");
     for (const Row &r : rows) {
@@ -132,29 +157,132 @@ int main() {
     // runs of the same build disagreed threefold at the larger
     // counts), and a ratio between a steady number and an unsteady one
     // says less than either of them alone.
-    // The pair across the threshold, per instance, which is the only
-    // way to compare two counts honestly.
-    const Row *fine = nullptr, *coarse = nullptr;
-    for (const Row &r : rows) {
-        if (r.count == 4000)
-            fine = &r;
-        if (r.count == 5000)
-            coarse = &r;
-    }
-    if (fine && coarse && fine->sphere > 0 && coarse->sphere > 0)
-        std::printf("\nacross the tier boundary, per instance: %.3f us at "
-                    "4000 (972 triangles),\n%.3f us at 5000 (108) — a "
-                    "factor of %.1f. Measured at 1.7, 2.2 and 2.2 over\n"
-                    "three runs of one build, so the tier is worth about "
-                    "twice, not a precise number.\n",
-                    1000.0 * fine->sphere / double(fine->count),
-                    1000.0 * coarse->sphere / double(coarse->count),
-                    (fine->sphere / double(fine->count)) /
-                        (coarse->sphere / double(coarse->count)));
 
-    std::printf("\nwhat moves these: the device, the window size (fill is "
-                "most of it),\nthe sample count, and the instance count's "
-                "own tier — a sphere is 972\ntriangles below 4096 instances "
-                "and 108 above.\n\n");
+    // ── what the tier is worth, at a fixed crowd ─────────────────────
+    // The same twenty thousand spheres, flown in. Nothing about the
+    // crowd changes — only how big each one is on screen, which is the
+    // signal the tier is chosen from. Fill rises with the distance
+    // too, so the column to read is triangles against milliseconds,
+    // not the milliseconds alone.
+    std::printf("\nthe tier, at a fixed 20000 spheres: what changes is the "
+                "camera\n\n");
+    std::printf("  %-12s %-10s %-18s %-16s %s\n", "distance", "radius px",
+                "triangles/sphere", "triangles", "pass time");
+    struct TierRow {
+        float distance;
+        unsigned tri;
+        double ms;
+    };
+    std::vector<TierRow> tiers;
+    constexpr std::size_t kTierN = 20000;
+    for (float distance : {200.0f, 90.0f, 40.0f, 18.0f, 8.0f}) {
+        App app({.size = {960, 720}, .headless = true});
+        if (!app)
+            return 0;
+        sv::World w = app.World({.grid = false, .axes = false});
+        if (!w)
+            return 1;
+        w.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = distance});
+        sv::Cloud c = w.Cloud({.color = {0.7f, 0.8f, 1.0f, 1.0f},
+                               .radius = 0.25f,
+                               .shape = CloudShape::Sphere});
+        if (!c || !c.Update(disc(kTierN, 40.0f)))
+            return 1;
+        app.Step();
+        app.Step();
+        const double ms = scene_ms(app, 25);
+        const unsigned tri = per_instance(app, nullptr, kTierN);
+        tiers.push_back({distance, tri, ms});
+        char px[24], tot[24], t[24];
+        std::snprintf(px, sizeof px, "%.1f px",
+                      double(0.25f * (720.0f / (2.0f * 0.41421f)) / distance));
+        std::snprintf(tot, sizeof tot, "%.2f M",
+                      double(tri) * double(kTierN) / 1e6);
+        std::snprintf(t, sizeof t, "%.3f ms", ms);
+        char d[24];
+        std::snprintf(d, sizeof d, "%.0f units", double(distance));
+        std::printf("  %-12s %-10s %-18u %-16s %s\n", d, px, tri, tot, t);
+    }
+
+    // The budget in choose_tier is a triangle count, so this is the
+    // number that sets it: what a frame's worth of milliseconds buys.
+    for (const TierRow &r : tiers)
+        if (r.tri > 500 && r.ms > 0.0) {
+            const double per_m = r.ms / (double(r.tri) * double(kTierN) / 1e6);
+            std::printf("\nat the fine tier: %.3f ms per million triangles, "
+                        "so a 16 ms frame is about\n%.0f million — the "
+                        "budget in choose_tier is set well under that, "
+                        "because\nthe frame has a scene to draw as well as "
+                        "this one crowd.\n",
+                        per_m, 16.0 / per_m);
+            break;
+        }
+
+    // ── what culling is worth ────────────────────────────────────────
+    // One camera, one scene, the test switched off and on. Nothing
+    // else differs, so the difference IS the saving — where a second
+    // camera pointed somewhere emptier would change the fill as well
+    // and measure the two together.
+    {
+        App app({.size = {960, 720}, .headless = true});
+        if (!app)
+            return 0;
+        sv::World w = app.World({.grid = false, .axes = false});
+        if (!w)
+            return 1;
+        // Sixty-four crowds spread over a wide field, and a camera on
+        // one corner of it.
+        constexpr int kClouds = 64;
+        std::vector<sv::Cloud> keep;
+        for (int i = 0; i < kClouds; ++i) {
+            const float x = float(i % 8) * 120.0f - 420.0f;
+            const float y = float(i / 8) * 120.0f - 420.0f;
+            sv::Cloud c = w.Cloud({.color = {0.7f, 0.8f, 1.0f, 1.0f},
+                                   .radius = 0.6f,
+                                   .shape = CloudShape::Sphere});
+            if (!c)
+                return 1;
+            std::vector<float> pts = disc(4000, 40.0f);
+            for (std::size_t k = 0; k < pts.size(); k += 3) {
+                pts[k] += x;
+                pts[k + 1] += y;
+            }
+            if (!c.Update(pts))
+                return 1;
+            keep.push_back(std::move(c));
+        }
+        w.Camera({.focus = {-420.0f, -420.0f, 0.0f}, .distance = 120.0f});
+        app.Step();
+        app.Step();
+
+        probe::culling(app.Raw(), false);
+        const double off = scene_ms(app, 25);
+        const std::uint64_t draws_off = app.Stats().draws;
+        probe::culling(app.Raw(), true);
+        const double on = scene_ms(app, 25);
+        const std::uint64_t culled_before = app.Stats().culled;
+        Bmp last;
+        (void)harness::shot(app, "bench_cull", last);
+        const std::uint64_t culled = app.Stats().culled - culled_before;
+        (void)draws_off;
+
+        std::printf("\nthe view cull: %d crowds of 4000 spread over 960 "
+                    "world units, camera on\none corner of the field, "
+                    "%llu of them off screen\n\n",
+                    kClouds, static_cast<unsigned long long>(culled));
+        std::printf("  %-22s %s\n", "culling off", "culling on");
+        char a[24], b[24];
+        std::snprintf(a, sizeof a, "%.3f ms", off);
+        std::snprintf(b, sizeof b, "%.3f ms", on);
+        std::printf("  %-22s %s", a, b);
+        if (off > 0.0 && on > 0.0)
+            std::printf("   (%.1fx faster with it on)", off / on);
+        std::printf("\n");
+    }
+
+    std::printf("\nwhat moves all of these: the device, the window size "
+                "(fill is most of the\nfirst table), the sample count, and "
+                "for the tier rows the camera distance,\nwhich is what "
+                "chooses the mesh.\n\n");
     return 0;
 }
