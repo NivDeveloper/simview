@@ -2,8 +2,8 @@
 // them. Three things live here on purpose — the CLEAR, because an item
 // that cleared would erase whatever the item before it drew; the ONE
 // aspect-fit every item shares, which is what makes a point land on
-// the cell it belongs to; and the two-phase order, because a copy pass
-// cannot be nested inside a render pass.
+// the cell it belongs to; and the prepare-then-draw order, because
+// uploads must not interleave with the pass.
 
 #include "Target.h"
 
@@ -36,46 +36,42 @@ bool scene_grid(const impl::SceneState &sc, Extent2 *out) {
 
 // The one format a target is asked for: a colour target that can
 // also be sampled, and universally supported as both.
-constexpr SDL_GPUTextureFormat kTargetFormat =
-    SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+constexpr nvrhi::Format kTargetFormat = nvrhi::Format::RGBA8_UNORM;
 
-void target_resize(SDL_GPUDevice *dev, impl::RenderTarget &t) {
+void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
     if (t.tex && t.w == t.want_w && t.h == t.want_h)
         return;
-    if (t.tex)
-        SDL_ReleaseGPUTexture(dev, t.tex);
+    t.fb = nullptr;
+    t.tex = nullptr;
 
-    SDL_GPUTextureCreateInfo ti{
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = kTargetFormat,
-        .usage =
-            SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-        .width = t.want_w,
-        .height = t.want_h,
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-        .sample_count = SDL_GPU_SAMPLECOUNT_1,
-        .props = 0,
-    };
-    t.tex = SDL_CreateGPUTexture(dev, &ti);
+    t.tex = gpu.dev->createTexture(
+        nvrhi::TextureDesc()
+            .setWidth(t.want_w)
+            .setHeight(t.want_h)
+            .setFormat(kTargetFormat)
+            .setIsRenderTarget(true)
+            .setInitialState(nvrhi::ResourceStates::ShaderResource)
+            .setKeepInitialState(true)
+            .setDebugName("view target"));
     if (!t.tex) {
-        set_error(std::string("view texture: ") + SDL_GetError());
+        set_error("view texture: creation failed");
         t.w = t.h = 0;
         return;
     }
+    t.fb = gpu.dev->createFramebuffer(
+        nvrhi::FramebufferDesc().addColorAttachment(t.tex));
     t.w = t.want_w;
     t.h = t.want_h;
 }
 
-void target_draw(impl::SceneState &sc, SDL_GPUCommandBuffer *cmd,
+void target_draw(impl::SceneState &sc, nvrhi::ICommandList *cl,
                  impl::RenderTarget &t) {
-    if (t.tex)
-        scene_draw(sc, cmd, t.tex, t.w, t.h, kTargetFormat);
+    if (t.fb)
+        scene_draw(sc, cl, t.fb, t.w, t.h, kTargetFormat);
 }
 
-void target_release(SDL_GPUDevice *dev, impl::RenderTarget &t) {
-    if (t.tex)
-        SDL_ReleaseGPUTexture(dev, t.tex);
+void target_release(impl::RenderTarget &t) {
+    t.fb = nullptr;
     t.tex = nullptr;
     t.w = t.h = 0;
 }
@@ -83,16 +79,16 @@ void target_release(SDL_GPUDevice *dev, impl::RenderTarget &t) {
 void scene_release(impl::SceneState &sc) {
     for (impl::SceneItem &it : sc.items)
         if (it.ops && it.ops->release)
-            it.ops->release(it, sc.dev);
+            it.ops->release(it);
     sc.items.clear();
 }
 
-void scene_draw(impl::SceneState &sc, SDL_GPUCommandBuffer *cmd,
-                SDL_GPUTexture *target, Uint32 tw, Uint32 th,
-                SDL_GPUTextureFormat tf) {
+void scene_draw(impl::SceneState &sc, nvrhi::ICommandList *cl,
+                nvrhi::IFramebuffer *fb, std::uint32_t tw, std::uint32_t th,
+                nvrhi::Format tf) {
     for (impl::SceneItem &it : sc.items)
         if (it.ops && it.ops->prepare)
-            it.ops->prepare(it, cmd);
+            it.ops->prepare(it, cl);
 
     Placement at{};
     at.tw = tw;
@@ -107,16 +103,12 @@ void scene_draw(impl::SceneState &sc, SDL_GPUCommandBuffer *cmd,
     else
         at.sy = ra / wa; // target taller: bars above and below
 
-    SDL_GPUColorTargetInfo ct{};
-    ct.texture = target;
-    ct.clear_color = {0.09f, 0.09f, 0.10f, 1.0f};
-    ct.load_op = SDL_GPU_LOADOP_CLEAR;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    cl->clearTextureFloat(fb->getDesc().colorAttachments[0].texture,
+                          nvrhi::AllSubresources,
+                          nvrhi::Color(0.09f, 0.09f, 0.10f, 1.0f));
     for (impl::SceneItem &it : sc.items)
         if (it.ops && it.ops->draw)
-            it.ops->draw(it, cmd, pass, at);
-    SDL_EndGPURenderPass(pass);
+            it.ops->draw(it, cl, fb, at);
 }
 
 namespace impl {

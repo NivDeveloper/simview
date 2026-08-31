@@ -4,9 +4,9 @@
 // same reason particles are quads applies — line topology is a
 // portability trap, a quad is not.
 //
-// Vertex-stage SPIR-V sets per SDL's contract: storage buffers set 0,
-// uniforms set 1. Regenerate the committed bytecode with
-// shaders/regen.sh — never edit it by hand.
+// NVRHI layout: one set, binding 0 the vertex-stage storage buffer,
+// params in the push-constant block. Regenerate the committed
+// bytecode with shaders/regen.sh — never edit it by hand.
 
 struct LParams {
     float x0, y0;      // the scene range these positions live in
@@ -21,7 +21,7 @@ struct LParams {
 // A segment is (x0, y0, x1, y1): a float4, 16-byte stride, matching
 // four packed floats on the host.
 [[vk::binding(0, 0)]] StructuredBuffer<float4> segments;
-[[vk::binding(0, 1)]] ConstantBuffer<LParams> lp;
+[[vk::push_constant]] ConstantBuffer<LParams> lp;
 
 struct L2F {
     float4 pos : SV_Position;

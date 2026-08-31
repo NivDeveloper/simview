@@ -22,7 +22,7 @@ emit() { # source-name, array-name, file
 # One shader, or all of them. Naming one matters: slangc's output is
 # only byte-stable for a given slangc, so regenerating everything with
 # a newer one diffs bytecode nobody meant to touch.
-for src in ${*:-display particles}; do
+for src in ${*:-display lines particles}; do
     for e in vsmain fsmain; do
         stage=$([ "$e" = vsmain ] && echo vertex || echo fragment)
         "$SLANGC" "$src.slang" -target spirv -entry $e -stage $stage \

@@ -69,6 +69,11 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         if (!se)
             return set_error(SDL_GetError()), false;
         exts.assign(se, se + n);
+    } else if (has_instance_extension("VK_KHR_surface")) {
+        // Headless too: the ImGui backend's loader refuses a table
+        // with missing WSI entry points, and the extension is only
+        // entry points until a surface exists.
+        exts.push_back("VK_KHR_surface");
     }
     vk::InstanceCreateFlags flags{};
     if (has_instance_extension("VK_KHR_portability_enumeration")) {
@@ -116,11 +121,12 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     c.physical = phys;
     const auto props = phys.getProperties();
     if (props.apiVersion < VK_API_VERSION_1_3)
-        return set_error(std::string("Vulkan 1.3 is the floor; ") +
-                         props.deviceName.data() + " reports " +
-                         std::to_string(VK_API_VERSION_MAJOR(props.apiVersion)) +
-                         "." +
-                         std::to_string(VK_API_VERSION_MINOR(props.apiVersion))),
+        return set_error(
+                   std::string("Vulkan 1.3 is the floor; ") +
+                   props.deviceName.data() + " reports " +
+                   std::to_string(VK_API_VERSION_MAJOR(props.apiVersion)) +
+                   "." +
+                   std::to_string(VK_API_VERSION_MINOR(props.apiVersion))),
                false;
 
     vk::PhysicalDeviceVulkan13Features f13q;
@@ -186,11 +192,16 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     }
 
     c.device_extensions.clear();
-    if (windowed)
-        c.device_extensions.push_back("VK_KHR_swapchain");
-    for (const auto &e : phys.enumerateDeviceExtensionProperties())
+    for (const auto &e : phys.enumerateDeviceExtensionProperties()) {
+        // Swapchain rides along headless too (see the instance note);
+        // portability_subset is the spec's own requirement when
+        // advertised.
+        if (std::strcmp(e.extensionName, "VK_KHR_swapchain") == 0 &&
+            !exts.empty())
+            c.device_extensions.push_back("VK_KHR_swapchain");
         if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0)
             c.device_extensions.push_back("VK_KHR_portability_subset");
+    }
     std::vector<const char *> dexts;
     for (const auto &e : c.device_extensions)
         dexts.push_back(e.c_str());

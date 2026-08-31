@@ -8,41 +8,47 @@
 // reaches by dragging a panel off the window — is unreachable by every
 // test the suite has.
 //
-// This supplies the missing halves against offscreen textures. It is
-// written to MIRROR imgui_impl_sdlgpu3's own viewport functions rather
-// than to be convenient: RenderWindow acquires its own command buffer,
-// records one pass, and SUBMITS it right there, exactly as upstream
-// does. Anything a secondary viewport samples must therefore already
-// have been written by a buffer that is submitted — which is a
-// property of the app, not of this file.
+// This supplies the missing halves against offscreen NVRHI textures.
+// It is written to MIRROR imgui_impl_vulkan's own viewport functions
+// rather than to be convenient: RenderWindow acquires its own command
+// list, records one pass, and SUBMITS it right there, exactly as
+// upstream does. Anything a secondary viewport samples must therefore
+// already have been written by a submitted frame — which is a property
+// of the app, not of this file.
 //
-// Tests may speak ImGui, SDL and gpud. They are not consumers.
+// Tests may speak ImGui, Vulkan, NVRHI and gpud. They are not
+// consumers.
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+#include <vulkan/vulkan.hpp>
 
 #include "harness/Bmp.h"
 #include "harness/Harness.h"
+#include "probe/Probe.h"
 
-#include <simview/gpud.h>
 #include <simview/simview.h>
 
 #include <SDL3/SDL.h>
-#include <gpud/Sdl.h>
 #include <imgui.h>
-#include <imgui_impl_sdlgpu3.h>
+#include <imgui_impl_vulkan.h>
+#include <nvrhi/nvrhi.h>
+#include <nvrhi/vulkan.h>
 
+#include <cstring>
 #include <string>
 #include <vector>
 
 namespace viewports {
 
-inline constexpr SDL_GPUTextureFormat kFormat =
-    SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+inline constexpr nvrhi::Format kFormat = nvrhi::Format::RGBA8_UNORM;
 
 // One secondary viewport's stand-in for an OS window and its
 // swapchain. Sized on demand, exactly as a real swapchain would be.
 struct Window {
-    SDL_GPUDevice *dev = nullptr;
-    SDL_GPUTexture *tex = nullptr;
-    Uint32 w = 0, h = 0;
+    nvrhi::IDevice *dev = nullptr;
+    nvrhi::TextureHandle tex;
+    nvrhi::FramebufferHandle fb;
+    std::uint32_t w = 0, h = 0;
     ImVec2 pos{0, 0}, size{0, 0};
     bool focused = false;
     std::string title;
@@ -53,8 +59,8 @@ inline std::vector<Window *> &live() {
     return v;
 }
 
-inline SDL_GPUDevice *&device() {
-    static SDL_GPUDevice *d = nullptr;
+inline nvrhi::IDevice *&device() {
+    static nvrhi::IDevice *d = nullptr;
     return d;
 }
 
@@ -62,24 +68,22 @@ inline Window *of(ImGuiViewport *vp) {
     return static_cast<Window *>(vp->PlatformUserData);
 }
 
-inline void resize(Window *w, Uint32 nw, Uint32 nh) {
+inline void resize(Window *w, std::uint32_t nw, std::uint32_t nh) {
     if (w->tex && w->w == nw && w->h == nh)
         return;
+    w->fb = nullptr;
+    w->tex = w->dev->createTexture(
+        nvrhi::TextureDesc()
+            .setWidth(nw ? nw : 1)
+            .setHeight(nh ? nh : 1)
+            .setFormat(kFormat)
+            .setIsRenderTarget(true)
+            .setInitialState(nvrhi::ResourceStates::RenderTarget)
+            .setKeepInitialState(true)
+            .setDebugName("fake viewport"));
     if (w->tex)
-        SDL_ReleaseGPUTexture(w->dev, w->tex);
-    const SDL_GPUTextureCreateInfo ti{
-        .type = SDL_GPU_TEXTURETYPE_2D,
-        .format = kFormat,
-        .usage =
-            SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
-        .width = nw ? nw : 1,
-        .height = nh ? nh : 1,
-        .layer_count_or_depth = 1,
-        .num_levels = 1,
-        .sample_count = SDL_GPU_SAMPLECOUNT_1,
-        .props = 0,
-    };
-    w->tex = SDL_CreateGPUTexture(w->dev, &ti);
+        w->fb = w->dev->createFramebuffer(
+            nvrhi::FramebufferDesc().addColorAttachment(w->tex));
     w->w = nw;
     w->h = nh;
 }
@@ -106,8 +110,6 @@ inline void destroy_window(ImGuiViewport *vp) {
             live().erase(live().begin() + long(i));
             break;
         }
-    if (w->tex)
-        SDL_ReleaseGPUTexture(w->dev, w->tex);
     delete w;
     vp->PlatformUserData = vp->PlatformHandle = nullptr;
 }
@@ -118,34 +120,67 @@ inline void render_window(ImGuiViewport *vp, void *) {
     Window *w = of(vp);
     if (!w)
         return;
-    resize(w, Uint32(vp->Size.x), Uint32(vp->Size.y));
-    if (!w->tex)
+    resize(w, std::uint32_t(vp->Size.x), std::uint32_t(vp->Size.y));
+    if (!w->fb)
         return;
 
     ImDrawData *dd = vp->DrawData;
-    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(w->dev);
-    ImGui_ImplSDLGPU3_PrepareDrawData(dd, cmd);
-    SDL_GPUColorTargetInfo ct{};
-    ct.texture = w->tex;
-    ct.clear_color = SDL_FColor{0.0f, 0.0f, 0.0f, 1.0f};
-    ct.load_op = SDL_GPU_LOADOP_CLEAR;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    ImGui_ImplSDLGPU3_RenderDrawData(dd, cmd, pass);
-    SDL_EndGPURenderPass(pass);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    auto cl = w->dev->createCommandList();
+    cl->open();
+    cl->clearTextureFloat(w->tex, nvrhi::AllSubresources,
+                          nvrhi::Color(0.0f, 0.0f, 0.0f, 1.0f));
+    cl->setTextureState(w->tex, nvrhi::AllSubresources,
+                        nvrhi::ResourceStates::RenderTarget);
+    cl->commitBarriers();
+
+    const auto cmd = VkCommandBuffer(
+        cl->getNativeObject(nvrhi::ObjectTypes::VK_CommandBuffer).pointer);
+    const auto view = VkImageView(
+        w->tex->getNativeView(nvrhi::ObjectTypes::VK_ImageView).pointer);
+    vk::RenderingAttachmentInfo att;
+    att.imageView = view;
+    att.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    att.loadOp = vk::AttachmentLoadOp::eLoad;
+    att.storeOp = vk::AttachmentStoreOp::eStore;
+    vk::RenderingInfo ri;
+    ri.renderArea = vk::Rect2D{{0, 0}, {w->w, w->h}};
+    ri.layerCount = 1;
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &att;
+    // The backend keeps per-viewport buffers in RendererUserData,
+    // created only by ITS window path — which this fake bypasses. The
+    // main viewport's storage exists and its buffer ring rotates per
+    // call, so a secondary's draw data borrows it for the call; the
+    // wait below keeps a rotation that wraps from touching buffers a
+    // submitted frame still reads.
+    ImGuiViewport *owner = dd->OwnerViewport;
+    dd->OwnerViewport = ImGui::GetMainViewport();
+    vk::CommandBuffer(cmd).beginRendering(ri);
+    ImGui_ImplVulkan_RenderDrawData(dd, cmd);
+    vk::CommandBuffer(cmd).endRendering();
+    dd->OwnerViewport = owner;
+    cl->clearState();
+    cl->close();
+    w->dev->executeCommandList(cl);
+    w->dev->waitForIdle();
 }
 
 // Install both halves and turn viewports on. NoAutoMerge makes every
 // floating panel its own viewport, which is the tear-out arrangement
 // without a mouse to drag with.
 inline void enable(sv::App &app) {
-    device() = gpud::sdl::native_device(sv::Device(app));
+    device() =
+        static_cast<nvrhi::IDevice *>(sv::probe::render_device(app.Raw()));
 
     ImGuiIO &io = ImGui::GetIO();
     io.BackendFlags |= ImGuiBackendFlags_PlatformHasViewports;
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     io.ConfigViewportsNoAutoMerge = true;
+
+    // Headless has no platform backend, so nothing claimed the MAIN
+    // viewport; ImGui's sanity check wants a non-null handle once a
+    // platform half exists. Any stable non-null pointer will do.
+    ImGui::GetMainViewport()->PlatformHandle = &device();
 
     ImGuiPlatformIO &pio = ImGui::GetPlatformIO();
     pio.Platform_CreateWindow = create_window;
@@ -183,8 +218,9 @@ inline void enable(sv::App &app) {
     pio.Platform_RenderWindow = [](ImGuiViewport *, void *) {};
     pio.Platform_SwapBuffers = [](ImGuiViewport *, void *) {};
 
-    // The renderer half the SDL_GPU backend installed points at a real
-    // SDL_Window through PlatformHandle. Ours does not have one.
+    // The renderer half the Vulkan backend installed creates real
+    // surfaces and swapchains through PlatformHandle. Ours does not
+    // have one.
     pio.Renderer_CreateWindow = [](ImGuiViewport *) {};
     pio.Renderer_DestroyWindow = [](ImGuiViewport *) {};
     pio.Renderer_SetWindowSize = [](ImGuiViewport *, ImVec2) {};
@@ -209,36 +245,37 @@ inline bool read(std::size_t index, const std::string &name, Bmp &out) {
     if (!w->tex || !w->w || !w->h)
         return false;
 
-    SDL_GPUTransferBufferCreateInfo tci{};
-    tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-    tci.size = w->w * w->h * 4;
-    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(w->dev, &tci);
-    if (!tb)
+    auto staging = w->dev->createStagingTexture(
+        nvrhi::TextureDesc().setWidth(w->w).setHeight(w->h).setFormat(kFormat),
+        nvrhi::CpuAccessMode::Read);
+    if (!staging)
         return false;
+    auto cl = w->dev->createCommandList();
+    cl->open();
+    cl->copyTexture(staging, nvrhi::TextureSlice(), w->tex,
+                    nvrhi::TextureSlice());
+    cl->close();
+    w->dev->executeCommandList(cl);
+    w->dev->waitForIdle();
 
-    SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(w->dev);
-    SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
-    SDL_GPUTextureRegion reg{};
-    reg.texture = w->tex;
-    reg.w = w->w;
-    reg.h = w->h;
-    reg.d = 1;
-    SDL_GPUTextureTransferInfo dst{};
-    dst.transfer_buffer = tb;
-    SDL_DownloadFromGPUTexture(cp, &reg, &dst);
-    SDL_EndGPUCopyPass(cp);
-    SDL_GPUFence *fe = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-    SDL_WaitForGPUFences(w->dev, true, &fe, 1);
-    SDL_ReleaseGPUFence(w->dev, fe);
+    std::size_t pitch = 0;
+    const auto *px = static_cast<const std::uint8_t *>(
+        w->dev->mapStagingTexture(staging, nvrhi::TextureSlice(),
+                                  nvrhi::CpuAccessMode::Read, &pitch));
+    if (!px)
+        return false;
+    std::vector<std::uint8_t> tight(std::size_t(w->w) * w->h * 4);
+    for (std::uint32_t y = 0; y < w->h; ++y)
+        std::memcpy(tight.data() + std::size_t(y) * w->w * 4, px + y * pitch,
+                    std::size_t(w->w) * 4);
+    w->dev->unmapStagingTexture(staging);
 
-    void *px = SDL_MapGPUTransferBuffer(w->dev, tb, false);
-    SDL_Surface *s = SDL_CreateSurfaceFrom(
-        int(w->w), int(w->h), SDL_PIXELFORMAT_RGBA32, px, int(w->w * 4));
+    SDL_Surface *s =
+        SDL_CreateSurfaceFrom(int(w->w), int(w->h), SDL_PIXELFORMAT_RGBA32,
+                              tight.data(), int(w->w * 4));
     const std::string path = harness::tmp_path(name + ".bmp");
-    const bool ok = SDL_SaveBMP(s, path.c_str());
+    const bool ok = s && SDL_SaveBMP(s, path.c_str());
     SDL_DestroySurface(s);
-    SDL_UnmapGPUTransferBuffer(w->dev, tb);
-    SDL_ReleaseGPUTransferBuffer(w->dev, tb);
     return ok && load_bmp(path, out);
 }
 

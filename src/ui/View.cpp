@@ -31,7 +31,8 @@ Scene view_create(App *a, const ViewDesc &d) {
 
     View &v = a->views.emplace_back();
     v.title = d.title;
-    v.scene.dev = a->platform.dev;
+    v.app = a;
+    v.scene.gpu = a->scene.gpu;
     v.scene.stats = &a->stats;
     v.scene.pipelines = &a->pipelines;
     v.scene.gates = &a->gates;

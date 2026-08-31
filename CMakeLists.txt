@@ -92,7 +92,7 @@ add_library(simview_imgui STATIC
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp)
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
 # Every include directory PRIVATE. The archives link PUBLIC — a static
 # consumer needs their symbols — but no public header names ImGui, so
 # nothing outside this build should be able to reach its headers
@@ -100,7 +100,11 @@ add_library(simview_imgui STATIC
 # an #include <imgui.h> that works.
 target_include_directories(simview_imgui PRIVATE
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-target_link_libraries(simview_imgui PRIVATE SDL3::SDL3)
+# NO_PROTOTYPES: no Vulkan loader is linked anywhere in this build —
+# the backend resolves entry points through ImGui_ImplVulkan_
+# LoadFunctions (ui_init hands it the app's vkGetInstanceProcAddr).
+target_compile_definitions(simview_imgui PUBLIC IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
+target_link_libraries(simview_imgui PRIVATE SDL3::SDL3 Vulkan::Headers)
 set_target_properties(simview_imgui PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON)
@@ -180,6 +184,7 @@ endif()
 add_library(simview STATIC
     src/core/Error.cpp
     src/platform/Device.cpp
+    src/platform/Swapchain.cpp
     src/platform/Vk.cpp
     src/platform/Frame.cpp
     src/platform/Input.cpp
@@ -200,7 +205,8 @@ target_include_directories(simview PUBLIC
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(simview PUBLIC gpud::gpud simview_imgui simview_implot
                               simview_implot3d
-                              PRIVATE gpud::sdl SDL3::SDL3 Vulkan::Headers)
+                              PRIVATE gpud::vulkan SDL3::SDL3 Vulkan::Headers
+                                      nvrhi nvrhi_vk)
 target_include_directories(simview PRIVATE
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}
     ${implot3d_SOURCE_DIR})
@@ -242,7 +248,8 @@ if(SIMVIEW_BUILD_TESTS)
     target_include_directories(simview_probe PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include ${imgui_SOURCE_DIR}
         ${implot_SOURCE_DIR} ${implot3d_SOURCE_DIR})
-    target_link_libraries(simview_probe PRIVATE SDL3::SDL3 gpud::sdl)
+    target_link_libraries(simview_probe PRIVATE SDL3::SDL3 gpud::gpud nvrhi
+        Vulkan::Headers)
     set_target_properties(simview_probe PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 

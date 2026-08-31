@@ -37,7 +37,7 @@ struct VkContext {
     bool shared_queue = false;
     std::mutex queue_m;
     PFN_vkGetInstanceProcAddr gipa{};
-    bool validation = false;             // instance layer + nvrhi wrapper
+    bool validation = false; // instance layer + nvrhi wrapper
     std::vector<std::string> device_extensions; // what vk_open enabled
 };
 

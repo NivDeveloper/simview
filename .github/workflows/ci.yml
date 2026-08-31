@@ -21,9 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: SDL3 (brew)
+      - name: SDL3 + MoltenVK (brew)
         if: runner.os == 'macOS'
-        run: brew install sdl3
+        run: brew install sdl3 molten-vk
 
       - name: SDL build dependencies (Linux)
         if: runner.os == 'Linux'

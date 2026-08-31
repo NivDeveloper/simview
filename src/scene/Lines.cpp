@@ -1,26 +1,30 @@
-// The Lines kind, whole: segments as instanced quads. Written after
-// the ops table, to measure what a third kind costs — this file, its
-// shader, and its lines on the public surface. If anything else had
-// to change, the commit message says what.
+// The Lines kind, whole: segments as instanced quads. Same shape as
+// Field.cpp: state, push block, shaders, ops table, and the exported
+// functions.
 
 #include "Scene.h"
 
 #include "bytecode/lines_fsmain_spirv.h"
 #include "bytecode/lines_vsmain_spirv.h"
 
+#include <gpud/Vulkan.h>
+
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace sv {
 namespace {
 
 struct LinesState {
-    SDL_GPUBuffer *buf = nullptr;
-    SDL_GPUTransferBuffer *staging = nullptr;
+    nvrhi::BufferHandle buf;
+    nvrhi::BindingSetHandle bset;
+    std::vector<float> shadow;
     std::size_t count = 0;    // segments the host last wrote
     std::size_t capacity = 0; // segments the buffer holds
     bool dirty = false;
     bool external = false;
+    std::uint64_t bound_native = 0;
     gpud::BufferSource src{};
     HostSource host{};
     std::uint64_t host_gen = 0;
@@ -28,7 +32,7 @@ struct LinesState {
     float width = 1.5f;
 };
 
-// Matches lines.slang's LParams.
+// Matches lines.slang's LParams (std430 push block).
 struct LineParams {
     float x0, y0, x1, y1;
     float fit[2];
@@ -42,41 +46,31 @@ LinesState &state_of(impl::SceneItem &it) {
     return *static_cast<LinesState *>(it.state);
 }
 
-// Stage the segments: grow rather than refuse, then fill the staging.
-// Shared by Update and the host pull.
-bool upload(LinesState &ls, SDL_GPUDevice *dev, const float *xyxy,
+// Stage the segments: grow rather than refuse, then fill the shadow.
+// Shared by Update and the host pull. Growth re-creates the buffer, so
+// the binding set is dropped and remade at the next draw.
+bool upload(LinesState &ls, const impl::Gpu &gpu, const float *xyxy,
             std::size_t count) {
     if (!count) {
         ls.count = 0;
         return true;
     }
-
     if (count > ls.capacity) {
-        if (ls.buf)
-            SDL_ReleaseGPUBuffer(dev, ls.buf);
-        if (ls.staging)
-            SDL_ReleaseGPUTransferBuffer(dev, ls.staging);
-        const Uint32 bytes = Uint32(count * 16);
-        SDL_GPUBufferCreateInfo bci{};
-        bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-        bci.size = bytes;
-        ls.buf = SDL_CreateGPUBuffer(dev, &bci);
-        SDL_GPUTransferBufferCreateInfo tci{};
-        tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tci.size = bytes;
-        ls.staging = SDL_CreateGPUTransferBuffer(dev, &tci);
-        if (!ls.buf || !ls.staging) {
+        ls.buf = gpu.dev->createBuffer(
+            nvrhi::BufferDesc()
+                .setByteSize(count * 16)
+                .setStructStride(16)
+                .setInitialState(nvrhi::ResourceStates::ShaderResource)
+                .setKeepInitialState(true)
+                .setDebugName("lines"));
+        ls.bset = nullptr;
+        if (!ls.buf) {
             ls.capacity = ls.count = 0;
-            return set_error(SDL_GetError()), false;
+            return set_error("lines buffer: creation failed"), false;
         }
         ls.capacity = count;
     }
-
-    void *map = SDL_MapGPUTransferBuffer(dev, ls.staging, true);
-    if (!map)
-        return set_error(SDL_GetError()), false;
-    std::memcpy(map, xyxy, count * 16);
-    SDL_UnmapGPUTransferBuffer(dev, ls.staging);
+    ls.shadow.assign(xyxy, xyxy + count * 4);
     ls.count = count;
     ls.dirty = true;
     return true;
@@ -84,7 +78,7 @@ bool upload(LinesState &ls, SDL_GPUDevice *dev, const float *xyxy,
 
 // The buffer IS the set of segments: four floats each, whichever
 // source it came from.
-void pull_host(LinesState &ls, SDL_GPUDevice *dev) {
+void pull_host(LinesState &ls, const impl::Gpu &gpu) {
     std::size_t bytes = 0;
     std::uint64_t gen = 0;
     const void *data = ls.host.fn(ls.host.user, &bytes, &gen);
@@ -95,38 +89,74 @@ void pull_host(LinesState &ls, SDL_GPUDevice *dev) {
         return set_error("a segment is four floats, and " +
                          std::to_string(bytes / 4) +
                          " floats were published — not a multiple of four");
-    upload(ls, dev, static_cast<const float *>(data), bytes / 16);
+    upload(ls, gpu, static_cast<const float *>(data), bytes / 16);
 }
 
-void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
+void prepare(impl::SceneItem &it, nvrhi::ICommandList *cl) {
     LinesState &ls = state_of(it);
     if (ls.host)
-        pull_host(ls, it.dev);
+        pull_host(ls, it.gpu);
     if (ls.dirty && !ls.external && ls.buf && ls.count) {
-        SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
-        const SDL_GPUTransferBufferLocation loc{ls.staging, 0};
-        const SDL_GPUBufferRegion reg{ls.buf, 0, Uint32(ls.count * 16)};
-        SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
-        SDL_EndGPUCopyPass(cp);
+        cl->writeBuffer(ls.buf, ls.shadow.data(), ls.count * 16);
         ls.dirty = false;
         ++it.stats->uploads;
     }
 }
 
-void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
-          SDL_GPURenderPass *pass, const Placement &at) {
+bool rebind_external(impl::SceneItem &it, LinesState &ls,
+                     const impl::PipelineEntry *pe) {
+    gpud::Buffer *b = ls.src.current();
+    const std::uint64_t native = b ? gpud::vulkan::native_buffer(*b) : 0;
+    ls.count = b ? b->bytes() / 16 : 0;
+    if (!native || !ls.count) {
+        ls.bset = nullptr;
+        ls.bound_native = 0;
+        return false;
+    }
+    if (native == ls.bound_native && ls.bset)
+        return true;
+    auto wrapped = it.gpu.dev->createHandleForNativeBuffer(
+        nvrhi::ObjectTypes::VK_Buffer,
+        nvrhi::Object(reinterpret_cast<void *>(native)),
+        nvrhi::BufferDesc()
+            .setByteSize(b->bytes())
+            .setStructStride(16)
+            .setInitialState(nvrhi::ResourceStates::ShaderResource)
+            .setKeepInitialState(true)
+            .setDebugName("lines (external)"));
+    if (!wrapped)
+        return false;
+    ls.bset = it.gpu.dev->createBindingSet(
+        nvrhi::BindingSetDesc()
+            .addItem(
+                nvrhi::BindingSetItem::PushConstants(0, sizeof(LineParams)))
+            .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, wrapped)),
+        pe->layout);
+    ls.bound_native = native;
+    return ls.bset != nullptr;
+}
+
+void draw(impl::SceneItem &it, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb,
+          const Placement &at) {
     LinesState &ls = state_of(it);
+    const impl::PipelineEntry *pe =
+        pipeline_for(it.gpu, *it.pipelines, it.stats, &kLinesOps, fb);
+    if (!pe)
+        return;
     // Resolved at the bind, count included.
     if (ls.external) {
-        gpud::Buffer *b = ls.src.current();
-        ls.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
-        ls.count = b ? b->bytes() / 16 : 0;
+        if (!rebind_external(it, ls, pe))
+            return;
+    } else if (!ls.bset && ls.buf) {
+        ls.bset = it.gpu.dev->createBindingSet(
+            nvrhi::BindingSetDesc()
+                .addItem(
+                    nvrhi::BindingSetItem::PushConstants(0, sizeof(LineParams)))
+                .addItem(
+                    nvrhi::BindingSetItem::StructuredBuffer_SRV(0, ls.buf)),
+            pe->layout);
     }
-    if (!ls.buf || !ls.count)
-        return;
-    SDL_GPUGraphicsPipeline *pipe =
-        pipeline_for(it.dev, *it.pipelines, it.stats, &kLinesOps, at.format);
-    if (!pipe)
+    if (!ls.bset || !ls.count)
         return;
 
     LineParams p{};
@@ -141,23 +171,22 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     for (int c = 0; c < 4; ++c)
         p.color[c] = ls.color[c];
     p.width = ls.width;
-    SDL_PushGPUVertexUniformData(cmd, 0, &p, sizeof p);
-    SDL_BindGPUGraphicsPipeline(pass, pipe);
-    SDL_BindGPUVertexStorageBuffers(pass, 0, &ls.buf, 1);
-    // Six corners, one instance per segment; first_* stay 0.
-    SDL_DrawGPUPrimitives(pass, 6, Uint32(ls.count), 0, 0);
+    cl->setGraphicsState(
+        nvrhi::GraphicsState()
+            .setPipeline(pe->pipeline)
+            .setFramebuffer(fb)
+            .addBindingSet(ls.bset)
+            .setViewport(nvrhi::ViewportState().addViewportAndScissorRect(
+                nvrhi::Viewport(float(at.tw), float(at.th)))));
+    cl->setPushConstants(&p, sizeof p);
+    // Six corners, one instance per segment.
+    cl->draw(nvrhi::DrawArguments().setVertexCount(6).setInstanceCount(
+        std::uint32_t(ls.count)));
     ++it.stats->draws;
 }
 
-void release(impl::SceneItem &it, SDL_GPUDevice *dev) {
-    LinesState *ls = static_cast<LinesState *>(it.state);
-    if (!ls)
-        return;
-    if (ls->buf && !ls->external)
-        SDL_ReleaseGPUBuffer(dev, ls->buf);
-    if (ls->staging)
-        SDL_ReleaseGPUTransferBuffer(dev, ls->staging);
-    delete ls;
+void release(impl::SceneItem &it) {
+    delete static_cast<LinesState *>(it.state);
     it.state = nullptr;
 }
 
@@ -170,9 +199,16 @@ const KindOps kLinesOps{
     .draw = draw,
     .release = release,
     .grid = nullptr,
-    .vs = {lines_vsmain_spirv, lines_vsmain_spirv_len, "vsmain", 1, 1},
-    .fs = {lines_fsmain_spirv, lines_fsmain_spirv_len, "fsmain", 0, 0},
-    .blend = {.enabled = true},
+    .vs = {lines_vsmain_spirv, lines_vsmain_spirv_len, "vsmain"},
+    .fs = {lines_fsmain_spirv, lines_fsmain_spirv_len, "fsmain"},
+    .blend = nvrhi::BlendState::RenderTarget()
+                 .enableBlend()
+                 .setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+                 .setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
+                 .setSrcBlendAlpha(nvrhi::BlendFactor::One)
+                 .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha),
+    .storage_stage = nvrhi::ShaderType::Vertex,
+    .push_bytes = sizeof(LineParams),
 };
 // clang-format on
 
@@ -190,7 +226,7 @@ Lines lines_new(Scene s, const LinesDesc &d, HostSource host) {
                Lines{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.dev = sc->dev;
+    it.gpu = sc->gpu;
     it.stats = sc->stats;
     it.pipelines = sc->pipelines;
     it.ops = &kLinesOps;
@@ -223,7 +259,6 @@ bool lines_update(Lines l, const float *xyxy, std::size_t count) {
         return set_error("lines_update: this is not a lines handle"), false;
     if (!xyxy && count)
         return set_error("lines_update: null"), false;
-    SDL_GPUDevice *dev = it->dev;
     LinesState &ls = state_of(*it);
     if (ls.external)
         return set_error("these lines read a caller-owned source, "
@@ -234,7 +269,7 @@ bool lines_update(Lines l, const float *xyxy, std::size_t count) {
         return set_error("these lines read a Sync — publish to it, not "
                          "the item"),
                false;
-    return upload(ls, dev, xyxy, count);
+    return upload(ls, it->gpu, xyxy, count);
 }
 
 Lines lines_from_source(Scene s, gpud::BufferSource src, const LinesDesc &d) {
@@ -251,7 +286,7 @@ Lines lines_from_source(Scene s, gpud::BufferSource src, const LinesDesc &d) {
                Lines{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.dev = sc->dev;
+    it.gpu = sc->gpu;
     it.stats = sc->stats;
     it.pipelines = sc->pipelines;
     it.ops = &kLinesOps;

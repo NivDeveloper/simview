@@ -16,12 +16,15 @@
 
 #include "../core/App.h"
 
+#include <nvrhi/nvrhi.h>
+
 namespace sv {
 
 struct Target {
-    SDL_GPUTexture *tex = nullptr;
-    Uint32 w = 0, h = 0;
-    SDL_GPUTextureFormat format = SDL_GPU_TEXTUREFORMAT_INVALID;
+    nvrhi::IFramebuffer *fb = nullptr;
+    nvrhi::ITexture *tex = nullptr;
+    std::uint32_t w = 0, h = 0;
+    nvrhi::Format format = nvrhi::Format::UNKNOWN;
 };
 
 // `acquire` may fail benignly — a minimized window has no image, and
@@ -30,8 +33,8 @@ struct Target {
 // this target: the renderer's pipeline is pinned to ONE format at
 // ui_init, so it is a property of the target, not a preference.
 struct Presenter {
-    bool (*acquire)(void *self, SDL_GPUCommandBuffer *, Target *out) = nullptr;
-    void (*finish)(void *self, SDL_GPUCommandBuffer *, bool acquired) = nullptr;
+    bool (*acquire)(void *self, nvrhi::ICommandList *, Target *out) = nullptr;
+    void (*finish)(void *self, nvrhi::ICommandList *, bool acquired) = nullptr;
     bool composites = false;
     void *self = nullptr;
 };
@@ -44,18 +47,19 @@ void frame_build(impl::App *);
 // Draw, finish, then the torn-out windows — in that order, once.
 void frame_render(impl::App *, const Presenter &);
 
-// The window. `self` is the App; the target comes out of the command
-// buffer, so both die together.
+// The window. `self` is the App; the swapchain image's wait rides the
+// graphics queue, so target and frame die together.
 Presenter swapchain_presenter(impl::App *);
 
-// A shot. The texture is created BEFORE the command buffer and
-// outlives the submit, so the caller owns it and reads it back after.
+// A shot. The texture is created BEFORE the frame and outlives the
+// submit, so the caller owns it and reads it back after.
 struct ShotTarget {
     impl::App *app = nullptr;
-    SDL_GPUTexture *tex = nullptr;
-    SDL_GPUTransferBuffer *transfer = nullptr;
-    Uint32 w = 0, h = 0;
-    SDL_GPUTextureFormat format = SDL_GPU_TEXTUREFORMAT_INVALID;
+    nvrhi::TextureHandle tex;
+    nvrhi::FramebufferHandle fb;
+    nvrhi::StagingTextureHandle staging;
+    std::uint32_t w = 0, h = 0;
+    nvrhi::Format format = nvrhi::Format::RGBA8_UNORM;
 };
 
 Presenter shot_presenter(ShotTarget *);

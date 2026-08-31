@@ -34,5 +34,10 @@ Extent2 view_extent(impl::App *, const char *title);
 // draw it.
 std::size_t gate_count(impl::App *);
 
+// The renderer device (an nvrhi::IDevice*), for fakes that draw
+// offscreen the way a real backend would. Opaque here so the probe
+// header stays SDK-free.
+void *render_device(impl::App *);
+
 } // namespace probe
 } // namespace sv

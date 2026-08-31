@@ -3,9 +3,9 @@
 // regret, so a point is two triangles: SV_VertexID picks the corner,
 // SV_InstanceID picks the point.
 //
-// Vertex-stage SPIR-V sets per SDL's contract: storage buffers set 0,
-// uniforms set 1 (the fragment pair is 2 and 3). Regenerate the
-// committed bytecode with shaders/regen.sh — never edit it by hand.
+// NVRHI layout: one set, binding 0 the vertex-stage storage buffer,
+// params in the push-constant block. Regenerate the committed
+// bytecode with shaders/regen.sh — never edit it by hand.
 
 struct PParams {
     float x0, y0;      // the scene range these positions live in
@@ -18,7 +18,7 @@ struct PParams {
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<float2> points;
-[[vk::binding(0, 1)]] ConstantBuffer<PParams> pp;
+[[vk::push_constant]] ConstantBuffer<PParams> pp;
 
 struct P2F {
     float4 pos : SV_Position;
@@ -51,10 +51,9 @@ P2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
     return o;
 }
 
-// The colour rides in from the vertex stage rather than being read
-// from a uniform here: uniforms are per-STAGE in SDL's convention, and
-// this block lives in the vertex set. A fragment shader reading it
-// would get nothing bound, and the points would silently vanish.
+// The colour rides in from the vertex stage: the push-constant block
+// is declared with vertex visibility in the binding layout, so the
+// fragment stage reads what the vertex stage carried.
 [shader("fragment")]
 float4 fsmain(P2F v) : SV_Target {
     // A disc, not a square, with a soft edge.

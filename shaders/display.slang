@@ -1,7 +1,8 @@
 // simview's display pair: a fullscreen triangle from the vertex index
-// and the field colormap. Fragment-stage SPIR-V sets per SDL's
-// contract: storage buffers set 2, uniforms set 3. Regenerate the
-// committed bytecode with shaders/regen.sh — never edit it by hand.
+// and the field colormap. NVRHI layout: one set, binding 0 the
+// fragment's storage buffer, params in the push-constant block.
+// Regenerate the committed bytecode with shaders/regen.sh — never
+// edit it by hand.
 
 struct Params {
     uint w;         // field extent
@@ -14,8 +15,8 @@ struct Params {
     float2 uvoff;
 };
 
-[[vk::binding(0, 2)]] StructuredBuffer<float> field;
-[[vk::binding(0, 3)]] ConstantBuffer<Params> params;
+[[vk::binding(0, 0)]] StructuredBuffer<float> field;
+[[vk::push_constant]] ConstantBuffer<Params> params;
 
 struct V2F {
     float4 pos : SV_Position;

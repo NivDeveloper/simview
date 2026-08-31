@@ -11,7 +11,9 @@
 #include <simview/Types.h>
 
 #include <SDL3/SDL.h>
+#include <nvrhi/nvrhi.h>
 
+#include <cstdint>
 #include <forward_list>
 #include <string>
 
@@ -31,6 +33,13 @@ struct UiState {
     ::ImPlot3DContext *plot3d = nullptr;
     std::string ini;
     std::forward_list<Cb> cbs; // panel callbacks, registration order
+    // A view's texture is a lattice, not a photograph: the nearest
+    // sampler its ImGui descriptor is baked with (VkSampler).
+    std::uint64_t nearest_sampler = 0;
+    // The frame ui_viewports last ran for: a composited shot and a
+    // stepped frame may both ask, and ImGui asserts on a second
+    // UpdatePlatformWindows in one frame.
+    int viewports_pumped = -1;
 };
 
 // Is this window title spoken for? Plots, panels and views open ImGui
@@ -49,7 +58,7 @@ void ui_views_resize(impl::App *);
 
 // Draw every view's scene into its target, ahead of the scene that
 // will sample them.
-void ui_views_draw(impl::App *, SDL_GPUCommandBuffer *);
+void ui_views_draw(impl::App *, nvrhi::ICommandList *);
 
 // Is there a UI frame to build? A context exists AND somebody asked
 // for a panel. With nobody asking, no ImGui frame is built at all and
@@ -65,9 +74,11 @@ void ui_quit(impl::App *);
 void ui_begin(impl::App *);
 void ui_end(impl::App *);
 
-// Upload the geometry and composite it over the scene. Must be called
-// with no render pass open: PrepareDrawData opens a copy pass.
-void ui_draw(impl::App *, SDL_GPUCommandBuffer *, SDL_GPUTexture *target);
+// Composite the UI over the scene: the ONE raw-Vulkan seam — NVRHI
+// transitions the attachments, then a dynamic-rendering pass records
+// ImGui's draw data into the command list's native VkCommandBuffer,
+// then clearState() so NVRHI's cache is not stale.
+void ui_draw(impl::App *, nvrhi::ICommandList *, nvrhi::IFramebuffer *);
 
 // Present the panels the user tore out into their own OS windows.
 void ui_viewports(impl::App *);

@@ -7,20 +7,27 @@
 #include "bytecode/display_fsmain_spirv.h"
 #include "bytecode/display_vsmain_spirv.h"
 
+#include <gpud/Vulkan.h>
+
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace sv {
 namespace {
 
 struct FieldState {
-    Uint32 w = 0, h = 0;
-    Sint32 cmap = 0;
+    std::uint32_t w = 0, h = 0;
+    std::int32_t cmap = 0;
     float lo = 0, hi = 1;
-    SDL_GPUBuffer *buf = nullptr;
-    SDL_GPUTransferBuffer *staging = nullptr;
-    bool dirty = false;    // staging holds a newer grid than buf
-    bool external = false; // buf resolves from src: no staging, no release
+    nvrhi::BufferHandle buf;
+    nvrhi::BindingSetHandle bset;
+    std::vector<float> shadow; // what prepare() uploads when dirty
+    bool dirty = false;        // shadow holds a newer grid than buf
+    bool external = false;     // buf resolves from src: no shadow, no upload
+    // The wrapped native buffer an external field re-binds when the
+    // producer publishes a new one.
+    std::uint64_t bound_native = 0;
     // The pull source an external field re-asks at every draw.
     gpud::BufferSource src{};
     // The host source a Sync-fed field asks once per frame, and the
@@ -29,12 +36,12 @@ struct FieldState {
     std::uint64_t host_gen = 0;
 };
 
-// std140-compatible: 4-byte scalars only, matching display.slang's
-// Params.
+// The push-constant block, std430: 4-byte scalars only, matching
+// display.slang's Params.
 struct DrawParams {
-    Uint32 w, h;
-    Sint32 cmap;
-    Uint32 pad0;
+    std::uint32_t w, h;
+    std::int32_t cmap;
+    std::uint32_t pad0;
     float lo, hi;
     float uvscale[2];
     float uvoff[2];
@@ -51,7 +58,7 @@ const FieldState &state_of(const impl::SceneItem &it) {
 // A host-fed field stages a NEW generation the way an Update does. A
 // size that disagrees with the extent is refused once per generation,
 // by name, and the last good grid stays on screen.
-void pull_host(FieldState &f, SDL_GPUDevice *dev) {
+void pull_host(FieldState &f) {
     std::size_t bytes = 0;
     std::uint64_t gen = 0;
     const void *data = f.host.fn(f.host.user, &bytes, &gen);
@@ -64,45 +71,82 @@ void pull_host(FieldState &f, SDL_GPUDevice *dev) {
                   " — the extent and the Sync disagree");
         return;
     }
-
-    void *map = SDL_MapGPUTransferBuffer(dev, f.staging, true);
-    if (!map)
-        return set_error(SDL_GetError());
-    std::memcpy(map, data, bytes);
-    SDL_UnmapGPUTransferBuffer(dev, f.staging);
+    std::memcpy(f.shadow.data(), data, bytes);
     f.dirty = true;
 }
 
-void prepare(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd) {
+void prepare(impl::SceneItem &it, nvrhi::ICommandList *cl) {
     FieldState &f = state_of(it);
     if (f.host)
-        pull_host(f, it.dev);
+        pull_host(f);
     if (f.w && f.dirty && !f.external) {
-        SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
-        const SDL_GPUTransferBufferLocation loc{f.staging, 0};
-        const SDL_GPUBufferRegion reg{f.buf, 0, f.w * f.h * 4};
-        SDL_UploadToGPUBuffer(cp, &loc, &reg, false);
-        SDL_EndGPUCopyPass(cp);
+        cl->writeBuffer(f.buf, f.shadow.data(), f.shadow.size() * 4);
         f.dirty = false;
         ++it.stats->uploads;
     }
 }
 
-void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
-          SDL_GPURenderPass *pass, const Placement &at) {
+// (Re)make the binding set an external field draws with. The wrapped
+// handle carries keepInitialState(ShaderResource): NVRHI then emits no
+// barriers against memory the compute queue writes — cross-queue
+// visibility is the semaphore's job, not a barrier's.
+bool rebind_external(impl::SceneItem &it, FieldState &f,
+                     const impl::PipelineEntry *pe) {
+    gpud::Buffer *b = f.src.current();
+    const std::uint64_t native = b ? gpud::vulkan::native_buffer(*b) : 0;
+    if (!native) {
+        f.bset = nullptr;
+        f.bound_native = 0;
+        return false;
+    }
+    if (native == f.bound_native && f.bset)
+        return true;
+    auto wrapped = it.gpu.dev->createHandleForNativeBuffer(
+        nvrhi::ObjectTypes::VK_Buffer,
+        nvrhi::Object(reinterpret_cast<void *>(native)),
+        nvrhi::BufferDesc()
+            .setByteSize(b->bytes())
+            .setStructStride(4)
+            .setInitialState(nvrhi::ResourceStates::ShaderResource)
+            .setKeepInitialState(true)
+            .setDebugName("field (external)"));
+    if (!wrapped)
+        return false;
+    f.bset = it.gpu.dev->createBindingSet(
+        nvrhi::BindingSetDesc()
+            .addItem(
+                nvrhi::BindingSetItem::PushConstants(0, sizeof(DrawParams)))
+            .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, wrapped)),
+        pe->layout);
+    f.bound_native = native;
+    return f.bset != nullptr;
+}
+
+void draw(impl::SceneItem &it, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb,
+          const Placement &at) {
     FieldState &f = state_of(it);
+    if (!f.w)
+        return;
+    const impl::PipelineEntry *pe =
+        pipeline_for(it.gpu, *it.pipelines, it.stats, &kFieldOps, fb);
+    if (!pe)
+        return;
     // Resolved AT the bind, not a phase earlier: the pointer a source
     // hands out is good for as long as the source says, and nothing
-    // should sit between asking and using.
+    // should sit between asking and using. An owned buffer binds once,
+    // lazily, because the set needs the pipeline's layout.
     if (f.external) {
-        gpud::Buffer *b = f.src.current();
-        f.buf = b ? gpud::sdl::native_buffer(*b) : nullptr;
+        if (!rebind_external(it, f, pe))
+            return;
+    } else if (!f.bset) {
+        f.bset = it.gpu.dev->createBindingSet(
+            nvrhi::BindingSetDesc()
+                .addItem(
+                    nvrhi::BindingSetItem::PushConstants(0, sizeof(DrawParams)))
+                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, f.buf)),
+            pe->layout);
     }
-    if (!f.w || !f.buf)
-        return;
-    SDL_GPUGraphicsPipeline *pipe =
-        pipeline_for(it.dev, *it.pipelines, it.stats, &kFieldOps, at.format);
-    if (!pipe)
+    if (!f.bset)
         return;
 
     DrawParams p{};
@@ -115,22 +159,20 @@ void draw(impl::SceneItem &it, SDL_GPUCommandBuffer *cmd,
     p.uvscale[1] = at.sy;
     p.uvoff[0] = (1.0f - at.sx) * 0.5f;
     p.uvoff[1] = (1.0f - at.sy) * 0.5f;
-    SDL_PushGPUFragmentUniformData(cmd, 0, &p, sizeof p);
-    SDL_BindGPUGraphicsPipeline(pass, pipe);
-    SDL_BindGPUFragmentStorageBuffers(pass, 0, &f.buf, 1);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    cl->setGraphicsState(
+        nvrhi::GraphicsState()
+            .setPipeline(pe->pipeline)
+            .setFramebuffer(fb)
+            .addBindingSet(f.bset)
+            .setViewport(nvrhi::ViewportState().addViewportAndScissorRect(
+                nvrhi::Viewport(float(at.tw), float(at.th)))));
+    cl->setPushConstants(&p, sizeof p);
+    cl->draw(nvrhi::DrawArguments().setVertexCount(3));
     ++it.stats->draws;
 }
 
-void release(impl::SceneItem &it, SDL_GPUDevice *dev) {
-    FieldState *f = static_cast<FieldState *>(it.state);
-    if (!f)
-        return;
-    if (f->buf && !f->external)
-        SDL_ReleaseGPUBuffer(dev, f->buf);
-    if (f->staging)
-        SDL_ReleaseGPUTransferBuffer(dev, f->staging);
-    delete f;
+void release(impl::SceneItem &it) {
+    delete static_cast<FieldState *>(it.state);
     it.state = nullptr;
 }
 
@@ -151,9 +193,11 @@ const KindOps kFieldOps{
     .draw = draw,
     .release = release,
     .grid = grid,
-    .vs = {display_vsmain_spirv, display_vsmain_spirv_len, "vsmain", 0, 0},
-    .fs = {display_fsmain_spirv, display_fsmain_spirv_len, "fsmain", 1, 1},
+    .vs = {display_vsmain_spirv, display_vsmain_spirv_len, "vsmain"},
+    .fs = {display_fsmain_spirv, display_fsmain_spirv_len, "fsmain"},
     .blend = {},
+    .storage_stage = nvrhi::ShaderType::Pixel,
+    .push_bytes = sizeof(DrawParams),
 };
 // clang-format on
 
@@ -162,48 +206,41 @@ namespace impl {
 namespace {
 
 // A field that owns its buffer: pushed by Update, or fed by a host
-// source the frame asks. The one difference is who fills the staging.
+// source the frame asks. The one difference is who fills the shadow.
 Field field_new(Scene s, const FieldDesc &d, HostSource host) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc)
         return {};
-    SDL_GPUDevice *dev = sc->dev;
     if (d.dtype != DType::f32)
         return set_error("fields hold f32 values only for now"), Field{};
     if (!d.extent.w || !d.extent.h)
         return set_error("a field needs a non-zero extent"), Field{};
 
-    const Uint32 bytes = d.extent.w * d.extent.h * 4;
-    SDL_GPUBufferCreateInfo bci{};
-    bci.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-    bci.size = bytes;
-    SDL_GPUBuffer *buf = SDL_CreateGPUBuffer(dev, &bci);
-    SDL_GPUTransferBufferCreateInfo tci{};
-    tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    tci.size = bytes;
-    SDL_GPUTransferBuffer *staging = SDL_CreateGPUTransferBuffer(dev, &tci);
-    if (!buf || !staging) {
-        set_error(SDL_GetError());
-        if (buf)
-            SDL_ReleaseGPUBuffer(dev, buf);
-        if (staging)
-            SDL_ReleaseGPUTransferBuffer(dev, staging);
-        return {};
-    }
+    const std::uint32_t bytes = d.extent.w * d.extent.h * 4;
+    nvrhi::BufferHandle buf = sc->gpu.dev->createBuffer(
+        nvrhi::BufferDesc()
+            .setByteSize(bytes)
+            .setStructStride(4)
+            .setInitialState(nvrhi::ResourceStates::ShaderResource)
+            .setKeepInitialState(true)
+            .setDebugName("field"));
+    if (!buf)
+        return set_error("field buffer: creation failed"), Field{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.dev = sc->dev;
+    it.gpu = sc->gpu;
     it.stats = sc->stats;
     it.pipelines = sc->pipelines;
     it.ops = &kFieldOps;
-    it.state = new FieldState{.w = d.extent.w,
-                              .h = d.extent.h,
-                              .cmap = Sint32(d.map),
-                              .lo = d.lo,
-                              .hi = d.hi,
-                              .buf = buf,
-                              .staging = staging,
-                              .host = host};
+    auto *f = new FieldState{.w = d.extent.w,
+                             .h = d.extent.h,
+                             .cmap = std::int32_t(d.map),
+                             .lo = d.lo,
+                             .hi = d.hi,
+                             .buf = buf,
+                             .host = host};
+    f->shadow.assign(std::size_t(d.extent.w) * d.extent.h, 0.0f);
+    it.state = f;
     return Field{&it};
 }
 
@@ -230,7 +267,6 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
         return set_error("field_update: this is not a field handle"), false;
     if (!data)
         return set_error("field_update: null"), false;
-    SDL_GPUDevice *dev = it->dev;
     FieldState &fs = state_of(*it);
     if (fs.external)
         return set_error("this field reads a caller-owned source, "
@@ -245,13 +281,7 @@ bool field_update(Field f, const void *data, DType t, std::size_t count) {
         return set_error("fields hold f32 values only for now"), false;
     if (count != std::size_t(fs.w) * fs.h)
         return set_error("field_update: count must equal w*h"), false;
-    // cycle=true: per-frame streaming; the frame in flight may still
-    // read the previous contents (SDL's sanctioned ring).
-    void *map = SDL_MapGPUTransferBuffer(dev, fs.staging, true);
-    if (!map)
-        return set_error(SDL_GetError()), false;
-    std::memcpy(map, data, count * 4);
-    SDL_UnmapGPUTransferBuffer(dev, fs.staging);
+    std::memcpy(fs.shadow.data(), data, count * 4);
     fs.dirty = true;
     return true;
 }
@@ -270,13 +300,13 @@ Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
         return set_error("a field needs a non-zero extent"), Field{};
 
     SceneItem &it = sc->items.emplace_back();
-    it.dev = sc->dev;
+    it.gpu = sc->gpu;
     it.stats = sc->stats;
     it.pipelines = sc->pipelines;
     it.ops = &kFieldOps;
     it.state = new FieldState{.w = d.extent.w,
                               .h = d.extent.h,
-                              .cmap = Sint32(d.map),
+                              .cmap = std::int32_t(d.map),
                               .lo = d.lo,
                               .hi = d.hi,
                               .external = true,

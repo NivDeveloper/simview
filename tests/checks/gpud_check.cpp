@@ -18,6 +18,9 @@ int main() {
     if (!app)
         return check::skip("gpud", LastError());
     gpud::Device &dev = sv::Device(app);
+    // The door now opens onto gpud's vulkan backend — the dialect a
+    // code generator reads is the proof.
+    CHECK(dev.dialect() == "slang-vulkan");
 
     // A caller-owned buffer holding a ramp along ONE axis, via pure
     // gpud — no raw SDL anywhere in this test.

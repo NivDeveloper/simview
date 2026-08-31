@@ -16,21 +16,22 @@ namespace sv {
 namespace impl {
 
 struct RenderTarget {
-    SDL_GPUTexture *tex = nullptr;
-    Uint32 w = 0, h = 0;
-    Uint32 want_w = 256, want_h = 256;
+    nvrhi::TextureHandle tex;
+    nvrhi::FramebufferHandle fb;
+    std::uint32_t w = 0, h = 0;
+    std::uint32_t want_w = 256, want_h = 256;
 };
 
 } // namespace impl
 
 // Match the texture to the size asked for. A failure leaves w = h = 0
 // and reports it.
-void target_resize(SDL_GPUDevice *, impl::RenderTarget &);
+void target_resize(const impl::Gpu &, impl::RenderTarget &);
 
 // Draw a scene into the target, if it has one.
-void target_draw(impl::SceneState &, SDL_GPUCommandBuffer *,
+void target_draw(impl::SceneState &, nvrhi::ICommandList *,
                  impl::RenderTarget &);
 
-void target_release(SDL_GPUDevice *, impl::RenderTarget &);
+void target_release(impl::RenderTarget &);
 
 } // namespace sv

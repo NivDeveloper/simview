@@ -29,6 +29,10 @@ ImPlot3DContext *plot3d_context(impl::App *a) {
 
 std::size_t gate_count(impl::App *a) { return a ? a->gates.size() : 0; }
 
+void *render_device(impl::App *a) {
+    return a ? static_cast<void *>(a->platform.ndev.Get()) : nullptr;
+}
+
 Extent2 view_extent(impl::App *a, const char *title) {
     if (!a || !title)
         return {};

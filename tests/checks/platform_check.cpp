@@ -105,15 +105,15 @@ int main() {
         // The renderer half: clear a texture, read it back through a
         // staging map — the spike's headless path, now in-tree.
         constexpr std::uint32_t W = 64, H = 64;
-        auto tex = ndev->createTexture(nvrhi::TextureDesc()
-                                           .setWidth(W)
-                                           .setHeight(H)
-                                           .setFormat(nvrhi::Format::RGBA8_UNORM)
-                                           .setIsRenderTarget(true)
-                                           .setInitialState(
-                                               nvrhi::ResourceStates::RenderTarget)
-                                           .setKeepInitialState(true)
-                                           .setDebugName("platform_check"));
+        auto tex = ndev->createTexture(
+            nvrhi::TextureDesc()
+                .setWidth(W)
+                .setHeight(H)
+                .setFormat(nvrhi::Format::RGBA8_UNORM)
+                .setIsRenderTarget(true)
+                .setInitialState(nvrhi::ResourceStates::RenderTarget)
+                .setKeepInitialState(true)
+                .setDebugName("platform_check"));
         REQUIRE(tex != nullptr);
         auto staging = ndev->createStagingTexture(
             nvrhi::TextureDesc().setWidth(W).setHeight(H).setFormat(
