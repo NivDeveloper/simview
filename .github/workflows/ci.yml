@@ -30,7 +30,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y
              libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
              libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
-             libdrm-dev libgbm-dev mesa-vulkan-drivers libvulkan1
+             libdrm-dev libgbm-dev mesa-vulkan-drivers libvulkan1 gdb
 
       - name: SDL3 cache
         if: runner.os != 'macOS'
@@ -70,6 +70,26 @@ jobs:
       # driver before it can bring a GPU device up at all. ctest hides
       # a skipping test's output, so run one check directly first: its
       # own sentence says why, at the cost of a few milliseconds.
+      # slangc for the Linux leg: decouple_check compiles a kernel, and
+      # the one leg with a device must RUN the decoupling gate rather
+      # than skip it. Prebuilt release, cached by version; gpud finds it
+      # through GPUD_SLANGC.
+      - name: slangc (Linux)
+        if: runner.os == 'Linux'
+        env:
+          SLANG_VERSION: 2026.16.1
+        run: |
+          set -e
+          PREFIX="$GITHUB_WORKSPACE/slang-prefix"
+          if [ ! -x "$PREFIX/bin/slangc" ]; then
+            mkdir -p "$PREFIX"
+            curl -sSL -o slang.tar.gz \
+              "https://github.com/shader-slang/slang/releases/download/v$SLANG_VERSION/slang-$SLANG_VERSION-linux-x86_64.tar.gz"
+            tar -xzf slang.tar.gz -C "$PREFIX"
+          fi
+          "$PREFIX/bin/slangc" -v || true
+          echo "GPUD_SLANGC=$PREFIX/bin/slangc" >> "$GITHUB_ENV"
+
       - name: device probe (Linux)
         if: runner.os == 'Linux'
         continue-on-error: true
@@ -87,6 +107,12 @@ jobs:
           # exits 77 when no device comes up, which is a SKIP, and a
           # skip must not fail a diagnostic.
           ./build/tests/gpud_check || true
+          # A check that segfaults on the runner and nowhere else: its
+          # backtrace, since no debugger can be attached here. Never a
+          # gate — the gates step below is.
+          for c in resize_check; do
+            gdb -batch -ex run -ex bt --args ./build/tests/$c 2>&1 | tail -40 || true
+          done
 
       # Lavapipe (in mesa-vulkan-drivers) is a software Vulkan device,
       # so the Linux leg actually DRAWS: the shot checks assert pixels,

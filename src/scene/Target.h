@@ -20,6 +20,10 @@ struct RenderTarget {
     nvrhi::FramebufferHandle fb;
     std::uint32_t w = 0, h = 0;
     std::uint32_t want_w = 256, want_h = 256;
+    // Bumped by every (re)creation. What a sampler of this target keys
+    // its descriptor on — never the texture's address, which the
+    // allocator hands straight back to the next texture.
+    std::uint32_t gen = 0;
 };
 
 } // namespace impl

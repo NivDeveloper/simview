@@ -23,7 +23,6 @@ struct ParticlesState {
     std::size_t capacity = 0; // points the buffer holds
     bool dirty = false;
     bool external = false;
-    std::uint64_t bound_native = 0;
     gpud::BufferSource src{};
     HostSource host{};
     std::uint64_t host_gen = 0;
@@ -109,11 +108,8 @@ bool rebind_external(impl::SceneItem &it, ParticlesState &ps,
     ps.count = b ? b->bytes() / 8 : 0;
     if (!native || !ps.count) {
         ps.bset = nullptr;
-        ps.bound_native = 0;
         return false;
     }
-    if (native == ps.bound_native && ps.bset)
-        return true;
     auto wrapped = it.gpu.dev->createHandleForNativeBuffer(
         nvrhi::ObjectTypes::VK_Buffer,
         nvrhi::Object(reinterpret_cast<void *>(native)),
@@ -131,7 +127,6 @@ bool rebind_external(impl::SceneItem &it, ParticlesState &ps,
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(PointParams)))
             .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, wrapped)),
         pe->layout);
-    ps.bound_native = native;
     return ps.bset != nullptr;
 }
 

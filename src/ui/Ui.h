@@ -40,6 +40,7 @@ struct UiState {
     // stepped frame may both ask, and ImGui asserts on a second
     // UpdatePlatformWindows in one frame.
     int viewports_pumped = -1;
+    int viewports_rendered = -1;
 };
 
 // Is this window title spoken for? Plots, panels and views open ImGui
@@ -80,8 +81,12 @@ void ui_end(impl::App *);
 // then clearState() so NVRHI's cache is not stale.
 void ui_draw(impl::App *, nvrhi::ICommandList *, nvrhi::IFramebuffer *);
 
-// Present the panels the user tore out into their own OS windows.
-void ui_viewports(impl::App *);
+// The torn-out panels. UpdatePlatformWindows is ImGui's per-frame
+// bookkeeping and runs once per frame wherever it is first asked;
+// RenderPlatformWindowsDefault draws them and must come AFTER the
+// frame drew the view textures they sample — so a headless Step asks
+// with render = false, and only frame_render asks with true.
+void ui_viewports(impl::App *, bool render);
 
 // Feed one OS event to ImGui. Returns true when a panel wants the
 // keyboard, so the sim's hotkeys stay out of the way of typing.

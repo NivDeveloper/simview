@@ -27,7 +27,6 @@ struct FieldState {
     bool external = false;     // buf resolves from src: no shadow, no upload
     // The wrapped native buffer an external field re-binds when the
     // producer publishes a new one.
-    std::uint64_t bound_native = 0;
     // The pull source an external field re-asks at every draw.
     gpud::BufferSource src{};
     // The host source a Sync-fed field asks once per frame, and the
@@ -86,8 +85,12 @@ void prepare(impl::SceneItem &it, nvrhi::ICommandList *cl) {
     }
 }
 
-// (Re)make the binding set an external field draws with. The wrapped
-// handle carries keepInitialState(ShaderResource): NVRHI then emits no
+// Make the binding set an external field draws with — at EVERY draw,
+// never cached on the VkBuffer's handle value: a producer that frees
+// and allocates per generation gets the same handle value back for a
+// different buffer, and a cached descriptor would then point at the
+// dead one. One descriptor per frame is nothing. The wrapped handle
+// carries keepInitialState(ShaderResource): NVRHI then emits no
 // barriers against memory the compute queue writes — cross-queue
 // visibility is the semaphore's job, not a barrier's.
 bool rebind_external(impl::SceneItem &it, FieldState &f,
@@ -96,11 +99,8 @@ bool rebind_external(impl::SceneItem &it, FieldState &f,
     const std::uint64_t native = b ? gpud::vulkan::native_buffer(*b) : 0;
     if (!native) {
         f.bset = nullptr;
-        f.bound_native = 0;
         return false;
     }
-    if (native == f.bound_native && f.bset)
-        return true;
     auto wrapped = it.gpu.dev->createHandleForNativeBuffer(
         nvrhi::ObjectTypes::VK_Buffer,
         nvrhi::Object(reinterpret_cast<void *>(native)),
@@ -118,7 +118,6 @@ bool rebind_external(impl::SceneItem &it, FieldState &f,
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(DrawParams)))
             .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, wrapped)),
         pe->layout);
-    f.bound_native = native;
     return f.bset != nullptr;
 }
 

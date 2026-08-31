@@ -56,7 +56,7 @@ void frame_build(impl::App *a) {
     // EndFrame — it is what keeps ImGui's cadence contract satisfied
     // for a stepped frame. Windowed frames pump in frame_render.
     if (!a->platform.win)
-        ui_viewports(a);
+        ui_viewports(a, /*render=*/false);
 }
 
 void frame_render(impl::App *a, const Presenter &p) {
@@ -113,7 +113,7 @@ void frame_render(impl::App *a, const Presenter &p) {
     // minimized.
     p.finish(p.self, cl, have);
     if (ui)
-        ui_viewports(a);
+        ui_viewports(a, /*render=*/true);
 }
 
 namespace {

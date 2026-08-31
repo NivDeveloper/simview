@@ -76,10 +76,36 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         exts.push_back("VK_KHR_surface");
     }
     vk::InstanceCreateFlags flags{};
-    if (has_instance_extension("VK_KHR_portability_enumeration")) {
+    const bool portability =
+        has_instance_extension("VK_KHR_portability_enumeration");
+    if (portability) {
         exts.push_back("VK_KHR_portability_enumeration");
         flags |= vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
     }
+
+    // MoltenVK 1.3 turned Metal argument buffers on by default, and with
+    // a device-address compute ABI every dispatch then re-binds every
+    // addressable buffer: examples/ising fell from 9126 sweeps/s (1.2.11)
+    // to 2876 (1.3.0, 1.4.2 alike) and came back to 9798 with them off.
+    // The standard VK_EXT_layer_settings extension carries the setting
+    // (layer name "MoltenVK"); a driver that is not MoltenVK ignores a
+    // setting it does not own, and one without the extension never sees
+    // it. The renderer's own binding sets are small enough not to care;
+    // bindless (descriptorIndexing) would want them back ON.
+    const VkBool32 no_argument_buffers = VK_FALSE;
+    vk::LayerSettingEXT mvk_setting;
+    mvk_setting.pLayerName = "MoltenVK";
+    mvk_setting.pSettingName = "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS";
+    mvk_setting.type = vk::LayerSettingTypeEXT::eBool32;
+    mvk_setting.valueCount = 1;
+    mvk_setting.pValues = &no_argument_buffers;
+    vk::LayerSettingsCreateInfoEXT layer_settings;
+    layer_settings.settingCount = 1;
+    layer_settings.pSettings = &mvk_setting;
+    const bool layer_settings_ok =
+        portability && has_instance_extension("VK_EXT_layer_settings");
+    if (layer_settings_ok)
+        exts.push_back("VK_EXT_layer_settings");
     const char *env = std::getenv("SIMVIEW_VVL");
     c.validation = env && *env && *env != '0';
     std::vector<const char *> layers;
@@ -90,6 +116,8 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     app.pApplicationName = "simview";
     app.apiVersion = VK_API_VERSION_1_3;
     vk::InstanceCreateInfo ici;
+    if (layer_settings_ok)
+        ici.pNext = &layer_settings;
     ici.flags = flags;
     ici.pApplicationInfo = &app;
     ici.setPEnabledExtensionNames(exts);

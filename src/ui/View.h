@@ -7,6 +7,7 @@
 
 #include "../scene/Target.h"
 
+#include <cstdint>
 #include <string>
 
 namespace sv {
@@ -18,7 +19,7 @@ struct View {
     SceneState scene;
     App *app = nullptr;          // for the sampler the panel's image bakes
     void *imgui_tex = nullptr;   // VkDescriptorSet from AddTexture
-    const void *bound = nullptr; // the texture imgui_tex was made for
+    std::uint32_t bound_gen = 0; // target.gen imgui_tex was made for
 };
 
 } // namespace impl

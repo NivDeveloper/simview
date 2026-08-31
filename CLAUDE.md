@@ -12,7 +12,9 @@ app-managed swapchain (FIFO on a portability driver: MoltenVK's
 IMMEDIATE spins in nextDrawable inside vkQueueSubmit and starves the
 compute queue, 650 against 3363 sweeps/s measured; IMMEDIATE-first
 elsewhere; SIMVIEW_PRESENT overrides) and ImGui on the upstream sdl3
-+ vulkan backends. The frame orders itself GPU-SIDE on gpud's
++ vulkan backends. Vk.cpp also switches MoltenVK's Metal argument
+buffers OFF through VK_EXT_layer_settings (4x on device-address
+compute — 2876 to 10875 sweeps/s; bindless would want them back). The frame orders itself GPU-SIDE on gpud's
 timeline: Publish stamps its Sync slot with submitted(), the frame
 waits (native_timeline, max shown stamp) on the graphics queue, and
 frames-in-flight = 1 (an event query waited before the flips) closes

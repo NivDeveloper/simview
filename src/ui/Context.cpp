@@ -195,7 +195,7 @@ void ui_quit(impl::App *a) {
             ImGui_ImplVulkan_RemoveTexture(
                 reinterpret_cast<VkDescriptorSet>(v.imgui_tex));
         v.imgui_tex = nullptr;
-        v.bound = nullptr;
+        v.bound_gen = 0;
     }
     if (a->platform.win)
         ImGui_ImplSDL3_Shutdown();
@@ -293,23 +293,27 @@ void ui_draw(impl::App *a, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb) {
     cl->clearState();
 }
 
-void ui_viewports(impl::App *a) {
+void ui_viewports(impl::App *a, bool render) {
     ImGui::SetCurrentContext(a->ui.ctx);
-    // Once per frame: a headless Step pumps at frame_build's end AND a
-    // composited shot pumps in frame_render, and ImGui asserts on a
-    // second UpdatePlatformWindows within one frame.
+    // UpdatePlatformWindows once per frame, UNGATED by the enable
+    // flag: its bookkeeping is what ImGui's cadence assert reads at the
+    // next NewFrame, and a mid-run ViewportsEnable (the tests' fake)
+    // must find the previous frame pumped. ImGui asserts on a second
+    // call within one frame — a Step and a composited shot both ask.
     const int fc = ImGui::GetFrameCount();
-    if (a->ui.viewports_pumped == fc)
-        return;
-    a->ui.viewports_pumped = fc;
-    // UpdatePlatformWindows runs UNGATED: its frame bookkeeping is
-    // what ImGui's cadence assert reads at the next NewFrame, and a
-    // mid-run ViewportsEnable (the tests' fake) must find the previous
-    // frame pumped. With viewports off it returns right after that
-    // bookkeeping.
-    ImGui::UpdatePlatformWindows();
-    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    if (a->ui.viewports_pumped != fc) {
+        a->ui.viewports_pumped = fc;
+        ImGui::UpdatePlatformWindows();
+    }
+    // The render, at most once per frame and only where the caller
+    // vouches the view textures are drawn: a torn-out panel rendered
+    // from a headless Step showed a view texture nothing had drawn yet
+    // — magenta, whenever the allocator handed back fresh memory.
+    if (render && a->ui.viewports_rendered != fc &&
+        (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) {
+        a->ui.viewports_rendered = fc;
         ImGui::RenderPlatformWindowsDefault();
+    }
 }
 
 void view_draw(impl::View &v) {
@@ -343,7 +347,12 @@ void view_draw(impl::View &v) {
     // current. The descriptor is baked with the NEAREST sampler and
     // remade only when the resize gave the view a new texture.
     if (v.target.tex) {
-        if (v.bound != v.target.tex.Get()) {
+        // Keyed on the target's GENERATION, not its address: a resized
+        // target is a new texture the allocator may place exactly where
+        // the old one was, and a pointer comparison then keeps a
+        // descriptor whose image view is already destroyed — sampled
+        // garbage, and the validation layer's "imageView 0x0" to say so.
+        if (v.bound_gen != v.target.gen) {
             if (v.imgui_tex)
                 ImGui_ImplVulkan_RemoveTexture(
                     reinterpret_cast<VkDescriptorSet>(v.imgui_tex));
@@ -353,7 +362,7 @@ void view_draw(impl::View &v) {
             v.imgui_tex = ImGui_ImplVulkan_AddTexture(
                 reinterpret_cast<VkSampler>(v.app->ui.nearest_sampler), iv,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            v.bound = v.target.tex.Get();
+            v.bound_gen = v.target.gen;
         }
         if (v.imgui_tex)
             ImGui::Image(ImTextureRef(ImTextureID(

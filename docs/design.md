@@ -462,9 +462,16 @@ examples/ising on MoltenVK 1.3.0 runs 3363 sweeps/s beside a 60 Hz
 window under FIFO and 650 under IMMEDIATE, because MoltenVK's
 IMMEDIATE spins in [CAMetalLayer nextDrawable] inside vkQueueSubmit
 and the compute queue starves; a single shared queue gives 625 under
-either. The same probe puts gpud's standalone rate at 2876 on
-MoltenVK 1.3.0 and 9126 on 1.2.11 — the driver's factor, not the
-library's; the shared path runs above standalone on the same driver.
+either. The same probe put gpud's standalone rate at 2876 on
+MoltenVK 1.3.0 and 9126 on 1.2.11, and the cause is one MoltenVK
+default: 1.3 turned Metal argument buffers ON, and with a
+device-address compute ABI every dispatch then re-binds every
+addressable buffer (57 µs a dispatch against 21). Vk.cpp turns them
+back off through the standard VK_EXT_layer_settings extension at
+instance creation — no environment variable, ignored by any driver
+that is not MoltenVK — and the shared path reads 10875 sweeps/s on
+1.3.0 and 9798 on 1.4.2. Bindless (descriptorIndexing) would want
+them back on; that is the trade to revisit then.
 
 ## Conventions decided up front
 

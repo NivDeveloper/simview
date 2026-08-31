@@ -62,6 +62,7 @@ void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
         nvrhi::FramebufferDesc().addColorAttachment(t.tex));
     t.w = t.want_w;
     t.h = t.want_h;
+    ++t.gen;
 }
 
 void target_draw(impl::SceneState &sc, nvrhi::ICommandList *cl,

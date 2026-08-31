@@ -24,7 +24,6 @@ struct LinesState {
     std::size_t capacity = 0; // segments the buffer holds
     bool dirty = false;
     bool external = false;
-    std::uint64_t bound_native = 0;
     gpud::BufferSource src{};
     HostSource host{};
     std::uint64_t host_gen = 0;
@@ -110,11 +109,8 @@ bool rebind_external(impl::SceneItem &it, LinesState &ls,
     ls.count = b ? b->bytes() / 16 : 0;
     if (!native || !ls.count) {
         ls.bset = nullptr;
-        ls.bound_native = 0;
         return false;
     }
-    if (native == ls.bound_native && ls.bset)
-        return true;
     auto wrapped = it.gpu.dev->createHandleForNativeBuffer(
         nvrhi::ObjectTypes::VK_Buffer,
         nvrhi::Object(reinterpret_cast<void *>(native)),
@@ -132,7 +128,6 @@ bool rebind_external(impl::SceneItem &it, LinesState &ls,
                 nvrhi::BindingSetItem::PushConstants(0, sizeof(LineParams)))
             .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, wrapped)),
         pe->layout);
-    ls.bound_native = native;
     return ls.bset != nullptr;
 }
 
