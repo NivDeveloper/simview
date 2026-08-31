@@ -267,6 +267,10 @@ header — the weakest form of hiding there is.
 
 The rule:
 
+- The probe's accessors: the UI contexts, a view's extent, the gate
+  count, the renderer device, the shared-queue bracket, and the
+  validation tally (`validation_on`, `validation_errors`) — what a
+  check asks that a consumer never may.
 - Test-only exports live in `sv::probe`, never `sv::impl`. One grep
   answers "what exists only for tests?".
 - They live in one file, `src/testing/Probe.cpp`, declared in a header

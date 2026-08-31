@@ -15,12 +15,15 @@
 namespace sv {
 namespace {
 
-// NVRHI's one callback: everything it says goes to the log; the
-// validation wrapper (SIMVIEW_VVL=1) is what turns mistakes into
-// messages worth reading.
+// NVRHI's one callback: everything it says goes to the log, and an
+// error joins the validation tally (SIMVIEW_VVL's abort included) —
+// the validation wrapper is what turns mistakes into errors here.
 struct Logger final : nvrhi::IMessageCallback {
-    void message(nvrhi::MessageSeverity, const char *text) override {
-        SDL_Log("nvrhi: %s", text);
+    void message(nvrhi::MessageSeverity sev, const char *text) override {
+        if (sev >= nvrhi::MessageSeverity::Error)
+            vk_validation_error("nvrhi", text);
+        else
+            SDL_Log("nvrhi: %s", text);
     }
 };
 Logger g_nvrhi_log;

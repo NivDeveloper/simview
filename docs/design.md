@@ -469,7 +469,12 @@ device-address compute ABI every dispatch then re-binds every
 addressable buffer (57 µs a dispatch against 21). Vk.cpp turns them
 back off through the standard VK_EXT_layer_settings extension at
 instance creation — no environment variable, ignored by any driver
-that is not MoltenVK — and the shared path reads 10875 sweeps/s on
+that is not MoltenVK. The same chain carries the Khronos validation
+layer's features when `SIMVIEW_VVL` names them (`sync`, `gpuav`,
+`printf`, `best`), with `debug_action` pointed at the app's own
+debug-utils messenger so a validation error is a counted event — and,
+with `abort`, an exit code — rather than a line on stdout; that is
+what `make validate` and CI's Linux leg gate on. The shared path reads 10875 sweeps/s on
 1.3.0 and 9798 on 1.4.2. Bindless (descriptorIndexing) would want
 them back on; that is the trade to revisit then. gpud 0.8's eager
 submission and buffer pool then took the same path to 24.2k and

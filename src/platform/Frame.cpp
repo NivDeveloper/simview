@@ -9,6 +9,7 @@
 #include <nvrhi/vulkan.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -202,8 +203,15 @@ void app_run(App *a) {
         SDL_Log("simview: headless app — drive it with Step()/Shot()");
         return;
     }
+    // SIMVIEW_FRAMES=N: quit after N loop iterations — how a showcase
+    // runs to an exit code under `make validate` without an argv mode.
+    const char *budget_env = std::getenv("SIMVIEW_FRAMES");
+    const long budget = budget_env ? std::atol(budget_env) : 0;
+    long iterations = 0;
     a->platform.quit = false;
     while (!a->platform.quit) {
+        if (budget > 0 && iterations++ >= budget)
+            break;
         poll(a);
         frame_wait_previous(a); // before the flips — the reverse edge
         frame_sync(a);

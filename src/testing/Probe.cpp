@@ -43,6 +43,10 @@ void queue_unlock(impl::App *a) {
         a->platform.vk.queue_m.unlock();
 }
 
+bool validation_on(impl::App *a) { return a && a->platform.vk.vvl.on; }
+
+std::size_t validation_errors(impl::App *) { return vk_validation_errors(); }
+
 Extent2 view_extent(impl::App *a, const char *title) {
     if (!a || !title)
         return {};

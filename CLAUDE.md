@@ -78,12 +78,30 @@ Next: 3-D scene kinds, and more than one window.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
-- **The windowed path has no headless check — run it under the
-  validation layer** (`SIMVIEW_VVL=1 ./build/examples/hello-window/
-  hello-window`) after touching platform/, scene/ or ui/: the three
-  swap-era defects (swapchain usage, a nested rendering pass, a
-  missing shader feature) were all invisible to the suite and all
-  named by the layer in one run.
+- **The windowed path has no headless check — `make validate` is its
+  gate.** The suite and the four windowed showcases run under the
+  Khronos layer with synchronization validation, aborting on the
+  first error (and on Darwin again under Metal's own API and shader
+  validation). The four swap-era defects — swapchain usage, a nested
+  rendering pass, a dangling view descriptor, the residency
+  use-after-free — were all invisible to a green suite and all named
+  by a layer. Two limits, measured: the layer cannot see gpud's
+  compute writes (a device-address ABI has no descriptors), and on
+  MoltenVK the graphics queue never overtook the compute queue even
+  at 8 ms dispatches with the timeline wait deleted — so the
+  cross-queue edge is currently UNOBSERVABLE here; `decouple_check`
+  holds every frame to the value of the generation it claims to show
+  (a stale pool buffer fails it), which is the gate a concurrent
+  driver would trip. And the SDK's layer (1.4.304) INTERMITTENTLY
+  segfaults in its own queue-batch tracking on the two-queue flagship
+  under `sync` (2 of 3 runs) — `make validate` covers the suite and
+  the in-tree showcases; the flagship under `sync` waits for the SDK
+  update. Cost on the flagship: core −14%, sync −36% of sweeps/s.
+- **Dev, validation, debug and profiling facilities never touch the
+  public surface.** They are environment variables read at bring-up,
+  Makefile targets, or accessors in the test-only `sv::probe` archive
+  — never a `Config` field, never a public function. The table is
+  below under "The dev surface".
 - **The builder is the API, and ImGui is not on the surface AT ALL.**
   Users write `app.Plot(…).Line(…)` and `app.Panel(…).Slider(…)`; no
   public header names ImGui or ImPlot, and lint fails on the token in
@@ -153,6 +171,7 @@ Next: 3-D scene kinds, and more than one window.
 | **stepping through it** | `make debug` (the checks + in-tree examples, `build-debug/`) and `make -C examples/ising debug` (the GPU stack — simview, gpud, tensor, the example — one g++-16 tree at -O0 -g). `.zed/debug.json` and `.vscode/launch.json` launch them; a breakpoint in `sweep` hits on the Executor's thread at once, since the sim plays before `Run`. **The debugger is Homebrew LLVM's lldb/lldb-dap, never Xcode's** — Xcode's lldb SIGILLs at `target create` on this OS, on AppleClang binaries too — and a g++-16 binary needs two init commands (`settings set target.enable-synthetic-value false`, plus a user summary shadowing `^std::unique_ptr<`): lldb's hardcoded unique_ptr formatter crashes on a GCC DWARF type it cannot parse |
 | **sanitizers** | `make san` / `make tsan` — ASan+UBSan over the suite, TSan over sync_check. **Neither runs on macOS 26+**: the AppleClang sanitizer runtime spins in `get_dyld_hdr()` during its own startup, before `main` — a runtime-vs-OS break, nothing to do with this code. `.github/workflows/weekly.yml` runs both on Linux |
 | **the flagship** | `make flagship` — builds examples/xy-gpu and examples/ising (need g++-16); NO runner reaches them, so this is the local gate that keeps the door from rotting |
+| **validation** | `make validate` — the suite and the four windowed showcases under `SIMVIEW_VVL=sync,abort`, then (Darwin) under Metal's API + shader validation; an error is an exit code, never a grep. CI's Linux leg runs its gates the same way on every push |
 | clean | `make clean` (build, build-san, build-tsan) |
 
 **Configure through `make`, never `cmake -B build` by hand.** SDL3 is
@@ -164,10 +183,31 @@ configured and every target dies with `No rule to make target
 'Makefile'`. **`rm -rf build` is the fix** — a half-configured tree
 cannot be repaired by rebuilding.
 
-**The pre-push rung is `make test && make lint && make flagship`.**
+**The pre-push rung is `make test && make lint && make validate &&
+make flagship`.**
 The flagship is deliberately out of CI — no runner has tensor's
 compiler — so this local gate is the only thing that keeps the gpud
 door from rotting.
+
+## The dev surface
+
+Hidden by construction — environment variables read once at bring-up,
+Makefile targets, `sv::probe` — and listed here so nothing is hidden
+from the developer too.
+
+| switch | reads as | who reads it |
+| --- | --- | --- |
+| `SIMVIEW_VVL` | comma list of `1`/`core`, `sync`, `gpuav`, `printf`, `best`, `abort` — the Khronos layer's features by `VK_EXT_layer_settings`, NVRHI's validation wrapper, a debug-utils messenger; `abort` = `std::abort()` on the first validation error from either | `src/platform/Vk.cpp`, `Device.cpp` |
+| `SIMVIEW_FRAMES` | quit `Run()` after N loop iterations — a showcase to an exit code | `src/platform/Frame.cpp` |
+| `SIMVIEW_PRESENT` | `fifo` / `immediate`, overriding the portability-driver policy | `src/platform/Swapchain.cpp` |
+| `SIMVIEW_ONE_QUEUE` | `1`: force the one-shared-queue path, for measuring what a second queue buys | `src/platform/Vk.cpp` |
+| `GPUD_LOG` | `1`: gpud says why a device did not come up | gpud |
+| `GPUD_SLANGC` | pins (or poisons) the kernel compiler | gpud |
+| `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS` | `0`: what Vk.cpp sets through layer settings — needed by hand only for gpud STANDALONE on MoltenVK (4x) | MoltenVK |
+| `MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=assert`, `MTL_SHADER_VALIDATION=1` | Metal's own validation — the lifetime oracle; `make validate` runs them | Metal |
+
+`docs/debugging.md` is the recipe book: captures, traces, profiles.
+
 
 Editor tooling: `.clangd` reads the exported compile DB, and — plain
 C++20 — its diagnostics are trustworthy here, unlike the tensor repo;

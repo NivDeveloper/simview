@@ -14,11 +14,71 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 
 namespace sv {
 namespace {
+
+std::atomic<std::size_t> g_validation_errors{0};
+std::atomic<bool> g_validation_abort{false};
+
+// The Khronos layer's messenger. The loader's own chatter is skipped;
+// everything else goes to the log with its severity, and an ERROR is
+// the gate's signal.
+VKAPI_ATTR VkBool32 VKAPI_CALL
+vvl_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+             VkDebugUtilsMessageTypeFlagsEXT type,
+             const VkDebugUtilsMessengerCallbackDataEXT *data, void *) {
+    if (!data || !data->pMessage)
+        return VK_FALSE;
+    if (data->pMessageIdName &&
+        std::strstr(data->pMessageIdName, "Loader Message"))
+        return VK_FALSE;
+    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        vk_validation_error("vulkan", data->pMessage);
+    else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        SDL_Log("validation[warning] vulkan: %s", data->pMessage);
+    else if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+        // INFO of the validation kind is shader printf; a driver's own
+        // informational chatter (MoltenVK narrates its bring-up) is not.
+        SDL_Log("validation[info] vulkan: %s", data->pMessage);
+    return VK_FALSE;
+}
+
+impl::VkContext::Vvl parse_vvl(const char *env) {
+    impl::VkContext::Vvl v;
+    if (!env || !*env || std::strcmp(env, "0") == 0)
+        return v;
+    std::istringstream words(env);
+    std::string w;
+    while (std::getline(words, w, ',')) {
+        if (w == "1" || w == "core")
+            v.on = true;
+        else if (w == "sync")
+            v.on = v.sync = true;
+        else if (w == "gpuav")
+            v.on = v.gpuav = true;
+        else if (w == "printf")
+            v.on = v.printf = true;
+        else if (w == "best")
+            v.on = v.best = true;
+        else if (w == "abort")
+            v.on = v.abort = true;
+        else if (!w.empty())
+            SDL_Log("simview: SIMVIEW_VVL ignores \"%s\"", w.c_str());
+    }
+    if (v.gpuav && v.printf) {
+        // The layer runs one or the other; gpuav is the one that finds
+        // out-of-range device-address reads, so it wins.
+        SDL_Log("simview: SIMVIEW_VVL: gpuav and printf are exclusive — "
+                "keeping gpuav");
+        v.printf = false;
+    }
+    return v;
+}
 
 // SDL dlopens the loader by bare name and misses /usr/local/lib on
 // macOS. simview creates the device now, so the hint duty moves here
@@ -92,25 +152,65 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     // setting it does not own, and one without the extension never sees
     // it. The renderer's own binding sets are small enough not to care;
     // bindless (descriptorIndexing) would want them back ON.
-    const VkBool32 no_argument_buffers = VK_FALSE;
-    vk::LayerSettingEXT mvk_setting;
-    mvk_setting.pLayerName = "MoltenVK";
-    mvk_setting.pSettingName = "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS";
-    mvk_setting.type = vk::LayerSettingTypeEXT::eBool32;
-    mvk_setting.valueCount = 1;
-    mvk_setting.pValues = &no_argument_buffers;
+    // The settings and their payloads live to the end of this function:
+    // createInstance reads them through pointers.
+    static const VkBool32 kFalse = VK_FALSE, kTrue = VK_TRUE;
+    static const char *const kCallbackOnly = "VK_DBG_LAYER_ACTION_CALLBACK";
+    std::vector<vk::LayerSettingEXT> settings;
+    const auto setting = [&](const char *layer, const char *name,
+                             const VkBool32 &value) {
+        vk::LayerSettingEXT s;
+        s.pLayerName = layer;
+        s.pSettingName = name;
+        s.type = vk::LayerSettingTypeEXT::eBool32;
+        s.valueCount = 1;
+        s.pValues = &value;
+        settings.push_back(s);
+    };
+    setting("MoltenVK", "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", kFalse);
+
+    // The Khronos validation layer, by SIMVIEW_VVL. Its features ride
+    // the same layer-settings chain; its messages come through OUR
+    // messenger (debug_action = callback), which is what makes an error
+    // an exit code rather than a line on stdout.
+    c.vvl = parse_vvl(std::getenv("SIMVIEW_VVL"));
+    c.validation = c.vvl.on;
+    g_validation_abort.store(c.vvl.abort);
+    const bool layer_on = c.vvl.on && has_layer("VK_LAYER_KHRONOS_validation");
+    if (c.vvl.on && !layer_on)
+        SDL_Log("simview: SIMVIEW_VVL set but VK_LAYER_KHRONOS_validation "
+                "is not installed — only NVRHI's validation runs");
+    std::vector<const char *> layers;
+    if (layer_on) {
+        layers.push_back("VK_LAYER_KHRONOS_validation");
+        const char *vl = "VK_LAYER_KHRONOS_validation";
+        setting(vl, "validate_core", kTrue);
+        setting(vl, "validate_sync", c.vvl.sync ? kTrue : kFalse);
+        setting(vl, "gpuav_enable", c.vvl.gpuav ? kTrue : kFalse);
+        setting(vl, "printf_enable", c.vvl.printf ? kTrue : kFalse);
+        setting(vl, "printf_to_stdout", kFalse);
+        setting(vl, "validate_best_practices", c.vvl.best ? kTrue : kFalse);
+        vk::LayerSettingEXT action;
+        action.pLayerName = vl;
+        action.pSettingName = "debug_action";
+        action.type = vk::LayerSettingTypeEXT::eString;
+        action.valueCount = 1;
+        action.pValues = &kCallbackOnly;
+        settings.push_back(action);
+    }
     vk::LayerSettingsCreateInfoEXT layer_settings;
-    layer_settings.settingCount = 1;
-    layer_settings.pSettings = &mvk_setting;
+    layer_settings.setSettings(settings);
+    // Widened from "portability only": the Linux CI leg (lavapipe) has
+    // no portability extension and every validation setting rides here.
     const bool layer_settings_ok =
-        portability && has_instance_extension("VK_EXT_layer_settings");
+        (portability || layer_on) &&
+        has_instance_extension("VK_EXT_layer_settings");
     if (layer_settings_ok)
         exts.push_back("VK_EXT_layer_settings");
-    const char *env = std::getenv("SIMVIEW_VVL");
-    c.validation = env && *env && *env != '0';
-    std::vector<const char *> layers;
-    if (c.validation && has_layer("VK_LAYER_KHRONOS_validation"))
-        layers.push_back("VK_LAYER_KHRONOS_validation");
+    const bool messenger_ok =
+        layer_on && has_instance_extension("VK_EXT_debug_utils");
+    if (messenger_ok)
+        exts.push_back("VK_EXT_debug_utils");
 
     vk::ApplicationInfo app;
     app.pApplicationName = "simview";
@@ -124,6 +224,28 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     ici.setPEnabledLayerNames(layers);
     c.instance = vk::createInstance(ici);
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vk::Instance(c.instance));
+
+    if (messenger_ok) {
+        // The C entry points through the app's dispatcher: vulkan-hpp's
+        // typed callback signature is a needless friction here.
+        VkDebugUtilsMessengerCreateInfoEXT mci{};
+        mci.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        mci.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+                              VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                              VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+        mci.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                          VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                          VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        mci.pfnUserCallback = vvl_callback;
+        VkDebugUtilsMessengerEXT m{};
+        if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCreateDebugUtilsMessengerEXT(
+                c.instance, &mci, nullptr, &m) == VK_SUCCESS)
+            c.messenger = reinterpret_cast<std::uint64_t>(m);
+        SDL_Log("simview: validation on (core%s%s%s%s%s)",
+                c.vvl.sync ? ", sync" : "", c.vvl.gpuav ? ", gpuav" : "",
+                c.vvl.printf ? ", printf" : "", c.vvl.best ? ", best" : "",
+                c.vvl.abort ? ", abort on error" : "");
+    }
 
     // Physical device: first discrete, else the first. The floor and
     // the features are refused BY NAME — a user can act on a sentence.
@@ -292,11 +414,29 @@ bool vk_open(impl::VkContext &c, bool windowed) {
     return false;
 }
 
+std::size_t vk_validation_errors() {
+    return g_validation_errors.load(std::memory_order_relaxed);
+}
+
+void vk_validation_error(const char *source, const char *text) {
+    g_validation_errors.fetch_add(1, std::memory_order_relaxed);
+    SDL_Log("validation[error] %s: %s", source, text);
+    if (g_validation_abort.load()) {
+        SDL_Log("SIMVIEW_VVL abort: first validation error");
+        std::abort();
+    }
+}
+
 void vk_close(impl::VkContext &c) {
     if (c.device) {
         vk::Device(c.device).waitIdle();
         vk::Device(c.device).destroy();
     }
+    if (c.instance && c.messenger)
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkDestroyDebugUtilsMessengerEXT(
+            c.instance, reinterpret_cast<VkDebugUtilsMessengerEXT>(c.messenger),
+            nullptr);
+    c.messenger = 0;
     if (c.instance)
         vk::Instance(c.instance).destroy();
     c.device = nullptr;

@@ -45,5 +45,10 @@ void *render_device(impl::App *);
 void queue_lock(impl::App *);
 void queue_unlock(impl::App *);
 
+// The validation tally — errors from the Khronos layer and NVRHI's
+// wrapper, process-wide — and whether SIMVIEW_VVL turned them on.
+bool validation_on(impl::App *);
+std::size_t validation_errors(impl::App *);
+
 } // namespace probe
 } // namespace sv

@@ -37,15 +37,34 @@ struct VkContext {
     bool shared_queue = false;
     std::mutex queue_m;
     PFN_vkGetInstanceProcAddr gipa{};
-    bool validation = false; // instance layer + nvrhi wrapper
+    // SIMVIEW_VVL, parsed once: a comma list of `1`/`core`, `sync`,
+    // `gpuav`, `printf`, `best`, `abort`. `on` also turns on NVRHI's
+    // validation wrapper; the rest are Khronos-layer features carried
+    // by VK_EXT_layer_settings; `abort` makes the first validation
+    // ERROR from either source a std::abort() — the gate's exit code.
+    struct Vvl {
+        bool on = false, sync = false, gpuav = false, printf = false,
+             best = false, abort = false;
+    } vvl;
+    bool validation = false;     // == vvl.on: instance layer + nvrhi wrapper
+    std::uint64_t messenger = 0; // VkDebugUtilsMessengerEXT, when the
+                                 // Khronos layer is actually present
     std::vector<std::string> device_extensions; // what vk_open enabled
 };
 
 } // namespace impl
 
+// The validation tally, PROCESS-wide on purpose: the Khronos layer's
+// messenger and NVRHI's message callback both feed it, and the tests'
+// shape is one App per process. `vk_validation_error` logs, counts,
+// and honors SIMVIEW_VVL's `abort`.
+std::size_t vk_validation_errors();
+void vk_validation_error(const char *source, const char *text);
+
 // Bring the stack up (windowed adds SDL's surface extensions and
 // KHR_swapchain). False = refusal, by name, in LastError(); the video
-// subsystem must already be initialized. Validation: SIMVIEW_VVL=1.
+// subsystem must already be initialized. Validation: SIMVIEW_VVL (the
+// table in CLAUDE.md's "The dev surface").
 bool vk_open(impl::VkContext &, bool windowed);
 void vk_close(impl::VkContext &);
 

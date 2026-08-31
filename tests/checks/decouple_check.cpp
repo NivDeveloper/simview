@@ -63,15 +63,20 @@ int main() {
     Sync<gpud::Buffer> field;
     std::atomic<std::uint32_t> published{0};
 
+    // Generation g carries the value 10 + g % 200, so a frame can be
+    // held to the value of the generation it CLAIMS to show — a stale
+    // buffer from the pool is uniform and plausible too, and only the
+    // claim tells them apart.
+    const auto value_of = [](std::uint64_t g) { return 10 + g % 200; };
     Executor sim([&] {
-        const std::uint32_t v = 10 + published.load() % 200;
+        const std::uint64_t g = published.load(std::memory_order_acquire) + 1;
         gpud::Buffer b = dev.alloc(N * sizeof(float));
-        FillScalars sc{float(v), N};
+        FillScalars sc{float(value_of(g)), N};
         gpud::Buffer *bufs[] = {&b};
         dev.run(*fill, (N + 63) / 64,
                 {reinterpret_cast<const std::byte *>(&sc), sizeof sc}, bufs);
         field.Publish(std::move(b));
-        published.fetch_add(1, std::memory_order_release);
+        published.store(std::uint32_t(g), std::memory_order_release);
     });
 
     auto f = app.Field(field, {.extent = {W, H}, .lo = 0.0f, .hi = 255.0f});
@@ -84,16 +89,15 @@ int main() {
         app.Step();
         Bmp img;
         REQUIRE(harness::shot(app, "decouple", img));
-        if (!published.load(std::memory_order_acquire))
+        const std::uint64_t gen = field.Generation(); // what is SHOWN
+        if (!gen)
             continue; // nothing published yet: the letterbox fallback
-        // Uniform at a plausible published value — never torn, never
-        // a buffer the fill has not reached.
+        // Uniform at THE value of the generation shown — never torn,
+        // never a buffer the fill has not reached, never the pool's
+        // previous tenant.
         const int c = img.at(img.w / 2, img.h / 2)[0];
-        if (c == 0 && !shown)
-            continue; // showing the pre-first-publish empty slot
         ++shown;
-        CHECK_GT(c, 9);
-        CHECK_LT(c, 211);
+        CHECK_EQ(c, int(value_of(gen)));
         for (auto [x, y] : {std::pair{1u, 1u},
                             {img.w - 2, 1u},
                             {1u, img.h - 2},
@@ -104,6 +108,10 @@ int main() {
     }
     sim.Pause();
     CHECK_GT(shown, 0);
+    // Under SIMVIEW_VVL the whole seam ran validated; say so in the
+    // tally, not only in the log.
+    if (probe::validation_on(app.Raw()))
+        CHECK_EQ(probe::validation_errors(app.Raw()), std::size_t(0));
     std::printf("(%u generations published, %d frames judged)\n",
                 published.load(), shown);
     return check::summary("decouple");

@@ -31,6 +31,7 @@ jobs:
              libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
              libxfixes-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
              libdrm-dev libgbm-dev mesa-vulkan-drivers libvulkan1 gdb
+             vulkan-validationlayers
 
       - name: SDL3 cache
         if: runner.os != 'macOS'
@@ -123,6 +124,13 @@ jobs:
           VK_ICD_FILENAMES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.json' || '' }}
           VK_DRIVER_FILES: ${{ runner.os == 'Linux' && '/usr/share/vulkan/icd.d/lvp_icd.json' || '' }}
           SDL_VIDEODRIVER: ${{ runner.os == 'Linux' && 'offscreen' || '' }}
+          # The leg with a device runs VALIDATED: the Khronos layer
+          # (apt's vulkan-validationlayers) with synchronization
+          # validation, aborting on the first error — a red job, not a
+          # line in a log. Lavapipe is one shared queue, so the
+          # cross-queue edge is not represented here; decouple_check
+          # gates that functionally, and the two-queue drill is local.
+          SIMVIEW_VVL: ${{ runner.os == 'Linux' && 'sync,abort' || '' }}
           # gpud says why a device did not come up; SDL says what it
           # tried. Cheap, and the only view into a runner we cannot
           # attach a debugger to.

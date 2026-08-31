@@ -8,7 +8,7 @@ PREFIX ?= $(HOME)/Projects/toolchains/sdl3
 build/CMakeCache.txt:
 	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-.PHONY: all test lint install-check run debug san tsan flagship clean
+.PHONY: all test lint install-check run debug san tsan flagship validate clean
 all: build/CMakeCache.txt
 	cmake --build build -j $(JOBS)
 
@@ -52,6 +52,32 @@ tsan:
 	    -DSIMVIEW_SANITIZE=thread
 	cmake --build build-tsan -j $(JOBS)
 	ctest --test-dir build-tsan --output-on-failure --timeout 300 -L pure
+
+# Everything under the validation layers, to an EXIT CODE: the suite
+# and the four windowed showcases (SIMVIEW_FRAMES bounds them) with
+# Khronos synchronization validation aborting on the first error —
+# and on Darwin a second pass under Metal's own API and shader
+# validation, the oracle that found the residency use-after-free when
+# no Vulkan-level tool could name it. Release tree: layers need no
+# debug build. The four swap-era defects were all invisible to a green
+# suite and all named here.
+VALIDATE_EXAMPLES := hello-window gas ising-cpu plots
+validate: all
+	SIMVIEW_VVL=sync,abort ctest --test-dir build --output-on-failure \
+	    --timeout 300 -E installed_surface
+	for x in $(VALIDATE_EXAMPLES); do \
+	    SIMVIEW_VVL=sync,abort SIMVIEW_FRAMES=120 \
+	    ./build/examples/$$x/$$x || exit 1; done
+ifeq ($(shell uname),Darwin)
+	MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=assert \
+	    MTL_SHADER_VALIDATION=1 SIMVIEW_VVL=sync,abort \
+	    ctest --test-dir build --output-on-failure --timeout 300 \
+	    -E installed_surface
+	for x in $(VALIDATE_EXAMPLES); do \
+	    MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=assert \
+	    MTL_SHADER_VALIDATION=1 SIMVIEW_VVL=sync,abort SIMVIEW_FRAMES=120 \
+	    ./build/examples/$$x/$$x || exit 1; done
+endif
 
 # The flagship (examples/xy-gpu) needs tensor's compiler, so no runner
 # and no in-tree build reaches it — this is the local gate that keeps
