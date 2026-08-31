@@ -20,8 +20,12 @@ build-debug/CMakeCache.txt:
 debug: build-debug/CMakeCache.txt
 	cmake --build build-debug -j $(JOBS)
 
+# Every gate runs with the waits BOUNDED (SIMVIEW_WAIT_MS, and through
+# it gpud's): a hang is then a sentence and a red line, not a stalled
+# job. 20 s clears any dispatch a check makes on lavapipe.
+WAIT_MS := SIMVIEW_WAIT_MS=20000
 test: all
-	ctest --test-dir build --output-on-failure
+	$(WAIT_MS) ctest --test-dir build --output-on-failure
 
 lint:
 	sh tools/lint.sh
@@ -63,20 +67,20 @@ tsan:
 # suite and all named here.
 VALIDATE_EXAMPLES := hello-window gas ising-cpu plots
 validate: all
-	SIMVIEW_VVL=sync,abort ctest --test-dir build --output-on-failure \
-	    --timeout 300 -E installed_surface
+	$(WAIT_MS) SIMVIEW_VVL=sync,abort ctest --test-dir build \
+	    --output-on-failure --timeout 300 -E installed_surface
 	for x in $(VALIDATE_EXAMPLES); do \
-	    SIMVIEW_VVL=sync,abort SIMVIEW_FRAMES=120 \
+	    $(WAIT_MS) SIMVIEW_VVL=sync,abort SIMVIEW_FRAMES=120 \
 	    ./build/examples/$$x/$$x || exit 1; done
 ifeq ($(shell uname),Darwin)
 	MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=assert \
-	    MTL_SHADER_VALIDATION=1 SIMVIEW_VVL=sync,abort \
+	    MTL_SHADER_VALIDATION=1 $(WAIT_MS) SIMVIEW_VVL=sync,abort \
 	    ctest --test-dir build --output-on-failure --timeout 300 \
 	    -E installed_surface
 	for x in $(VALIDATE_EXAMPLES); do \
 	    MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=assert \
-	    MTL_SHADER_VALIDATION=1 SIMVIEW_VVL=sync,abort SIMVIEW_FRAMES=120 \
-	    ./build/examples/$$x/$$x || exit 1; done
+	    MTL_SHADER_VALIDATION=1 $(WAIT_MS) SIMVIEW_VVL=sync,abort \
+	    SIMVIEW_FRAMES=120 ./build/examples/$$x/$$x || exit 1; done
 endif
 
 # The flagship (examples/xy-gpu) needs tensor's compiler, so no runner

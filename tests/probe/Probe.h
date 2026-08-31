@@ -50,5 +50,11 @@ void queue_unlock(impl::App *);
 bool validation_on(impl::App *);
 std::size_t validation_errors(impl::App *);
 
+// Make the next graphics submission wait GPU-side on a compute-timeline
+// value nothing will ever signal — the hang a deleted pump or a stamp
+// past what compute will reach would cause — so a check can prove the
+// bounded wait turns it into a sentence. The App is unusable after.
+void stall_frame(impl::App *);
+
 } // namespace probe
 } // namespace sv

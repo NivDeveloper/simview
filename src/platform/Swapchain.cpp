@@ -197,9 +197,17 @@ bool swapchain_acquire(impl::Swapchain &sc, nvrhi::IDevice *ndev,
         vk::Device dev(sc.vk->device);
         const VkSemaphore acq = reinterpret_cast<VkSemaphore>(
             sc.acquire_sems[sc.frame++ % sc.acquire_sems.size()]);
-        const auto r =
-            dev.acquireNextImageKHR(reinterpret_cast<VkSwapchainKHR>(sc.chain),
-                                    UINT64_MAX, vk::Semaphore(acq), nullptr);
+        const auto r = dev.acquireNextImageKHR(
+            reinterpret_cast<VkSwapchainKHR>(sc.chain),
+            sc.vk->wait_ns ? sc.vk->wait_ns : UINT64_MAX, vk::Semaphore(acq),
+            nullptr);
+        if (r.result == vk::Result::eTimeout ||
+            r.result == vk::Result::eNotReady)
+            vk_fatal("waited " + std::to_string(sc.vk->wait_ns / 1000000ull) +
+                     " ms for the presentation engine to hand back a "
+                     "swapchain image: every image is still queued behind a "
+                     "frame that has not finished — SIMVIEW_WAIT_MS bounds "
+                     "this wait, unset it is unbounded");
         if (r.result == vk::Result::eErrorOutOfDateKHR) {
             sc.recreate = true;
             return false;

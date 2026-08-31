@@ -423,7 +423,10 @@ Three rungs, deliberately split by where the signal lives:
   Pushes are BATCHED — compute minutes are finite and the local rungs
   are what catch mistakes.
 - **CI, weekly**: ASan+UBSan and TSan on Linux (`weekly.yml`), where
-  those runtimes work; timeouts everywhere so a hang is bounded.
+  those runtimes work; timeouts everywhere so a hang is bounded — and
+  since `SIMVIEW_WAIT_MS`, bounded INSIDE the process too: the wait
+  that never returns says what it waited for, rather than ctest saying
+  only which test it killed.
 
 A new feature adds: one `tests/checks/<x>_check.cpp` (harness +
 assertions), its line in the foreach with a `device`/`pure` label,

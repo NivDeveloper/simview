@@ -131,6 +131,9 @@ jobs:
           # cross-queue edge is not represented here; decouple_check
           # gates that functionally, and the two-queue drill is local.
           SIMVIEW_VVL: ${{ runner.os == 'Linux' && 'sync,abort' || '' }}
+          # Every wait bounded, ours and gpud's: a hang is a sentence
+          # and a red test, not a job that runs into --timeout.
+          SIMVIEW_WAIT_MS: "20000"
           # gpud says why a device did not come up; SDL says what it
           # tried. Cheap, and the only view into a runner we cannot
           # attach a debugger to.

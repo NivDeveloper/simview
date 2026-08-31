@@ -33,15 +33,57 @@ Logger g_nvrhi_log;
 void platform_execute(impl::Platform &pl, nvrhi::ICommandList *cl) {
     if (pl.vk.shared_queue)
         pl.vk.queue_m.lock();
-    pl.ndev->executeCommandList(cl);
+    pl.gfx_last = pl.ndev->executeCommandList(cl);
     if (pl.vk.shared_queue)
         pl.vk.queue_m.unlock();
 }
 
+void platform_wait_graphics(impl::Platform &pl, std::uint64_t instance,
+                            const char *what) {
+    if (!instance)
+        return;
+    auto *vknv = static_cast<nvrhi::vulkan::IDevice *>(
+        pl.nraw->getNativeObject(nvrhi::ObjectTypes::Nvrhi_VK_Device).pointer);
+    const auto gfx = nvrhi::CommandQueue::Graphics;
+    if (vknv->queueGetCompletedInstance(gfx) >= instance)
+        return;
+    const WaitResult r = vk_wait_timeline(
+        pl.vk, reinterpret_cast<std::uint64_t>(vknv->getQueueSemaphore(gfx)),
+        instance);
+    if (r == WaitResult::done)
+        return;
+
+    if (r == WaitResult::lost)
+        vk_fatal(std::string("the device was lost while waiting for ") + what +
+                 " (VK_ERROR_DEVICE_LOST): a kernel faulted, ran past a "
+                 "buffer's end, a buffer was destroyed while a dispatch "
+                 "still used it, or a queue waited on a value nothing "
+                 "signalled until the driver's watchdog gave up — "
+                 "SIMVIEW_VVL=gpuav names the kernel, MTL_DEBUG_LAYER=1 "
+                 "the object");
+    // Both timelines in the sentence: the value the frame itself waits
+    // on GPU-side is the usual culprit — a stamp compute will never
+    // reach, or a batch nobody submitted.
+    std::string compute =
+        "compute timeline waited at " + std::to_string(pl.compute_waited);
+    try {
+        compute += ", completed " + std::to_string(pl.gdev->completed().value) +
+                   ", submitted " + std::to_string(pl.gdev->submitted().value);
+    } catch (const std::exception &e) {
+        compute += " (" + std::string(e.what()) + ")";
+    }
+    vk_fatal("waited " + std::to_string(pl.vk.wait_ns / 1000000ull) +
+             " ms for " + what + " (graphics instance " +
+             std::to_string(instance) + ", completed " +
+             std::to_string(vknv->queueGetCompletedInstance(gfx)) + "; " +
+             compute +
+             "): a dispatch still running, or a value nothing "
+             "will ever signal — SIMVIEW_WAIT_MS bounds this wait, unset it "
+             "is unbounded");
+}
+
 void platform_gfx_idle(impl::Platform &pl) {
-    pl.ndev->setEventQuery(pl.idle_query, nvrhi::CommandQueue::Graphics);
-    pl.ndev->waitEventQuery(pl.idle_query);
-    pl.ndev->resetEventQuery(pl.idle_query);
+    platform_wait_graphics(pl, pl.gfx_last, "the graphics queue to drain");
 }
 
 namespace impl {
@@ -112,7 +154,11 @@ App *app_init(const Config &c) {
         ad.queue_unlock = vk_queue_unlock;
         ad.queue_user = &pl.vk;
     }
-    pl.gdev = gpud::vulkan::try_open_on(ad);
+    // gpud's waits take the same bound, so a hang on either queue is
+    // one sentence or the other, never a freeze.
+    gpud::Options go;
+    go.wait_ms = std::uint32_t(pl.vk.wait_ns / 1000000ull);
+    pl.gdev = gpud::vulkan::try_open_on(ad, go);
     if (!pl.gdev) {
         set_error("gpud could not adopt the device (GPUD_LOG=1 says why)");
         return fail();
@@ -137,8 +183,6 @@ App *app_init(const Config &c) {
             return fail();
     }
     pl.cl = pl.ndev->createCommandList();
-    pl.frame_query = pl.ndev->createEventQuery();
-    pl.idle_query = pl.ndev->createEventQuery();
     ui_init(a, c);
     return a;
 }
@@ -147,6 +191,17 @@ void app_quit(App *a) {
     if (!a)
         return;
     Platform &pl = a->platform;
+    // The drain, bounded, BEFORE the device-wide idle (which cannot be
+    // bounded and is where a hung queue would turn quit into a freeze):
+    // compute first — gpud's wait carries the same bound and throws its
+    // own sentence — then the graphics queue.
+    try {
+        pl.gdev->submit();
+        pl.gdev->wait(pl.gdev->submitted());
+    } catch (const std::exception &e) {
+        vk_fatal(std::string("quit: ") + e.what());
+    }
+    platform_wait_graphics(pl, pl.gfx_last, "the last frame at quit");
     pl.ndev->waitForIdle();
     // One release per layer, top down. Before the devices die: the
     // renderer backend holds pipelines and buffers, the views hold
@@ -162,8 +217,6 @@ void app_quit(App *a) {
         sync_gate_release(g);
     a->gates.clear();
     pl.cl = nullptr;
-    pl.frame_query = nullptr;
-    pl.idle_query = nullptr;
     if (pl.win) {
         swapchain_close(pl.sc, pl.ndev);
         SDL_DestroyWindow(pl.win);

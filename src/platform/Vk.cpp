@@ -196,6 +196,8 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     // an exit code rather than a line on stdout.
     c.vvl = parse_vvl(std::getenv("SIMVIEW_VVL"));
     c.validation = c.vvl.on;
+    if (const char *w = std::getenv("SIMVIEW_WAIT_MS"); w && *w)
+        c.wait_ns = std::strtoull(w, nullptr, 10) * 1000000ull;
     g_validation_abort.store(c.vvl.abort);
     const bool layer_on = c.vvl.on && has_layer("VK_LAYER_KHRONOS_validation");
     if (c.vvl.on && !layer_on)
@@ -450,6 +452,31 @@ void vk_validation_error(const char *source, const char *text) {
         SDL_Log("SIMVIEW_VVL abort: first validation error");
         std::abort();
     }
+}
+
+WaitResult vk_wait_timeline(impl::VkContext &c, std::uint64_t semaphore,
+                            std::uint64_t value) {
+    const VkSemaphore sem = reinterpret_cast<VkSemaphore>(semaphore);
+    VkSemaphoreWaitInfo wi{};
+    wi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    wi.semaphoreCount = 1;
+    wi.pSemaphores = &sem;
+    wi.pValues = &value;
+    const VkResult r = VULKAN_HPP_DEFAULT_DISPATCHER.vkWaitSemaphores(
+        c.device, &wi, c.wait_ns ? c.wait_ns : UINT64_MAX);
+    if (r == VK_SUCCESS)
+        return WaitResult::done;
+    return r == VK_TIMEOUT ? WaitResult::timeout : WaitResult::lost;
+}
+
+void vk_fatal(const std::string &sentence) {
+    set_error(sentence);
+    SDL_Log("simview: exiting — nothing can be cleaned up under a GPU that "
+            "never comes back");
+    // _Exit, not abort: the sentence is the diagnosis, exit handlers
+    // would wait on the same device, and a gate reads an exit code
+    // where it cannot read a signal.
+    std::_Exit(EXIT_FAILURE);
 }
 
 void vk_close(impl::VkContext &c) {

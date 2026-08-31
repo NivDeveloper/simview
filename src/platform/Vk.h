@@ -46,7 +46,12 @@ struct VkContext {
         bool on = false, sync = false, gpuav = false, printf = false,
              best = false, abort = false;
     } vvl;
-    bool validation = false;     // == vvl.on: instance layer + nvrhi wrapper
+    bool validation = false; // == vvl.on: instance layer + nvrhi wrapper
+    // SIMVIEW_WAIT_MS, as nanoseconds: the bound on every host wait
+    // for the device — the previous frame, a shot's readback, the
+    // swapchain acquire, the drain at quit, and gpud's own waits
+    // (handed to it at adoption). 0 = unbounded, the default.
+    std::uint64_t wait_ns = 0;
     std::uint64_t messenger = 0; // VkDebugUtilsMessengerEXT, when the
                                  // Khronos layer is actually present
     std::vector<std::string> device_extensions; // what vk_open enabled
@@ -60,6 +65,18 @@ struct VkContext {
 // and honors SIMVIEW_VVL's `abort`.
 std::size_t vk_validation_errors();
 void vk_validation_error(const char *source, const char *text);
+
+// A host wait on a timeline semaphore (the handle as uint64_t), bounded
+// by wait_ns when set. `lost` is VK_ERROR_DEVICE_LOST.
+enum class WaitResult { done, timeout, lost };
+WaitResult vk_wait_timeline(impl::VkContext &, std::uint64_t semaphore,
+                            std::uint64_t value);
+
+// The end of a process whose GPU never comes back: the sentence is
+// logged and kept for LastError(), then the process exits — nothing
+// below can be freed while the device may still be using it, so the
+// alternative to this exit is the hang it replaces.
+[[noreturn]] void vk_fatal(const std::string &sentence);
 
 // Bring the stack up (windowed adds SDL's surface extensions and
 // KHR_swapchain). False = refusal, by name, in LastError(); the video

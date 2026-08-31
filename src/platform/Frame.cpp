@@ -33,11 +33,10 @@ void frame_sync(impl::App *a) {
 // flip is the named follow-up if record-stall ever shows.)
 void frame_wait_previous(impl::App *a) {
     impl::Platform &pl = a->platform;
-    if (!pl.frame_inflight)
+    if (!pl.frame_instance)
         return;
-    pl.ndev->waitEventQuery(pl.frame_query);
-    pl.ndev->resetEventQuery(pl.frame_query);
-    pl.frame_inflight = false;
+    platform_wait_graphics(pl, pl.frame_instance, "the previous frame");
+    pl.frame_instance = 0;
 }
 
 } // namespace
@@ -82,8 +81,14 @@ void frame_render(impl::App *a, const Presenter &p) {
             wait = std::max(wait, gdev->submitted().value);
         if (wait) {
             // The pump: makes the awaited value reachable without any
-            // host wait (a failed submit host-signals, so no hang).
-            gdev->submit();
+            // host wait (a failed submit host-signals, so no hang) —
+            // and a failed submit is a lost device, which ends here.
+            try {
+                gdev->submit();
+            } catch (const std::exception &e) {
+                vk_fatal(std::string("compute submit: ") + e.what());
+            }
+            a->platform.compute_waited = wait;
             auto *vknv = static_cast<nvrhi::vulkan::IDevice *>(
                 a->platform.nraw
                     ->getNativeObject(nvrhi::ObjectTypes::Nvrhi_VK_Device)
@@ -144,9 +149,7 @@ void swapchain_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
         // The present semaphore signals on THIS submit; present waits it.
         swapchain_ready_present(a->platform.sc, a->platform.ndev);
         platform_execute(a->platform, cl);
-        a->platform.ndev->setEventQuery(a->platform.frame_query,
-                                        nvrhi::CommandQueue::Graphics);
-        a->platform.frame_inflight = true;
+        a->platform.frame_instance = a->platform.gfx_last;
         swapchain_present(a->platform.sc);
     } else {
         // Nothing recorded; executing keeps the list reusable without
@@ -177,8 +180,11 @@ void shot_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
                         nvrhi::TextureSlice());
     cl->close();
     platform_execute(s->app->platform, cl);
+    // Waited here, bounded, so the staging map that follows finds the
+    // copy complete — NVRHI's own wait inside the map is not bounded.
     if (acquired)
-        platform_gfx_idle(s->app->platform);
+        platform_wait_graphics(s->app->platform, s->app->platform.gfx_last,
+                               "the shot's frame");
 }
 
 } // namespace

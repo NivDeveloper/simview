@@ -16,6 +16,9 @@
 
 #include "../../tests/probe/Probe.h"
 
+#include <gpud/Vulkan.h>
+#include <nvrhi/vulkan.h>
+
 namespace sv {
 namespace probe {
 
@@ -46,6 +49,19 @@ void queue_unlock(impl::App *a) {
 bool validation_on(impl::App *a) { return a && a->platform.vk.vvl.on; }
 
 std::size_t validation_errors(impl::App *) { return vk_validation_errors(); }
+
+void stall_frame(impl::App *a) {
+    if (!a)
+        return;
+    auto *vknv = static_cast<nvrhi::vulkan::IDevice *>(
+        a->platform.nraw->getNativeObject(nvrhi::ObjectTypes::Nvrhi_VK_Device)
+            .pointer);
+    vknv->queueWaitForSemaphore(
+        nvrhi::CommandQueue::Graphics,
+        reinterpret_cast<VkSemaphore>(
+            gpud::vulkan::native_timeline(*a->platform.gdev)),
+        a->platform.gdev->submitted().value + 1000000);
+}
 
 Extent2 view_extent(impl::App *a, const char *title) {
     if (!a || !title)

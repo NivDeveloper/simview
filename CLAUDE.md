@@ -97,6 +97,19 @@ Next: 3-D scene kinds, and more than one window.
   under `sync` (2 of 3 runs) — `make validate` covers the suite and
   the in-tree showcases; the flagship under `sync` waits for the SDK
   update. Cost on the flagship: core −14%, sync −36% of sweeps/s.
+- **A hang is a report.** Every host wait for the device — the
+  previous frame, a shot's readback, the swapchain acquire, the drain
+  at quit, and gpud's own waits, handed the same bound at adoption —
+  is bounded by `SIMVIEW_WAIT_MS` when set, and every gate sets it
+  (`make test`, `make validate`, CI: 20 s). Past the bound the
+  sentence names what was waited for and where BOTH timelines stood,
+  and the process exits with it; a lost device gets its own sentence.
+  What the bound catches is not slow work but a wait on a value
+  nothing will ever signal — a deleted pump, a stamp past what compute
+  will reach — which is a freeze on lavapipe and, on MoltenVK,
+  `VK_ERROR_DEVICE_LOST` after ~8 s of Metal's watchdog. `hang_check`
+  stalls a frame on purpose and passes on the sentence. Unset, every
+  wait is unbounded, as a long dispatch needs.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive
@@ -199,6 +212,7 @@ from the developer too.
 | --- | --- | --- |
 | `SIMVIEW_VVL` | comma list of `1`/`core`, `sync`, `gpuav`, `printf`, `best`, `abort` — the Khronos layer's features by `VK_EXT_layer_settings`, NVRHI's validation wrapper, a debug-utils messenger; `abort` = `std::abort()` on the first validation error from either | `src/platform/Vk.cpp`, `Device.cpp` |
 | `SIMVIEW_FRAMES` | quit `Run()` after N loop iterations — a showcase to an exit code | `src/platform/Frame.cpp` |
+| `SIMVIEW_WAIT_MS` | bound on every host wait for the device, gpud's included; past it a sentence and exit 1. Every gate runs at 20000; unset = unbounded | `src/platform/Vk.cpp`, `Device.cpp`, `Swapchain.cpp` |
 | `SIMVIEW_PRESENT` | `fifo` / `immediate`, overriding the portability-driver policy | `src/platform/Swapchain.cpp` |
 | `SIMVIEW_ONE_QUEUE` | `1`: force the one-shared-queue path, for measuring what a second queue buys | `src/platform/Vk.cpp` |
 | `GPUD_LOG` | `1`: gpud says why a device did not come up | gpud |

@@ -15,6 +15,7 @@ when something is wrong, each one a command that was actually used.
 | out-of-range device-address reads (kernels) | `SIMVIEW_VVL=gpuav,abort …` — 10× slower, exclusive with printf |
 | shader printf | `SIMVIEW_VVL=printf …` — messages arrive as `validation[info]` |
 | best-practices hints | `SIMVIEW_VVL=best …` — noisy; read once per change of shape |
+| **a freeze** — the window stops, a check never returns | `SIMVIEW_WAIT_MS=5000 ./…` — the wait that never returns names itself (what it waited for, graphics instance and compute ticket waited vs completed) and the process exits; every gate already runs at 20 s. On MoltenVK a freeze is instead `VK_ERROR_DEVICE_LOST` after ~8 s, and its sentence names that too |
 | **a GPU-side lifetime bug** (device lost, "Invalid Resource") | `MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=nslog ./…` — Metal names the object "destroyed while still required by the command buffer"; no Vulkan-level tool can |
 | GPU-side bounds | `MTL_SHADER_VALIDATION=1 ./…` |
 | MoltenVK's own diagnosis | `MVK_CONFIG_LOG_LEVEL=3 ./…` (errors + warnings), `MVK_CONFIG_TRACE_VULKAN_CALLS=1` |

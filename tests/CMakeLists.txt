@@ -10,7 +10,8 @@ add_subdirectory(installed_surface)
 # sanitizer job never runs it.
 set(pure_checks sync_check)
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
-            view_check resize_check viewport_check lines_check decouple_check)
+            view_check resize_check viewport_check lines_check decouple_check
+            hang_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     # Quoted includes resolve against the INCLUDING file's directory,
@@ -64,6 +65,15 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
         set_tests_properties(headless.${t} PROPERTIES LABELS "device")
     endif()
 endforeach()
+
+# hang_check passes on the SENTENCE: a stalled frame must end in
+# "waited N ms for the shot's frame", never return. Its own bound — a
+# fraction of the 20 s every other gate runs under — keeps the proof
+# quick; a skip still reads as a skip.
+set_tests_properties(headless.hang_check PROPERTIES
+    ENVIRONMENT "SIMVIEW_WAIT_MS=500"
+    PASS_REGULAR_EXPRESSION "waited 500 ms for the shot's frame"
+    SKIP_REGULAR_EXPRESSION "^SKIP:")
 
 # S2's bring-up gate: the app-owned Vulkan stack with NVRHI and gpud
 # both adopting it, headless. It speaks src/ internals on purpose —

@@ -269,8 +269,10 @@ The rule:
 
 - The probe's accessors: the UI contexts, a view's extent, the gate
   count, the renderer device, the shared-queue bracket, and the
-  validation tally (`validation_on`, `validation_errors`) — what a
-  check asks that a consumer never may.
+  validation tally (`validation_on`, `validation_errors`), and
+  `stall_frame` (a frame made to wait on a value nothing signals, so
+  `hang_check` can prove the bounded wait reports it) — what a check
+  asks that a consumer never may.
 - Test-only exports live in `sv::probe`, never `sv::impl`. One grep
   answers "what exists only for tests?".
 - They live in one file, `src/testing/Probe.cpp`, declared in a header

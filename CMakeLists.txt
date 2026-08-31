@@ -43,11 +43,11 @@ set(GPUD_BACKEND_VULKAN ON)
 set(GPUD_BUILD_TESTS OFF)
 FetchContent_Declare(gpud
     GIT_REPOSITORY https://github.com/NivDeveloper/gpud
-    # v0.8.0, pinned by hash. The tensor the GPU examples pin declares
+    # v0.9.1, pinned by hash. The tensor the GPU examples pin declares
     # gpud too, at the same hash by convention only: FetchContent is
     # first-declare-wins, and in those subprojects THIS declaration is
     # the one that counts.
-    GIT_TAG        91da5eabd4fe2b3f15b5921505c0740c2f378bd6)
+    GIT_TAG        a82a47950f3da1a565126d689d8f241d642b4e3d)
 FetchContent_MakeAvailable(gpud)
 
 # NVRHI: the renderer layer over the app-owned Vulkan device. Static,
