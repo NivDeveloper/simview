@@ -68,6 +68,13 @@ FetchContent_Declare(nvrhi
     # signalled an app-owned timeline semaphore — zero patches.
     GIT_TAG        cca66aeb084429c880d205e508f5276b6ac13c38)
 FetchContent_MakeAvailable(nvrhi)
+# NVRHI never declares that its Vulkan backend depends on its core, so
+# CMake cannot order the two archives for a consumer that names either
+# directly (the checks link nvrhi for its headers, and GNU ld then saw
+# the core before the backend that references it). Declaring the edge
+# HERE makes every link line in this tree come out right; CMP0079 is
+# what lets a target from a fetched directory be linked from this one.
+target_link_libraries(nvrhi_vk PUBLIC nvrhi)
 
 # Dear ImGui is the UI layer: the dockspace, the panels, and — through
 # the official SDL3 + SDL_GPU backends — docking and multi-viewport,
