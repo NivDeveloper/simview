@@ -35,6 +35,7 @@ struct Platform {
     // what retires design.md's in-place-writer question.
     nvrhi::EventQueryHandle frame_query;
     bool frame_inflight = false;
+    nvrhi::EventQueryHandle idle_query; // platform_gfx_idle's
     Swapchain sc;
     // Null when headless — the ONE spelling of that fact.
     SDL_Window *win = nullptr;
@@ -47,4 +48,15 @@ struct Platform {
 };
 
 } // namespace impl
+
+// Every graphics-queue submit the frame makes goes through here: on a
+// one-queue driver the VkQueue is gpud's too, and vkQueueSubmit wants
+// external synchronization — the bracket is VkContext::queue_m, the
+// same lock gpud's AdoptDesc takes.
+void platform_execute(impl::Platform &, nvrhi::ICommandList *);
+
+// Wait for the GRAPHICS queue to drain — never vkDeviceWaitIdle, which
+// would stall (and race) the compute queue a sim thread is feeding.
+void platform_gfx_idle(impl::Platform &);
+
 } // namespace sv

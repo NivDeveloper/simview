@@ -121,7 +121,12 @@ namespace {
 bool swapchain_acquire_adapter(void *self, nvrhi::ICommandList *, Target *out) {
     impl::App *a = static_cast<impl::App *>(self);
     impl::Swapchain &sc = a->platform.sc;
-    if (!swapchain_acquire(sc, a->platform.ndev))
+    if (!swapchain_acquire(
+            sc, a->platform.ndev,
+            +[](void *u) {
+                platform_gfx_idle(*static_cast<impl::Platform *>(u));
+            },
+            &a->platform))
         return false;
     out->fb = sc.fbs[sc.index];
     out->tex = sc.images[sc.index];
@@ -137,7 +142,7 @@ void swapchain_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
     if (acquired) {
         // The present semaphore signals on THIS submit; present waits it.
         swapchain_ready_present(a->platform.sc, a->platform.ndev);
-        a->platform.ndev->executeCommandList(cl);
+        platform_execute(a->platform, cl);
         a->platform.ndev->setEventQuery(a->platform.frame_query,
                                         nvrhi::CommandQueue::Graphics);
         a->platform.frame_inflight = true;
@@ -145,7 +150,7 @@ void swapchain_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
     } else {
         // Nothing recorded; executing keeps the list reusable without
         // leaning on re-open-without-execute.
-        a->platform.ndev->executeCommandList(cl);
+        platform_execute(a->platform, cl);
     }
 }
 
@@ -170,9 +175,9 @@ void shot_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
         cl->copyTexture(s->staging, nvrhi::TextureSlice(), s->tex,
                         nvrhi::TextureSlice());
     cl->close();
-    s->app->platform.ndev->executeCommandList(cl);
+    platform_execute(s->app->platform, cl);
     if (acquired)
-        s->app->platform.ndev->waitForIdle();
+        platform_gfx_idle(s->app->platform);
 }
 
 } // namespace

@@ -32,6 +32,9 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
     # way the real backend does.
     target_link_libraries(${t} PRIVATE SDL3::SDL3 simview_probe nvrhi
         Vulkan::Headers)
+    if(WIN32)
+        target_compile_definitions(${t} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    endif()
     set_target_properties(${t} PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     if(NOT MSVC)
@@ -71,7 +74,11 @@ add_executable(platform_check checks/platform_check.cpp)
 target_include_directories(platform_check PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(platform_check PRIVATE simview::simview SDL3::SDL3
-    gpud::vulkan nvrhi nvrhi_vk Vulkan::Headers)
+    gpud::vulkan nvrhi_vk nvrhi Vulkan::Headers)
+if(WIN32)
+    target_compile_definitions(platform_check PRIVATE NOMINMAX
+        WIN32_LEAN_AND_MEAN)
+endif()
 set_target_properties(platform_check PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(NOT MSVC)

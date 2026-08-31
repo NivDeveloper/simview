@@ -64,6 +64,22 @@ inline nvrhi::IDevice *&device() {
     return d;
 }
 
+inline sv::impl::App *&app_raw() {
+    static sv::impl::App *a = nullptr;
+    return a;
+}
+
+// Submit the way the frame does — bracketed on a one-queue driver —
+// and wait for the graphics queue alone, never the whole device.
+inline void execute_and_wait(nvrhi::IDevice *dev, nvrhi::ICommandList *cl) {
+    sv::probe::queue_lock(app_raw());
+    dev->executeCommandList(cl);
+    sv::probe::queue_unlock(app_raw());
+    auto q = dev->createEventQuery();
+    dev->setEventQuery(q, nvrhi::CommandQueue::Graphics);
+    dev->waitEventQuery(q);
+}
+
 inline Window *of(ImGuiViewport *vp) {
     return static_cast<Window *>(vp->PlatformUserData);
 }
@@ -162,14 +178,14 @@ inline void render_window(ImGuiViewport *vp, void *) {
     dd->OwnerViewport = owner;
     cl->clearState();
     cl->close();
-    w->dev->executeCommandList(cl);
-    w->dev->waitForIdle();
+    execute_and_wait(w->dev, cl);
 }
 
 // Install both halves and turn viewports on. NoAutoMerge makes every
 // floating panel its own viewport, which is the tear-out arrangement
 // without a mouse to drag with.
 inline void enable(sv::App &app) {
+    app_raw() = app.Raw();
     device() =
         static_cast<nvrhi::IDevice *>(sv::probe::render_device(app.Raw()));
 
@@ -256,8 +272,7 @@ inline bool read(std::size_t index, const std::string &name, Bmp &out) {
     cl->copyTexture(staging, nvrhi::TextureSlice(), w->tex,
                     nvrhi::TextureSlice());
     cl->close();
-    w->dev->executeCommandList(cl);
-    w->dev->waitForIdle();
+    execute_and_wait(w->dev, cl);
 
     std::size_t pitch = 0;
     const auto *px = static_cast<const std::uint8_t *>(

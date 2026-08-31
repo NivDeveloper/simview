@@ -39,5 +39,11 @@ std::size_t gate_count(impl::App *);
 // header stays SDK-free.
 void *render_device(impl::App *);
 
+// A test that submits on the graphics queue itself (the viewport fake)
+// brackets exactly as the frame does: no-ops unless the driver gave
+// the app and gpud one queue.
+void queue_lock(impl::App *);
+void queue_unlock(impl::App *);
+
 } // namespace probe
 } // namespace sv

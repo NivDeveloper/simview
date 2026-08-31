@@ -182,13 +182,14 @@ bool swapchain_open(impl::Swapchain &sc, impl::VkContext &vk,
     }
 }
 
-bool swapchain_acquire(impl::Swapchain &sc, nvrhi::IDevice *ndev) {
+bool swapchain_acquire(impl::Swapchain &sc, nvrhi::IDevice *ndev,
+                       void (*gfx_idle)(void *), void *user) {
     try {
         int pw = 0, ph = 0;
         SDL_GetWindowSizeInPixels(sc.win, &pw, &ph);
         if (sc.recreate || std::uint32_t(pw) != sc.w ||
             std::uint32_t(ph) != sc.h) {
-            ndev->waitForIdle();
+            gfx_idle(user); // the old images' last frame, graphics only
             if (!build_chain(sc, ndev))
                 return false;
         }

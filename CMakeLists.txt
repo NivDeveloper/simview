@@ -203,10 +203,20 @@ add_library(simview::simview ALIAS simview)
 target_include_directories(simview PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
+# nvrhi_vk BEFORE nvrhi: GNU ld resolves static archives in one pass,
+# and the backend's objects reference the core (CI's Linux leg linked
+# 40 undefined CommandListResourceStateTracker symbols the other way).
 target_link_libraries(simview PUBLIC gpud::gpud simview_imgui simview_implot
                               simview_implot3d
                               PRIVATE gpud::vulkan SDL3::SDL3 Vulkan::Headers
-                                      nvrhi nvrhi_vk)
+                                      nvrhi_vk nvrhi)
+# NVRHI's Vulkan target propagates VK_USE_PLATFORM_WIN32_KHR, which drags
+# windows.h — and its min/max macros — into every TU that sees vulkan.h.
+# NVRHI compiles itself with NOMINMAX; so do we.
+if(WIN32)
+    target_compile_definitions(simview PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_definitions(simview_imgui PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 target_include_directories(simview PRIVATE
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}
     ${implot3d_SOURCE_DIR})
@@ -250,6 +260,10 @@ if(SIMVIEW_BUILD_TESTS)
         ${implot_SOURCE_DIR} ${implot3d_SOURCE_DIR})
     target_link_libraries(simview_probe PRIVATE SDL3::SDL3 gpud::gpud nvrhi
         Vulkan::Headers)
+    if(WIN32)
+        target_compile_definitions(simview_probe PRIVATE NOMINMAX
+            WIN32_LEAN_AND_MEAN)
+    endif()
     set_target_properties(simview_probe PROPERTIES
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 

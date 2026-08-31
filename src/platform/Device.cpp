@@ -27,6 +27,20 @@ Logger g_nvrhi_log;
 
 } // namespace
 
+void platform_execute(impl::Platform &pl, nvrhi::ICommandList *cl) {
+    if (pl.vk.shared_queue)
+        pl.vk.queue_m.lock();
+    pl.ndev->executeCommandList(cl);
+    if (pl.vk.shared_queue)
+        pl.vk.queue_m.unlock();
+}
+
+void platform_gfx_idle(impl::Platform &pl) {
+    pl.ndev->setEventQuery(pl.idle_query, nvrhi::CommandQueue::Graphics);
+    pl.ndev->waitEventQuery(pl.idle_query);
+    pl.ndev->resetEventQuery(pl.idle_query);
+}
+
 namespace impl {
 
 App *app_init(const Config &c) {
@@ -121,6 +135,7 @@ App *app_init(const Config &c) {
     }
     pl.cl = pl.ndev->createCommandList();
     pl.frame_query = pl.ndev->createEventQuery();
+    pl.idle_query = pl.ndev->createEventQuery();
     ui_init(a, c);
     return a;
 }
@@ -145,6 +160,7 @@ void app_quit(App *a) {
     a->gates.clear();
     pl.cl = nullptr;
     pl.frame_query = nullptr;
+    pl.idle_query = nullptr;
     if (pl.win) {
         swapchain_close(pl.sc, pl.ndev);
         SDL_DestroyWindow(pl.win);

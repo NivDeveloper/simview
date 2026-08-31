@@ -47,7 +47,8 @@ bool swapchain_open(impl::Swapchain &, impl::VkContext &, nvrhi::IDevice *,
 // queue. False = nothing to draw to this frame (minimized, or the
 // chain was just rebuilt after a resize) — benign, like a failed
 // Presenter::acquire always was.
-bool swapchain_acquire(impl::Swapchain &, nvrhi::IDevice *);
+bool swapchain_acquire(impl::Swapchain &, nvrhi::IDevice *,
+                       void (*gfx_idle)(void *), void *user);
 
 // Register the present semaphore on the NEXT executeCommandLists,
 // which the caller then runs before calling present.

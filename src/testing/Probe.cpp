@@ -33,6 +33,16 @@ void *render_device(impl::App *a) {
     return a ? static_cast<void *>(a->platform.ndev.Get()) : nullptr;
 }
 
+void queue_lock(impl::App *a) {
+    if (a && a->platform.vk.shared_queue)
+        a->platform.vk.queue_m.lock();
+}
+
+void queue_unlock(impl::App *a) {
+    if (a && a->platform.vk.shared_queue)
+        a->platform.vk.queue_m.unlock();
+}
+
 Extent2 view_extent(impl::App *a, const char *title) {
     if (!a || !title)
         return {};
