@@ -145,7 +145,12 @@ items — so the rest is additive:
   scene that a lighting feature should not be making. Local occlusion
   is the shape worth trying next — eye-dome lighting over the depth
   buffer, or an occlusion term from a density field;
-- **W6** a flagship: a tensor sim producing device-resident N x 3.
+- **W6** (shipped 2026-09-01): the flagship — tensor's own BGK
+  example, 8192 test particles thermalizing in a periodic box, stepped
+  on the GPU and drawn from the buffers tensor evaluated into. The
+  physics is INCLUDED, not copied: tensor's example defines
+  BGK_NO_MAIN for exactly this, so what runs is that example's step()
+  and cannot drift from it. `examples/bgk/`.
 Named smaller ones live in 3d-plan.md: the `render/` hoist trigger,
 and per-item culling granularity.
 

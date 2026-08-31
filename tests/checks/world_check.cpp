@@ -137,6 +137,7 @@ constexpr Rect kMapRect{630, 0, 930, 230};
 constexpr Rect kGroundRect{0, 240, 300, 470};
 constexpr Rect kOrthoRect{310, 240, 620, 470};
 constexpr Rect kLightRect{630, 240, 930, 470};
+constexpr Rect kDoorRect{0, 480, 300, 695};
 
 // The image inside a pinned panel — the panel less its chrome. The
 // title bar is a blue strip with white text on it, and the ANTIALIASED
@@ -290,6 +291,14 @@ int main() {
     const std::size_t gates_before = probe::gate_count(app.Raw());
     sv::World d = app.World({.title = "doors", .grid = false, .axes = false});
     REQUIRE(bool(d));
+    // Pinned, because what follows has to be probed rather than merely
+    // run: this section used to assert nothing about the picture and a
+    // device-sourced cloud that drew NOTHING would have passed it.
+    pin(app, "doors", kDoorRect);
+    d.Camera({.focus = {0.0f, 0.0f, 0.0f},
+              .distance = 6.0f,
+              .azimuth_deg = 0.0f,
+              .elevation_deg = 0.0f});
     Sync<std::vector<float>> pts;
     pts.Next() = {0.0f, 0.0f, 0.0f};
     pts.Publish();
@@ -329,10 +338,26 @@ int main() {
         dev.run(*fill, 1, {reinterpret_cast<const std::byte *>(&sc), sizeof sc},
                 bufs);
         dpts.Publish();
-        CHECK(bool(d.Cloud(dpts, {.radius = 0.3f})));
+        // Green, so it can be told from the host-sourced cloud already
+        // in this panel.
+        CHECK(bool(d.Cloud(
+            dpts, {.color = {0.15f, 1.0f, 0.35f, 1.0f}, .radius = 0.3f})));
         app.Step();
         Bmp shot;
         CHECK(harness::shot(app, "world_device", shot));
+
+        // The assertion this section did not have. A cloud whose
+        // points live in a device buffer must DRAW them — the kernel
+        // ran, the buffer resolved, the count came out of its size,
+        // and the shader read the layout it expects. Every one of
+        // those can fail silently, and the frame is the only place
+        // that shows it.
+        const Box green = channel_box(shot, content_of(kDoorRect), 1, 40);
+        CHECK(!green.empty);
+        const unsigned wide = green.empty ? 0u : green.x1 - green.x0;
+        std::printf("  a cloud from a device buffer: %u px across\n", wide);
+        CHECK_GT(wide, 8u);
+
         CHECK_EQ(probe::validation_errors(app.Raw()),
                  probe::validation_on(app.Raw())
                      ? probe::validation_errors(app.Raw())
