@@ -9,31 +9,28 @@
 namespace sv {
 
 void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
-    if ((t.tex || (t.depth_only && t.depth)) && t.w == t.want_w &&
-        t.h == t.want_h)
+    if (t.tex && t.w == t.want_w && t.h == t.want_h)
         return;
     t.fb = nullptr;
     t.tex = nullptr;
     t.depth = nullptr;
 
-    if (!t.depth_only) {
-        t.tex = gpu.dev->createTexture(
-            nvrhi::TextureDesc()
-                .setWidth(t.want_w)
-                .setHeight(t.want_h)
-                .setFormat(kTargetFormat)
-                .setIsRenderTarget(true)
-                .setInitialState(nvrhi::ResourceStates::ShaderResource)
-                .setKeepInitialState(true)
-                .setDebugName("view target"));
-        if (!t.tex) {
-            set_error("view texture: creation failed");
-            t.w = t.h = 0;
-            return;
-        }
+    t.tex = gpu.dev->createTexture(
+        nvrhi::TextureDesc()
+            .setWidth(t.want_w)
+            .setHeight(t.want_h)
+            .setFormat(kTargetFormat)
+            .setIsRenderTarget(true)
+            .setInitialState(nvrhi::ResourceStates::ShaderResource)
+            .setKeepInitialState(true)
+            .setDebugName("view target"));
+    if (!t.tex) {
+        set_error("view texture: creation failed");
+        t.w = t.h = 0;
+        return;
     }
 
-    if (t.want_depth || t.depth_only) {
+    if (t.want_depth) {
         t.depth = gpu.dev->createTexture(
             nvrhi::TextureDesc()
                 .setWidth(t.want_w)
@@ -42,7 +39,7 @@ void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
                 .setIsRenderTarget(true)
                 .setInitialState(nvrhi::ResourceStates::DepthWrite)
                 .setKeepInitialState(true)
-                .setDebugName(t.depth_only ? "shadow map" : "view depth"));
+                .setDebugName("view depth"));
         if (!t.depth) {
             set_error("view depth texture: creation failed");
             t.tex = nullptr;
@@ -52,8 +49,7 @@ void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
     }
 
     nvrhi::FramebufferDesc fbd;
-    if (t.tex)
-        fbd.addColorAttachment(t.tex);
+    fbd.addColorAttachment(t.tex);
     if (t.depth)
         fbd.setDepthAttachment(t.depth);
     t.fb = gpu.dev->createFramebuffer(fbd);

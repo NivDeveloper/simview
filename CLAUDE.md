@@ -178,13 +178,12 @@ Next: 3-D scene kinds, and more than one window.
   its positions for a colormap, through the same three doors; up to
   four directional lights ride the view block, and an unlit world
   keeps the light at the camera it always had. Four-sample
-  multisampling with a resolve, in the world stratum only. **ONE of
-  those lights may cast** (`LightDesc{.shadow = true}`, a second is
-  refused by name): a fitted orthographic map, and a ground that takes
-  a tone where that light reaches it — a shadow needs something LIT to
-  fall on, and the grid's ground was transparent. The shadow map is
-  the one depth buffer here that is NOT reverse-Z, because the
-  renderer hardcodes a comparison sampler to LESS. `docs/3d-plan.md`.
+  multisampling with a resolve, in the world stratum only. **No
+  shadows and no occlusion term**: a directional shadow map shipped
+  and was removed — what it tells you is a silhouette FROM THE LIGHT,
+  which is not what a cluster study asks, and it needed the ground to
+  become a lit surface to fall on. `docs/3d-plan.md` records what it
+  cost and what to try instead.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive
@@ -417,7 +416,7 @@ src/render/        the bottom of the drawing stack, under BOTH
                    resizable target, how a shader is named. It
                    reaches nothing but core (lint). It exists
                    because a second consumer appeared — the world's
-                   shadow map, which is a target with no colour
+                   shadow map — since removed, the hoist stays
 src/scene/         a kind is ONE file: state, uniform block, shaders,
                    KindOps, and its exported functions. Nothing else
                    names a kind

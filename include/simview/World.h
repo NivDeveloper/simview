@@ -32,7 +32,6 @@ struct LightDesc {
     float direction[3] = {0.0f, 0.0f, 1.0f};
     float color[3] = {1.0f, 1.0f, 1.0f};
     float intensity = 0.7f;
-    bool shadow = false;
 };
 
 namespace impl {

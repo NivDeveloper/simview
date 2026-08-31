@@ -203,14 +203,13 @@ two strata may not name EACH OTHER. The `.cpp` files that orchestrate
 a frame or a lifecycle are L4 by content and may.
 
 `render/` (2026-08-31) was deferred in W1 with a named trigger — a
-second consumer of `{Gpu, RenderTarget, Shader}` — and W5's shadow map
-is it: a target with no colour attachment, wanted by the world and
-meaningless to a scene. Hoisting on the trigger rather than on
-principle is what kept the move mechanical: nothing changed but
-include lines, and the pixel checks were the proof. The move also cut
-the last `world/ -> scene/` edge, so the strata now share the bottom
-layer and nothing else — which is a stronger lint rule than the
-one-way arrow it replaces.
+second consumer of `{Gpu, RenderTarget, Shader}`. W5's shadow map was
+that consumer, and although the shadow pass was later removed the
+hoist stays: it cut the last `world/ -> scene/` edge, so the two
+strata now share the bottom layer and nothing else — a stronger lint
+rule than the one-way arrow it replaced. Hoisting on the trigger
+rather than on principle is what kept the move mechanical: nothing
+changed but include lines, and the pixel checks were the proof.
 
 `world/` (2026-08-31, `docs/3d-plan.md`) sits BESIDE `scene/` rather
 than inside it: the 3D stratum varies exactly what the 2D kind

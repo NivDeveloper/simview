@@ -9,12 +9,12 @@
 // bytecode with shaders/regen.sh — never edit it by hand.
 
 struct LParams {
-    float x0, y0; // the scene range these positions live in
+    float x0, y0;      // the scene range these positions live in
     float x1, y1;
-    float2 fit;      // the field's (sx, sy): what makes the two align
-    float2 viewport; // target pixels, to turn a width into NDC
+    float2 fit;        // the field's (sx, sy): what makes the two align
+    float2 viewport;   // target pixels, to turn a width into NDC
     float4 color;
-    float width; // in pixels
+    float width;       // in pixels
     float pad0, pad1, pad2;
 };
 
@@ -37,7 +37,8 @@ float2 to_ndc(float2 p) {
     return ndc;
 }
 
-[shader("vertex")] L2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
+[shader("vertex")]
+L2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
     // Two triangles over the unit square: corner.x runs along the
     // segment, corner.y across it.
     const uint c = (vI < 3) ? vI : (vI == 3 ? 2 : (vI == 4 ? 1 : 3));
@@ -63,8 +64,8 @@ float2 to_ndc(float2 p) {
     return o;
 }
 
-    [shader("fragment")] float4 fsmain(L2F v)
-    : SV_Target {
+[shader("fragment")]
+float4 fsmain(L2F v) : SV_Target {
     // A soft edge across the width, like the disc's.
     const float a = v.color.a * saturate((1.0f - abs(v.across)) * 3.0f);
     return float4(v.color.rgb, a);

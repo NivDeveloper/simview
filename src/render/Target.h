@@ -10,11 +10,10 @@
 // frame's draw list records the handle; a texture released after being
 // recorded is a use-after-free with a picture on the other side.
 //
-// Two consumers make this its own layer rather than the scene's: a
-// view's target, which carries a colour attachment and optionally a
-// depth one, and a world's shadow map, which is depth ONLY. What they
-// share is the resize-and-recreate discipline above, and that is the
-// whole of what lives here.
+// It is its own layer rather than the scene's because both strata
+// need it and neither owns it: the resize-and-recreate discipline
+// above is the whole of what lives here, and a 3D world wants it on
+// exactly the terms a 2D scene does.
 
 #include "Gpu.h"
 
@@ -31,10 +30,6 @@ struct RenderTarget {
     // to be discovered. Set before the first resize; never after.
     nvrhi::TextureHandle depth;
     bool want_depth = false;
-    // No colour at all — a shadow map is a depth texture and a
-    // framebuffer with an attachment nobody writes costs a format
-    // the pipeline cache would then have to distinguish.
-    bool depth_only = false;
     nvrhi::FramebufferHandle fb;
     std::uint32_t w = 0, h = 0;
     std::uint32_t want_w = 256, want_h = 256;

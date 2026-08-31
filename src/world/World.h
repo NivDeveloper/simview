@@ -37,10 +37,6 @@ struct WorldState {
     // invisible — the same picture, fewer draws — and the only way to
     // assert that is to render both and compare.
     bool cull = true;
-    // Off only from the test probe, for the same reason: a shadow is
-    // supposed to darken the ground and change nothing else, and the
-    // only way to assert that is to render both and subtract.
-    bool cast = true;
 
     Camera3 camera{};
 
@@ -53,11 +49,6 @@ struct WorldState {
         Vec3 direction{0.0f, 0.0f, 1.0f}; // toward the light, world space
         float color[3] = {1.0f, 1.0f, 1.0f};
         float intensity = 0.7f;
-        // At most one light casts. A second map is a second pass, a
-        // second fit and a second sampler for a picture that reads
-        // almost the same — so the second one is refused by name
-        // rather than silently ignored.
-        bool shadow = false;
     };
     std::vector<Light> lights;
     float ambient[3] = {0.3f, 0.3f, 0.3f};
@@ -67,17 +58,6 @@ struct WorldState {
     // it internally: the binding sets items make against it stay valid
     // as the value changes, which is what lets a set be built once.
     nvrhi::BufferHandle view_cb;
-
-    // The caster's depth buffer, and the sampler that compares
-    // against it. ALWAYS created, one texel across when nothing
-    // casts: the binding layout is the same either way, so there is
-    // always something to bind, and turning shadows on is a resize.
-    RenderTarget shadow;
-    nvrhi::SamplerHandle shadow_sampler;
-    Mat4 light_to_clip{};
-    // Measured against acne on the ground plane and peter-panning
-    // under a sphere; see docs/3d-plan.md.
-    float shadow_bias = 0.0015f;
 
     // Rebuilt every frame, kept so the allocation is not.
     std::vector<DrawCmd> cmds;

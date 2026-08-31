@@ -13,12 +13,8 @@
 
 #include "../core/Error.h"
 #include "bytecode/cloud_fsmain_spirv.h"
-#include "bytecode/cloud_shadow_fsmain_spirv.h"
-#include "bytecode/cloud_shadow_vsmain_spirv.h"
 #include "bytecode/cloud_vsmain_spirv.h"
 #include "bytecode/mesh_fsmain_spirv.h"
-#include "bytecode/mesh_shadow_fsmain_spirv.h"
-#include "bytecode/mesh_shadow_vsmain_spirv.h"
 #include "bytecode/mesh_vsmain_spirv.h"
 
 #include <gpud/Vulkan.h>
@@ -51,17 +47,11 @@ struct CloudState {
     Channel pos;
     Channel val; // the colour source; idle until a map wants one
     nvrhi::BindingSetHandle bset;
-    // A second set for the shadow pass: its layout has no shadow map
-    // in it, because that is the texture the pass writes.
-    nvrhi::BindingSetHandle shadow_bset;
-    nvrhi::IBuffer *shadow_pos = nullptr;
-    const impl::WorldState::Mesh *shadow_mesh = nullptr;
     // What the set was built against. It is rebuilt when a buffer's
     // IDENTITY changes and never on a schedule: a producer may hand
     // over a different buffer at any frame, and a set built on the old
     // one samples memory that has moved on.
     nvrhi::IBuffer *bound_pos = nullptr, *bound_val = nullptr;
-    nvrhi::ITexture *bound_shadow = nullptr;
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     float radius = 0.05f;
     std::uint32_t mode = 0;
@@ -310,23 +300,17 @@ void draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
         cs.map != 0 && cs.val.bound() && cs.val.count >= cs.pos.count;
     nvrhi::IBuffer *val = mapped ? cs.val.bound() : pos;
 
-    if (!cs.bset || cs.bound_pos != pos || cs.bound_val != val ||
-        cs.bound_shadow != view.shadow_map) {
+    if (!cs.bset || cs.bound_pos != pos || cs.bound_val != val) {
         cs.bset = it.gpu.dev->createBindingSet(
             nvrhi::BindingSetDesc()
                 .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, view.view_cb))
                 .addItem(nvrhi::BindingSetItem::PushConstants(
                     1, sizeof(CloudParams)))
                 .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, pos))
-                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, val))
-                .addItem(nvrhi::BindingSetItem::Texture_SRV(kShadowMapBinding,
-                                                            view.shadow_map))
-                .addItem(nvrhi::BindingSetItem::Sampler(kShadowSamplerBinding,
-                                                        view.shadow_sampler)),
+                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, val)),
             pe->layout);
         cs.bound_pos = pos;
         cs.bound_val = val;
-        cs.bound_shadow = view.shadow_map;
     }
     if (!cs.bset)
         return;
@@ -381,7 +365,7 @@ void draw_mesh(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     nvrhi::IBuffer *val = mapped ? cs.val.bound() : pos;
 
     if (!cs.bset || cs.bound_pos != pos || cs.bound_val != val ||
-        cs.bound_mesh != mesh || cs.bound_shadow != view.shadow_map) {
+        cs.bound_mesh != mesh) {
         cs.bset = it.gpu.dev->createBindingSet(
             nvrhi::BindingSetDesc()
                 .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, view.view_cb))
@@ -390,16 +374,11 @@ void draw_mesh(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
                 .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, pos))
                 .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, val))
                 .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(
-                    3, mesh->vertices))
-                .addItem(nvrhi::BindingSetItem::Texture_SRV(kShadowMapBinding,
-                                                            view.shadow_map))
-                .addItem(nvrhi::BindingSetItem::Sampler(kShadowSamplerBinding,
-                                                        view.shadow_sampler)),
+                    3, mesh->vertices)),
             pe->layout);
         cs.bound_pos = pos;
         cs.bound_val = val;
         cs.bound_mesh = mesh;
-        cs.bound_shadow = view.shadow_map;
     }
     if (!cs.bset)
         return;
@@ -455,75 +434,6 @@ const nvrhi::BlendState::RenderTarget kAlphaBlend =
         .setSrcBlendAlpha(nvrhi::BlendFactor::One)
         .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
 
-// The same item from the light's side: one pipeline, one binding set,
-// depth only. It keeps its OWN set because the colour set carries the
-// shadow map — which is the texture this pass is writing, and a
-// descriptor cannot be both.
-void draw_shadow(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
-                 nvrhi::IFramebuffer *fb, const WorldView &view) {
-    CloudState &cs = state_of(it);
-    const WorldPipelineEntry *pe = world_pipeline_for(
-        it.gpu, *it.pipelines, it.stats, it.ops, PassId::Shadow, fb);
-    if (!pe || !view.view_cb || !view.shadow_px)
-        return;
-
-    nvrhi::IBuffer *pos = cs.pos.bound();
-    if (!pos || !cs.pos.count)
-        return;
-    const bool geometry = cs.shape != 0;
-    const impl::WorldState::Mesh *mesh = cs.mesh;
-    if (geometry && !mesh)
-        return;
-
-    if (!cs.shadow_bset || cs.shadow_pos != pos ||
-        cs.shadow_mesh != (geometry ? mesh : nullptr)) {
-        // Every slot the layout declares, including the value buffer
-        // this pass never reads: a set that skips one does not match
-        // its layout, and what comes back is a null set and an item
-        // that silently draws nothing.
-        auto bsd =
-            nvrhi::BindingSetDesc()
-                .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, view.view_cb))
-                .addItem(nvrhi::BindingSetItem::PushConstants(
-                    1, sizeof(CloudParams)))
-                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, pos))
-                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, pos));
-        if (geometry)
-            bsd.addItem(
-                nvrhi::BindingSetItem::StructuredBuffer_SRV(3, mesh->vertices));
-        cs.shadow_bset = it.gpu.dev->createBindingSet(bsd, pe->layout);
-        cs.shadow_pos = pos;
-        cs.shadow_mesh = geometry ? mesh : nullptr;
-    }
-    if (!cs.shadow_bset)
-        return set_error("cloud: shadow binding set failed");
-
-    CloudParams p{};
-    p.radius = cs.radius;
-    p.count = std::uint32_t(cs.pos.count);
-    cl->setGraphicsState(
-        nvrhi::GraphicsState()
-            .setPipeline(pe->pipeline)
-            .setFramebuffer(fb)
-            .addBindingSet(cs.shadow_bset)
-            .setIndexBuffer(geometry ? nvrhi::IndexBufferBinding{
-                                           mesh->indices,
-                                           nvrhi::Format::R32_UINT, 0}
-                                     : nvrhi::IndexBufferBinding{})
-            .setViewport(nvrhi::ViewportState().addViewportAndScissorRect(
-                nvrhi::Viewport(float(view.shadow_px),
-                                float(view.shadow_px)))));
-    cl->setPushConstants(&p, sizeof p);
-    if (geometry)
-        cl->drawIndexed(nvrhi::DrawArguments()
-                            .setVertexCount(mesh->index_count)
-                            .setInstanceCount(std::uint32_t(cs.pos.count)));
-    else
-        cl->draw(nvrhi::DrawArguments().setVertexCount(
-            std::uint32_t(cs.pos.count) * 6));
-    ++it.stats->draws;
-}
-
 const WorldItemOps kCloudSolidOps{
     .name = "cloud (solid)",
     .pass = PassId::Opaque,
@@ -531,11 +441,6 @@ const WorldItemOps kCloudSolidOps{
     .submit = submit,
     .draw = draw,
     .release = release,
-    .draw_shadow = draw_shadow,
-    .shadow_vs = {cloud_shadow_vsmain_spirv, cloud_shadow_vsmain_spirv_len,
-                  "vsmain"},
-    .shadow_fs = {cloud_shadow_fsmain_spirv, cloud_shadow_fsmain_spirv_len,
-                  "fsmain"},
     .bounds = bounds,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
@@ -586,11 +491,6 @@ const WorldItemOps kMeshSolidOps{
     .submit = submit,
     .draw = draw_mesh,
     .release = release,
-    .draw_shadow = draw_shadow,
-    .shadow_vs = {mesh_shadow_vsmain_spirv, mesh_shadow_vsmain_spirv_len,
-                  "vsmain"},
-    .shadow_fs = {mesh_shadow_fsmain_spirv, mesh_shadow_fsmain_spirv_len,
-                  "fsmain"},
     .bounds = bounds,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},

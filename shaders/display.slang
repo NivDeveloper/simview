@@ -5,11 +5,11 @@
 // edit it by hand.
 
 struct Params {
-    uint w; // field extent
+    uint w;         // field extent
     uint h;
-    int cmap; // Colormap enum value
+    int cmap;       // Colormap enum value
     uint pad0;
-    float lo; // value range -> colormap ends
+    float lo;       // value range -> colormap ends
     float hi;
     float2 uvscale; // letterbox: window uv -> field uv
     float2 uvoff;
@@ -23,7 +23,8 @@ struct V2F {
     float2 uv : TEXCOORD0;
 };
 
-[shader("vertex")] V2F vsmain(uint vI : SV_VertexID) {
+[shader("vertex")]
+V2F vsmain(uint vI : SV_VertexID) {
     float2 t = float2((vI << 1) & 2, vI & 2);
     V2F o;
     o.uv = t;
@@ -52,7 +53,8 @@ float3 viridis(float t) {
     return c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6)))));
 }
 
-[shader("fragment")] float4 fsmain(V2F v) : SV_Target {
+[shader("fragment")]
+float4 fsmain(V2F v) : SV_Target {
     float2 fuv = v.uv * params.uvscale + params.uvoff;
     if (any(fuv < 0.0f) || any(fuv >= 1.0f))
         return float4(0.09f, 0.09f, 0.10f, 1.0f); // the letterbox bars

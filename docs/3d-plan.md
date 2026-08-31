@@ -285,21 +285,24 @@ boundary. `examples/orbit` is the same world in one panel-free window.
   host has nothing to walk and a box it invented could delete data
   nobody can look at. Declaring them from the producer's side is the
   escape hatch that would close this, and no workload has asked yet.
-- **No shadows** (W5), and no user meshes yet: the built-ins cover
-  particles, and geometry a caller computed is the next thing the
-  registry grows. The colour target is 8-bit UNORM, so tone mapping
-  would want a format change first.
+- **No shadows and no occlusion term.** A directional shadow map
+  shipped in W5 and was removed a day later; the section below says
+  why, and what to try instead. No user meshes yet either: the
+  built-ins cover particles, and geometry a caller computed is the
+  next thing the registry grows. The colour target is 8-bit UNORM, so
+  tone mapping would want a format change first.
 
 ## Named follow-ups
 
 - ~~The `render/` hoist~~ — **done in W5**, on the trigger it was
-  deferred with: the shadow map is a target with no colour attachment,
-  which is a second consumer of the same resize-and-recreate
-  discipline. `Gpu`, `RenderTarget` and `Shader` moved to `src/render/`
-  and nothing else changed — the pixel checks were the proof. It also
-  cut the last `world/ -> scene/` edge, so the two strata now share
-  the bottom layer and nothing else, which is a stronger rule than the
-  one-way arrow it replaces.
+  deferred with: the shadow map was a target with no colour
+  attachment, a second consumer of the same resize-and-recreate
+  discipline. `Gpu`, `RenderTarget` and `Shader` moved to
+  `src/render/` and nothing else changed — the pixel checks were the
+  proof. The shadow map has since gone; the hoist stays, because it
+  cut the last `world/ -> scene/` edge and the two strata now share
+  the bottom layer and nothing else, which is a stronger rule than
+  the one-way arrow it replaced.
 - ~~Per-pass GPU timestamps~~ — **closed in W4**. A world stamps a
   section per pass instead of drawing inside one called "scene"; the
   2D path keeps that name. Sections still do not nest, so a world's
@@ -420,117 +423,62 @@ bounds; the tier reading the count again; bounds guessed for device
 data; and a box too tight by the radius, which is the one the first
 version of the check could not see.
 
-## W5 — the shadow pass
+## W5 — the shadow pass, and why it was removed
 
-The row reserved in W1 finally draws, into the light's own depth map,
-fitted to the bounds W4 made available. Four things about it were not
-obvious, and three of them cost a wrong picture first.
+A directional shadow map shipped, worked, and came out again a day
+later. The removal is the useful record, so it is kept here rather
+than dropped with the code.
 
-**The shadow map is the one depth buffer here that is not reverse-Z.**
-A comparison sampler is what makes a soft shadow four taps instead of
-nine, and NVRHI hardcodes its comparison to `eLess`
-(`vulkan-texture.cpp`). Under reverse-Z that reads every surface as
-being behind itself: the entire scene comes out shadowed, which looks
-exactly like a bias problem and is not one. So this map counts depth
-the other way — near 0, far 1, cleared to 1 — and `proj_ortho_forward_z`
-exists solely for it.
+**What it did.** One light could cast (`LightDesc{.shadow = true}`,
+a second refused by name); an orthographic map fitted to the scene
+bounds W4 made available; four-tap PCF through a comparison sampler;
+the grid, the instanced meshes and the billboard impostors all
+receiving. About 470 lines, 1.1-3.5 ms a frame in the examples.
 
-**A shadow needs something LIT to fall on.** The grid was drawn as
-lines over a transparent quad, so between the lines there was nothing
-to darken: the pass ran, the map filled, and the picture was
-unchanged. The ground now takes a tone where the casting light reaches
-it, and the shadow is that tone's ABSENCE rather than a wash laid over
-it — which is both what a shadow is, and what keeps a world with no
-casting light looking exactly as it did before.
+**Why it went.** Two reasons, and only the first is about shadows.
 
-**The box has to cover where shadows LAND, not just where casters
-are.** Fitted to the geometry alone, every lookup on the ground falls
-off the edge of the map and reads as lit. The fit therefore includes
-each corner's projection onto the ground plane, which is the term that
-grows the box as the light gets lower.
+A directional shadow map answers "what is the silhouette of this
+thing, seen from the light". For a lattice that is informative — the
+cube grid's shadow reads AS a lattice. For a particle cloud it is a
+dappled blob, and the question a cluster study actually asks is about
+LOCAL occlusion: which particles are buried, where the cavities are.
+That is a different measurement, not a better-tuned version of this
+one.
 
-**A binding set that skips a slot its layout declares is not
-reported.** The shadow set bound storage slots 1 and 3 while the
-layout declared 1, 2 and 3; the renderer accepted it, and the caster
-sampled a garbage map and turned black. Nothing failed, nothing
-logged — the sphere was simply dark. The set now fills every slot the
-layout names, including the value buffer this pass never reads.
+The second reason is worse and is the one to remember. **To have
+somewhere to fall, the shadow made the ground a lit surface.** The
+grid was lines over a transparent quad; a shadow on it was invisible;
+so the quad started painting a tone wherever the casting light reached
+it. That is a lighting feature reaching out and changing what the
+SCENE is — the floor stopped being a ruler and became an object. No
+amount of tuning fixes that, because it is a scope error rather than a
+bug.
 
-**A curved receiver shadows itself in bands.** Near the light's
-grazing angle a sphere crosses a texel's worth of depth WITHIN that
-texel, so no constant depth bias can separate it from itself — and one
-large enough to try detaches the shadow from what casts it. The
-lookup therefore steps along the receiver's own normal by about a
-texel of world before projecting, which moves the sample to where the
-map is unambiguous. Measured on a sphere lit from directly overhead:
-2.0% of the panel darkened without the offset against 0.6% with it,
-where the cast shadow itself is that 0.6%.
+**What it cost to remove.** Almost nothing, and the reason is worth
+recording. The shadow-specific pieces were self-contained — 154 lines
+of math with exactly one caller, two whole shader files, one field on
+the ops table — and the only place shadows reached into general code
+was two binding slots present in every colour pipeline and every
+item's binding set. A screen-space method needs none of that: it reads
+a depth texture after the fact and never touches an item shader.
 
-**Every receiver samples**, not just the ground: the grid, the
-instanced meshes and the billboard impostors all call `shadow_at`, so
-a sphere takes the shadow of whatever is above it in a world with no
-ground at all. The impostor rebuilds its world-space normal from the
-view matrix's rows, which are orthonormal, so that is three
-multiply-adds rather than a matrix. The axes receive nothing — they
-are an overlay.
+**What to try instead**, in the order I would try it:
 
-Scope, stated rather than implied: **one light casts.** A second map
-is a second pass, a second fit and a second sampler for a picture that
-reads almost the same, so a second casting light is refused by name.
-Translucent clouds cast nothing — an opaque shadow from a thing you
-can see through is worse than none. The grid receives and does not
-cast; the axes do neither.
+- **Eye-dome lighting**, the filter point-cloud viewers use: darken a
+  pixel by how much nearer its neighbours are. Depth buffer only, one
+  full-screen pass, nothing to tune, stable under rotation.
+- **SSAO/GTAO** if surfaces rather than points become the subject.
+- **An occlusion term from a density field** — bin the particles,
+  shade by local density. The only one of the three that is
+  view-independent and means something quantitatively, and it reuses
+  the compute path rather than the raster one.
 
-A caster sitting ON the ground shows nothing, which is worth saying
-because `examples/orbit` was written that way and had to be changed:
-its shell was centred on the origin and straddled the plane, so the
-shadow landed underneath it and behind the half that was below. The
-shell now floats, and the example shows the feature it turns on.
+Each needs one thing that does not exist yet and that shadows did not
+build: **a readable depth texture.** The world resolves colour only —
+the depth attachment is multisampled and never resolved, so nothing
+can sample it.
 
-### The numbers
-
-| what | measured |
-| --- | --- |
-| the shadow pass, `examples/orbit`, 1024 px map | 3.45 ms of a 16.7 ms frame |
-| the same at 2048 px | 5.11 ms |
-| the opaque pass beside it | 5.9-7.9 ms |
-
-The map is 1024 because the box is FITTED: it spends its texels on
-what is in the scene rather than on the world, so a thousand across is
-a thousand across whatever the scale. Four times the texels bought a
-third more pass for a sharpness nothing in a scientific picture reads.
-What moves these: the device, the instance count (this pass is
-vertex-bound here, not fill-bound — 4x the pixels cost 1.5x), and the
-map size.
-
-### What the check proves
-
-`shadow_check` never converts a world point to a pixel by hand. A
-MARKER sphere is drawn at the point the ray geometry says the shadow
-lands on, its centroid is read out of the picture, and the shadow's
-centroid must agree with it — both through the same camera, so no
-convention about which way a viewport runs enters the check at all.
-
-Two casters, at different heights and off-axis in both directions,
-because **one sphere cannot detect a mirrored lookup**: the map is
-fitted around what casts, so a single sphere sits in the middle of it
-and is symmetric under either flip. Measured — with one centred
-sphere, flipping v moved the shadow by 2 px and the check passed. With
-two, the flip puts 100% shadow at a mirror point that must be lit.
-
-The control is the SAME light with the lookup switched off
-(`probe::shadows`), not no light: a world with no lights keeps a
-headlight at the camera, so turning one on changes the shading
-everywhere and the difference measured would be the lighting.
-
-A second scene in the same check has a sphere shadowed by a sphere
-with no ground in the world, and asserts the shape the culling claim
-has: turning the lookup on must not change a surface the caster
-cannot reach. Its bound sits between the two measured numbers above,
-a factor of three from each side.
-
-Five drills, each watched red then restored: the map sampled with v
-flipped; the map back to reverse-Z; the box fitted to casters only;
-the pass disabled again; and the normal offset removed, which is the
-one the acne bound was tightened to catch — at its first setting it
-passed.
+**What survived**, and would have whatever came next: the `render/`
+hoist, per-pass GPU timing sections, W4's scene bounds, and the
+`probe::`-switch pattern the checks are built on — render the same
+frame with the feature off and on, and subtract.

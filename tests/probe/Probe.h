@@ -86,7 +86,6 @@ void mouse_modifier_shift(impl::App *, bool down);
 // are, so this is how a check asks whether that rule fired without
 // timing anything.
 void culling(impl::App *, bool on);
-void shadows(impl::App *, bool on);
 
 std::size_t item_triangles(impl::App *, const char *title, std::uint64_t *out,
                            std::size_t cap);

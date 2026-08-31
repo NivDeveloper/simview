@@ -8,12 +8,12 @@
 // bytecode with shaders/regen.sh — never edit it by hand.
 
 struct PParams {
-    float x0, y0; // the scene range these positions live in
+    float x0, y0;      // the scene range these positions live in
     float x1, y1;
-    float2 fit;      // the field's (sx, sy): what makes the two align
-    float2 viewport; // target pixels, to turn a radius into NDC
+    float2 fit;        // the field's (sx, sy): what makes the two align
+    float2 viewport;   // target pixels, to turn a radius into NDC
     float4 color;
-    float radius; // in pixels
+    float radius;      // in pixels
     float pad0, pad1, pad2;
 };
 
@@ -26,11 +26,11 @@ struct P2F {
     float4 color : TEXCOORD1; // carried from the vertex stage on purpose
 };
 
-[shader("vertex")] P2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
+[shader("vertex")]
+P2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
     // Two triangles: 0,1,2, 2,1,3 over the unit square's corners.
     const uint c = (vI < 3) ? vI : (vI == 3 ? 2 : (vI == 4 ? 1 : 3));
-    const float2 corner =
-        float2(float(c & 1), float((c >> 1) & 1)) * 2.0f - 1.0f;
+    const float2 corner = float2(float(c & 1), float((c >> 1) & 1)) * 2.0f - 1.0f;
 
     const float2 p = points[iI];
     // Normalise into the range, then the SAME centred rect the field
@@ -51,11 +51,11 @@ struct P2F {
     return o;
 }
 
-    // The colour rides in from the vertex stage: the push-constant block
-    // is declared with vertex visibility in the binding layout, so the
-    // fragment stage reads what the vertex stage carried.
-    [shader("fragment")] float4 fsmain(P2F v)
-    : SV_Target {
+// The colour rides in from the vertex stage: the push-constant block
+// is declared with vertex visibility in the binding layout, so the
+// fragment stage reads what the vertex stage carried.
+[shader("fragment")]
+float4 fsmain(P2F v) : SV_Target {
     // A disc, not a square, with a soft edge.
     const float d = length(v.local);
     if (d > 1.0f)
