@@ -36,16 +36,38 @@ find_package(SDL3 REQUIRED CONFIG)
 # the sdl backend owns device bring-up, and gpud vocabulary is what
 # the opt-in door (include/simview/gpud.h) speaks.
 include(FetchContent)
-set(GPUD_BACKEND_VULKAN OFF)
+# The vulkan backend is the compute half of the NVRHI renderer plan:
+# one app-owned VkDevice, gpud adopting its compute queue. The sdl
+# backend stays on until the swap commit removes its last caller.
+set(GPUD_BACKEND_VULKAN ON)
 set(GPUD_BUILD_TESTS OFF)
 FetchContent_Declare(gpud
     GIT_REPOSITORY https://github.com/NivDeveloper/gpud
-    # v0.6.0, pinned by hash. The tensor the GPU examples pin declares
+    # v0.7.0, pinned by hash. The tensor the GPU examples pin declares
     # gpud too, at the same hash by convention only: FetchContent is
     # first-declare-wins, and in those subprojects THIS declaration is
     # the one that counts.
-    GIT_TAG        9918fae274024cc2696845b82381c53788953056)
+    GIT_TAG        190851bc281f1eb60bcc143978a47106b3009f4a)
 FetchContent_MakeAvailable(gpud)
+
+# NVRHI: the renderer layer over the app-owned Vulkan device. Static,
+# same tree, ONE build type on purpose — mixing NDEBUG between app TUs
+# and NVRHI's libs skews a vulkan-hpp dispatch slot and crashes in
+# Queue::Queue (measured in the adoption spike); FetchContent in this
+# tree is what makes the flags agree. DX backends and install are off
+# everywhere; Vulkan-Headers arrive via NVRHI's own pinned fetch.
+set(NVRHI_WITH_VULKAN ON CACHE BOOL "" FORCE)
+set(NVRHI_WITH_DX11 OFF CACHE BOOL "" FORCE)
+set(NVRHI_WITH_DX12 OFF CACHE BOOL "" FORCE)
+set(NVRHI_INSTALL OFF CACHE BOOL "" FORCE)
+set(NVRHI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(nvrhi
+    GIT_REPOSITORY https://github.com/NVIDIA-RTX/NVRHI
+    # cca66ae..., the spike-proven commit: adopted an app device with
+    # two queue families, wrapped a foreign VkBuffer, waited and
+    # signalled an app-owned timeline semaphore — zero patches.
+    GIT_TAG        cca66aeb084429c880d205e508f5276b6ac13c38)
+FetchContent_MakeAvailable(nvrhi)
 
 # Dear ImGui is the UI layer: the dockspace, the panels, and — through
 # the official SDL3 + SDL_GPU backends — docking and multi-viewport,
