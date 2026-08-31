@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <atomic>
 
-constexpr size_t L = 256;
+constexpr size_t L = 4096;
 constexpr int side = L;
 using Spins = tensor::Tensor<float, L, L>;
 using Mask = tensor::Tensor<int, L, L>;

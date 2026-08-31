@@ -471,7 +471,12 @@ back off through the standard VK_EXT_layer_settings extension at
 instance creation — no environment variable, ignored by any driver
 that is not MoltenVK — and the shared path reads 10875 sweeps/s on
 1.3.0 and 9798 on 1.4.2. Bindless (descriptorIndexing) would want
-them back on; that is the trade to revisit then.
+them back on; that is the trade to revisit then. gpud 0.8's eager
+submission and buffer pool then took the same path to 24.2k and
+24.5k beside a 60 Hz window — the standalone rate, with no empty
+half-second bucket in any run; at 120 Hz the frame loop's own
+submits cost the sim about a third (15.4k), driver contention rather
+than a design coupling.
 
 ## Conventions decided up front
 
