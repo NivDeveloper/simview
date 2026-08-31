@@ -50,6 +50,9 @@ struct SceneState {
     std::vector<PipelineEntry> *pipelines = nullptr;
     std::vector<SyncGate> *gates = nullptr; // the App's, flipped per frame
     std::list<SceneItem> items;
+    // Pull sources with no Sync behind them: the frame's device wait
+    // must then cover everything submitted, not just shown stamps.
+    int untracked_pulls = 0;
     // The range every item maps into. Unset means: the first item with
     // a natural grid, in cells, so a lattice and the points over it
     // share coordinates; with no such item, the unit square.

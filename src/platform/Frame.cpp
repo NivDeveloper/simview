@@ -5,6 +5,10 @@
 
 #include <simview/simview.h>
 
+#include <gpud/Vulkan.h>
+#include <nvrhi/vulkan.h>
+
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -19,6 +23,20 @@ namespace {
 void frame_sync(impl::App *a) {
     for (impl::SyncGate g : a->gates)
         impl::sync_gate_flip(g);
+}
+
+// Frames-in-flight = 1, waited BEFORE the flips: a slot leaving Shown
+// then has no frame still reading it, so the producer may overwrite or
+// free it — the reverse edge of the decoupling, and the answer to the
+// in-place-writer question. (F=2 plus a completed-instance gate on the
+// flip is the named follow-up if record-stall ever shows.)
+void frame_wait_previous(impl::App *a) {
+    impl::Platform &pl = a->platform;
+    if (!pl.frame_inflight)
+        return;
+    pl.ndev->waitEventQuery(pl.frame_query);
+    pl.ndev->resetEventQuery(pl.frame_query);
+    pl.frame_inflight = false;
 }
 
 } // namespace
@@ -46,11 +64,36 @@ void frame_render(impl::App *a, const Presenter &p) {
     // callback cannot desync them mid-frame.
     const bool ui = ui_on(a) && p.composites;
 
-    // The SDL-era serialization, spelled ONCE: every compute dispatch
-    // completes before the frame reads a buffer. The decoupling commit
-    // replaces this host wait with the timeline-semaphore wait.
-    if (a->platform.gdev)
-        a->platform.gdev->flush();
+    // The decoupling: the frame waits GPU-SIDE, on the compute
+    // timeline, for exactly the work that produced what it SHOWS —
+    // the stamps Publish took. A bare pull (no Sync, resolved at
+    // draw) has no stamp, so its scene falls back to everything
+    // submitted; the callbacks that stepped it have already run.
+    // The host never blocks here — that is the whole point.
+    if (gpud::Device *gdev = a->platform.gdev.get()) {
+        std::uint64_t wait = 0;
+        for (impl::SyncGate g : a->gates)
+            wait = std::max(wait, impl::sync_gate_shown_stamp(g));
+        bool untracked = a->scene.untracked_pulls > 0;
+        for (impl::View &v : a->views)
+            untracked = untracked || v.scene.untracked_pulls > 0;
+        if (untracked)
+            wait = std::max(wait, gdev->submitted().value);
+        if (wait) {
+            // The pump: makes the awaited value reachable without any
+            // host wait (a failed submit host-signals, so no hang).
+            gdev->submit();
+            auto *vknv = static_cast<nvrhi::vulkan::IDevice *>(
+                a->platform.nraw
+                    ->getNativeObject(nvrhi::ObjectTypes::Nvrhi_VK_Device)
+                    .pointer);
+            vknv->queueWaitForSemaphore(
+                nvrhi::CommandQueue::Graphics,
+                reinterpret_cast<VkSemaphore>(
+                    gpud::vulkan::native_timeline(*gdev)),
+                wait);
+        }
+    }
 
     nvrhi::ICommandList *cl = a->platform.cl;
     cl->open();
@@ -95,6 +138,9 @@ void swapchain_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
         // The present semaphore signals on THIS submit; present waits it.
         swapchain_ready_present(a->platform.sc, a->platform.ndev);
         a->platform.ndev->executeCommandList(cl);
+        a->platform.ndev->setEventQuery(a->platform.frame_query,
+                                        nvrhi::CommandQueue::Graphics);
+        a->platform.frame_inflight = true;
         swapchain_present(a->platform.sc);
     } else {
         // Nothing recorded; executing keeps the list reusable without
@@ -154,6 +200,7 @@ void app_run(App *a) {
     a->platform.quit = false;
     while (!a->platform.quit) {
         poll(a);
+        frame_wait_previous(a); // before the flips — the reverse edge
         frame_sync(a);
         in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
         // A frame callback may quit; nothing after this point should
@@ -226,6 +273,7 @@ bool app_shot(App *a, const char *path) {
     // before the submit. A composited shot reuses the draw data the
     // last Step built, so it shows what THAT frame flipped to; a plain
     // shot is a frame of its own and flips like one.
+    frame_wait_previous(a);
     if (!composited)
         frame_sync(a);
     frame_render(a, shot_presenter(&st));

@@ -31,6 +31,11 @@ struct GateImpl {
     std::mutex m;
     int next = 0, current = 1, shown = 2;
     std::uint64_t current_gen = 0, shown_gen = 0, next_gen = 1;
+    // One stamp per slot, taken at Publish on the publishing thread —
+    // the device-timeline value that covers the slot's contents.
+    std::uint64_t stamps[3] = {0, 0, 0};
+    std::uint64_t (*stamper)(void *) = nullptr;
+    void *stamper_user = nullptr;
     bool live = true;
     std::atomic<int> refs{1};
 };
@@ -159,6 +164,10 @@ void sync_gate_publish(SyncGate g) {
     if (!s)
         return;
     std::lock_guard lk(s->m);
+    // The stamp is taken HERE — on the publishing thread, so it covers
+    // exactly the work that filled this slot, not whatever a later
+    // frame finds enqueued.
+    s->stamps[s->next] = s->stamper ? s->stamper(s->stamper_user) : 0;
     s->current = s->next;
     s->current_gen = s->next_gen++;
 
@@ -204,6 +213,24 @@ int sync_gate_shown(SyncGate g) {
         return 0;
     std::lock_guard lk(s->m);
     return s->shown;
+}
+
+void sync_gate_set_stamper(SyncGate g, std::uint64_t (*fn)(void *),
+                           void *user) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return;
+    std::lock_guard lk(s->m);
+    s->stamper = fn;
+    s->stamper_user = user;
+}
+
+std::uint64_t sync_gate_shown_stamp(SyncGate g) {
+    auto *s = static_cast<GateImpl *>(g.p);
+    if (!s)
+        return 0;
+    std::lock_guard lk(s->m);
+    return s->shown_gen ? s->stamps[s->shown] : 0;
 }
 
 std::uint64_t sync_gate_generation(SyncGate g) {

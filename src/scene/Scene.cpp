@@ -122,10 +122,26 @@ void scene_range(Scene s, const Range2 &r) {
 // drawn in two scenes is tracked once; the registry holds its own
 // reference, so a Sync that dies first leaves a dead gate, not a
 // dangling one.
+void scene_untracked_pull(Scene s) {
+    if (SceneState *sc = static_cast<SceneState *>(s.p))
+        ++sc->untracked_pulls;
+}
+
 void scene_track(Scene s, SyncGate g) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc || !sc->gates || !g)
         return;
+    // Publishes stamp themselves with the compute device's submitted
+    // ticket — taken on the PRODUCER's thread (submitted() is in
+    // gpud's thread-safe carve-out), so a frame can wait GPU-side for
+    // exactly the work that filled what it shows.
+    if (sc->gpu.gdev)
+        sync_gate_set_stamper(
+            g,
+            +[](void *u) {
+                return static_cast<gpud::Device *>(u)->submitted().value;
+            },
+            sc->gpu.gdev);
     for (SyncGate have : *sc->gates)
         if (have.p == g.p)
             return;

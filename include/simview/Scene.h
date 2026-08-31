@@ -29,6 +29,7 @@ concept Synced = requires(const P &p) {
 
 void scene_range(Scene, const Range2 &);
 void scene_track(Scene, SyncGate);
+void scene_untracked_pull(Scene);
 Scene app_scene(App *);
 Scene view_create(App *, const ViewDesc &);
 
@@ -62,11 +63,15 @@ class Scene {
     template <class P> sv::Field Field(const P &p, const FieldDesc &d) {
         if constexpr (impl::Synced<P>)
             impl::scene_track(s_, p.Gate());
-        if constexpr (requires { field_from_source(s_, source_of(p), d); })
+        if constexpr (requires { field_from_source(s_, source_of(p), d); }) {
+            if constexpr (!impl::Synced<P>)
+                impl::scene_untracked_pull(s_);
             return sv::Field{field_from_source(s_, source_of(p), d)};
-        else if constexpr (requires { field_from_source(s_, p, d); })
+        } else if constexpr (requires { field_from_source(s_, p, d); }) {
+            if constexpr (!impl::Synced<P>)
+                impl::scene_untracked_pull(s_);
             return sv::Field{field_from_source(s_, p, d)};
-        else if constexpr (requires { field_from_host(s_, host_of(p), d); })
+        } else if constexpr (requires { field_from_host(s_, host_of(p), d); })
             return sv::Field{field_from_host(s_, host_of(p), d)};
         else
             static_assert(impl::no_door<P>,
@@ -84,11 +89,15 @@ class Scene {
     template <class P> sv::Lines Lines(const P &p, const LinesDesc &d = {}) {
         if constexpr (impl::Synced<P>)
             impl::scene_track(s_, p.Gate());
-        if constexpr (requires { lines_from_source(s_, source_of(p), d); })
+        if constexpr (requires { lines_from_source(s_, source_of(p), d); }) {
+            if constexpr (!impl::Synced<P>)
+                impl::scene_untracked_pull(s_);
             return sv::Lines{lines_from_source(s_, source_of(p), d)};
-        else if constexpr (requires { lines_from_source(s_, p, d); })
+        } else if constexpr (requires { lines_from_source(s_, p, d); }) {
+            if constexpr (!impl::Synced<P>)
+                impl::scene_untracked_pull(s_);
             return sv::Lines{lines_from_source(s_, p, d)};
-        else if constexpr (requires { lines_from_host(s_, host_of(p), d); })
+        } else if constexpr (requires { lines_from_host(s_, host_of(p), d); })
             return sv::Lines{lines_from_host(s_, host_of(p), d)};
         else
             static_assert(impl::no_door<P>,
@@ -107,11 +116,19 @@ class Scene {
     sv::Particles Particles(const P &p, const ParticlesDesc &d = {}) {
         if constexpr (impl::Synced<P>)
             impl::scene_track(s_, p.Gate());
-        if constexpr (requires { particles_from_source(s_, source_of(p), d); })
+        if constexpr (requires {
+                          particles_from_source(s_, source_of(p), d);
+                      }) {
+            if constexpr (!impl::Synced<P>)
+                impl::scene_untracked_pull(s_);
             return sv::Particles{particles_from_source(s_, source_of(p), d)};
-        else if constexpr (requires { particles_from_source(s_, p, d); })
+        } else if constexpr (requires { particles_from_source(s_, p, d); }) {
+            if constexpr (!impl::Synced<P>)
+                impl::scene_untracked_pull(s_);
             return sv::Particles{particles_from_source(s_, p, d)};
-        else if constexpr (requires { particles_from_host(s_, host_of(p), d); })
+        } else if constexpr (requires {
+                                 particles_from_host(s_, host_of(p), d);
+                             })
             return sv::Particles{particles_from_host(s_, host_of(p), d)};
         else
             static_assert(impl::no_door<P>,

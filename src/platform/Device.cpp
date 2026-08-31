@@ -121,6 +121,7 @@ App *app_init(const Config &c) {
             return fail(nullptr);
     }
     pl.cl = pl.ndev->createCommandList();
+    pl.frame_query = pl.ndev->createEventQuery();
     ui_init(a, c);
     return a;
 }
@@ -144,6 +145,7 @@ void app_quit(App *a) {
         sync_gate_release(g);
     a->gates.clear();
     pl.cl = nullptr;
+    pl.frame_query = nullptr;
     if (pl.win) {
         swapchain_close(pl.sc, pl.ndev);
         SDL_DestroyWindow(pl.win);

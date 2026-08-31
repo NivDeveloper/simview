@@ -8,6 +8,7 @@
 
 #include <gpud/Mock.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -202,6 +203,39 @@ int main() {
     parker.Pause();
     CHECK(!wrong);
     CHECK_GT(rotations, std::uint64_t(99));
+
+    // The Publish stamp: taken on the PUBLISHING thread, riding the
+    // slot into Shown — never the value at flip time, and 0 before
+    // anything was shown.
+    {
+        Sync<int> st;
+        std::atomic<std::uint64_t> counter{100};
+        impl::sync_gate_set_stamper(
+            st.Gate(),
+            +[](void *u) {
+                return static_cast<std::atomic<std::uint64_t> *>(u)->fetch_add(
+                    1, std::memory_order_relaxed);
+            },
+            &counter);
+        CHECK_EQ(impl::sync_gate_shown_stamp(st.Gate()), std::uint64_t(0));
+        st.Publish(1); // stamped 100
+        st.Publish(2); // stamped 101
+        CHECK_EQ(impl::sync_gate_shown_stamp(st.Gate()), std::uint64_t(0));
+        impl::sync_gate_flip(st.Gate());
+        CHECK_EQ(impl::sync_gate_shown_stamp(st.Gate()), std::uint64_t(101));
+        std::uint64_t seen = 0;
+        Executor pub([&] { st.Publish(3); });
+        pub.Advance(5);
+        const auto until = std::chrono::steady_clock::now() + 5s;
+        while (impl::sync_gate_generation(st.Gate()) < 7 &&
+               std::chrono::steady_clock::now() < until) {
+            impl::sync_gate_flip(st.Gate());
+            const std::uint64_t s2 = impl::sync_gate_shown_stamp(st.Gate());
+            CHECK(s2 >= seen); // monotone through the flips
+            seen = s2;
+        }
+        CHECK_EQ(seen, std::uint64_t(106)); // 100..106 spent, last shown
+    }
 
     // A Sync destroyed while a registry still holds its gate: the flip
     // becomes a no-op and the last release frees it — a dead gate, never

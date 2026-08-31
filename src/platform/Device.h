@@ -29,6 +29,12 @@ struct Platform {
     nvrhi::DeviceHandle ndev;           // nraw, or the validation wrapper
     std::unique_ptr<gpud::Device> gdev; // adopted; idles only its queue
     nvrhi::CommandListHandle cl;        // the frame's list, reused
+    // Frames-in-flight = 1: the query set after a frame's execute and
+    // waited at the top of the NEXT iteration, BEFORE the flips — what
+    // makes a slot leaving Shown safe for the producer to reuse, and
+    // what retires design.md's in-place-writer question.
+    nvrhi::EventQueryHandle frame_query;
+    bool frame_inflight = false;
     Swapchain sc;
     // Null when headless — the ONE spelling of that fact.
     SDL_Window *win = nullptr;

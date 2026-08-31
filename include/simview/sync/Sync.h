@@ -33,6 +33,8 @@ int sync_gate_next(SyncGate);
 int sync_gate_current(SyncGate);
 int sync_gate_shown(SyncGate);
 std::uint64_t sync_gate_generation(SyncGate);
+void sync_gate_set_stamper(SyncGate, std::uint64_t (*)(void *), void *user);
+std::uint64_t sync_gate_shown_stamp(SyncGate);
 
 struct Executor {
     void *p = nullptr;

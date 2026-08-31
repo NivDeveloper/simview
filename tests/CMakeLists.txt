@@ -10,7 +10,7 @@ add_subdirectory(installed_surface)
 # sanitizer job never runs it.
 set(pure_checks sync_check)
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
-            view_check resize_check viewport_check lines_check)
+            view_check resize_check viewport_check lines_check decouple_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     # Quoted includes resolve against the INCLUDING file's directory,
