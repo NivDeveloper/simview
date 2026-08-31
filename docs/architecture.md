@@ -56,11 +56,12 @@ A **port** is a small struct of function pointers plus a `void *self`.
 An **adapter** implements it. The frame's port is the presenter:
 
 ```cpp
-struct Target { SDL_GPUTexture *tex; Uint32 w, h; SDL_GPUTextureFormat format; };
+struct Target { nvrhi::IFramebuffer *fb; nvrhi::ITexture *tex;
+                std::uint32_t w, h; nvrhi::Format format; };
 
 struct Presenter {
-    bool (*acquire)(void *self, SDL_GPUCommandBuffer *, Target *out);
-    void (*finish )(void *self, SDL_GPUCommandBuffer *, bool acquired);
+    bool (*acquire)(void *self, nvrhi::ICommandList *, Target *out);
+    void (*finish )(void *self, nvrhi::ICommandList *, bool acquired);
     bool  composites;
     void *self;
 };
@@ -88,12 +89,15 @@ with the kind's state behind a `void *`:
 ```cpp
 struct KindOps {
     const char *name;
-    void (*prepare)(SceneItem &, SDL_GPUCommandBuffer *);
-    void (*draw)   (SceneItem &, SDL_GPURenderPass *, const Fit &);
-    void (*release)(SceneItem &, SDL_GPUDevice *);
-    bool (*natural_range)(const SceneItem &, Range2 *);
-    Shader vs, fs;
-    Blend  blend;
+    void (*prepare)(SceneItem &, nvrhi::ICommandList *);
+    void (*draw)   (SceneItem &, nvrhi::ICommandList *,
+                    nvrhi::IFramebuffer *, const Placement &);
+    void (*release)(SceneItem &);
+    bool (*grid)(const SceneItem &, Extent2 *);
+    Shader vs, fs;                       // committed SPIR-V + entry
+    nvrhi::BlendState::RenderTarget blend;
+    nvrhi::ShaderType storage_stage;     // who reads binding 0
+    std::uint32_t push_bytes;            // the kind's Params size
 };
 struct SceneItem { App *app; const KindOps *ops; void *state; };
 ```

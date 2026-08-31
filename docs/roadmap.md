@@ -135,10 +135,12 @@ floats, and `Channel` is gone. Three follow-ups it names:
 - **`app.Track(sync)`** for a Sync only a plot reads: a Sync no
   builder was given is never flipped, and `Shown()` stays at
   generation 0;
-- **the in-place device writer**: a kernel writing into `Next()`'s
-  buffer while the previous frame still executes on the GPU is safe
-  only if SDL orders submissions on its one queue — a device test that
-  fails without a guard, then a per-frame fence if it does.
+- **the in-place device writer** — RESOLVED by the NVRHI swap's
+  decoupling commit: frames-in-flight = 1 (an event query waited
+  before the flips) means a slot leaving `shown` has no frame still
+  reading it, so an in-place kernel races nothing. The follow-up if
+  record-stall ever shows: F = 2 plus a completed-instance gate on
+  the flip.
 
 ## Non-goals
 

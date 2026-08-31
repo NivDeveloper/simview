@@ -111,13 +111,17 @@ Sync destroyed mid-run leaves a dead gate the flip skips, never a
 dangling handle — the user-facing rule stays "the producer outlives
 the last frame that draws it", but breaking it is now a blank item.
 
-Why the frame never waits: the slot a sim writes next was last bound
-by a frame that has already SUBMITTED (a slot leaves `shown` only at
-the next frame's flip), so a fresh-per-tick producer's inline free
-lands on SDL's deferred release. What that does NOT cover is a
-producer writing IN PLACE into a device buffer while the previous
-frame still executes on the GPU — safe only if SDL orders submissions
-on its one queue, which is the open question below.
+Why the frame never waits ON THE HOST: Publish STAMPS its slot with
+the compute device's submitted() ticket (taken on the producer's
+thread — the stamper installs in scene_track), and the frame waits
+GPU-side on gpud's timeline semaphore for the max shown stamp, after
+a non-blocking submit() pump. The reverse edge is frames-in-flight
+= 1: an event query set after the frame's execute and waited BEFORE
+the next frame's flips, so a slot leaving `shown` has no frame still
+reading it — which also answers the old in-place-writer question: a
+kernel writing `Next()`'s buffer races nothing, because the only
+frame that ever read that slot completed before the flip released
+it. decouple_check runs the whole seam on a device.
 
 Two spellings, kept on purpose. The BARE pull — `app.Field(tensor,
 …)` with the sim stepping inside `OnFrame` — is the render-thread
@@ -441,13 +445,26 @@ Two decisions this infrastructure encodes, both worth keeping:
 
 ## Platform
 
-macOS (Metal), Linux (Vulkan), Windows (D3D12) — wherever SDL_GPU
-runs. Primary development on macOS; CI builds the library and every
-example on all three from the first push (the vklib lesson: its CI
-never built the library, and six of eighteen examples were dead with a
-green badge). Note for device creators: SDL's Vulkan driver dlopens
-the loader by bare name and misses /usr/local/lib on macOS — whoever
-creates the device owns the `SDL_VULKAN_LIBRARY` hint probe.
+Vulkan 1.3 everywhere — MoltenVK on macOS, native drivers or
+lavapipe on Linux, native on Windows; SDL3 stays for windowing and
+input only. Primary development on macOS; CI builds the library and
+every example on all three from the first push (the vklib lesson:
+its CI never built the library, and six of eighteen examples were
+dead with a green badge). Note for device creators: SDL dlopens the
+loader by bare name and misses /usr/local/lib on macOS, and a stale
+SDK's ICD can shadow a newer one — simview's Vk.cpp owns the hint
+probe and RANKS physical devices (floor, discrete, apiVersion)
+because the same silicon can enumerate twice through two ICDs.
+
+Present mode is FIFO on a portability driver and IMMEDIATE-first
+elsewhere, and that split is a measurement, not a preference:
+examples/ising on MoltenVK 1.3.0 runs 3363 sweeps/s beside a 60 Hz
+window under FIFO and 650 under IMMEDIATE, because MoltenVK's
+IMMEDIATE spins in [CAMetalLayer nextDrawable] inside vkQueueSubmit
+and the compute queue starves; a single shared queue gives 625 under
+either. The same probe puts gpud's standalone rate at 2876 on
+MoltenVK 1.3.0 and 9126 on 1.2.11 — the driver's factor, not the
+library's; the shared path runs above standalone on the same driver.
 
 ## Conventions decided up front
 

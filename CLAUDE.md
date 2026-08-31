@@ -4,14 +4,26 @@ Lightweight cross-platform sim visualization over SDL3. C++20, the
 SYSTEM compiler (AppleClang/gcc/MSVC — deliberately NOT tensor's
 g++-16/reflection world). Structure and patterns: docs/architecture.md;
 how it got there: docs/design.md; what is next: docs/roadmap.md.
-Current state: the engine builds ON gpud (the sibling projects' GPU
-interchange): gpud::sdl::try_open owns device bring-up, and the one
+Current state: the APP owns the Vulkan stack (src/platform/Vk.cpp:
+one instance, one device, two queues) and both halves adopt it —
+NVRHI renders on the graphics queue, gpud v0.7 computes on the
+compute queue (try_open_on; buffers CONCURRENT-shared) — with an
+app-managed swapchain (FIFO on a portability driver: MoltenVK's
+IMMEDIATE spins in nextDrawable inside vkQueueSubmit and starves the
+compute queue, 650 against 3363 sweeps/s measured; IMMEDIATE-first
+elsewhere; SIMVIEW_PRESENT overrides) and ImGui on the upstream sdl3
++ vulkan backends. The frame orders itself GPU-SIDE on gpud's
+timeline: Publish stamps its Sync slot with submitted(), the frame
+waits (native_timeline, max shown stamp) on the graphics queue, and
+frames-in-flight = 1 (an event query waited before the flips) closes
+the reverse edge — the sim and the display are DECOUPLED. The one
 opt-in door — include/simview/gpud.h — carries sv::Device(app) and
 the pull-model field (app.Field(producer, desc) resolves gpud's
 source_of protocol by ADL; the engine re-asks the source at every
 draw, so rebind does not exist — `app.Particles(producer)` is the
 same protocol for a point cloud, whose count comes from the buffer's
-size). The UI is ImGui + ImPlot, hash-pinned through FetchContent
+size; a bare pull with no Sync behind it makes the frame wait on
+everything submitted instead of a stamp). The UI is ImGui + ImPlot, hash-pinned through FetchContent
 exactly as gpud is (third_party/ stays EMPTY — its README says why),
 behind one boundary that no public header names and whose include
 directories are PRIVATE to this build: plots, panels and views are
@@ -45,11 +57,12 @@ Next: 3-D scene kinds, and more than one window.
 - **SDL3 is PRIVATE — in NO public header now**, not even as a
   forward declaration: gpud vocabulary replaced the SDL handle door.
 - **No tensor — ever. gpud is the substrate.** gpud is the universal
-  GPU abstraction the sibling projects share, and the ENGINE builds
-  on it: gpud::sdl owns device bring-up (the Vulkan-loader hint, the
-  SPIR-V format policy), libsimview links gpud::sdl PRIVATE and
-  gpud::gpud PUBLIC (include dirs for the door). Consumers of the
-  core surface still see neither library. Data crosses the impl as
+  GPU abstraction the sibling projects share, and the ENGINE composes
+  with it: simview owns Vulkan bring-up (Vk.cpp — the loader hint,
+  ICD ranking, the two-queue policy) and hands gpud its compute queue
+  through try_open_on; libsimview links gpud::vulkan, nvrhi and
+  Vulkan::Headers PRIVATE and gpud::gpud PUBLIC (include dirs for the
+  door). Consumers of the core surface still see none of them. Data crosses the impl as
   pointer+stride or gpud vocabulary (BufferSource is a POD) at the
   door; the pull model means the engine asks the source at draw time
   and per-frame rebinding does not exist. No shader toolchain:
@@ -63,6 +76,12 @@ Next: 3-D scene kinds, and more than one window.
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
   restore. A check that never fired is a comment.
+- **The windowed path has no headless check — run it under the
+  validation layer** (`SIMVIEW_VVL=1 ./build/examples/hello-window/
+  hello-window`) after touching platform/, scene/ or ui/: the three
+  swap-era defects (swapchain usage, a nested rendering pass, a
+  missing shader feature) were all invisible to the suite and all
+  named by the layer in one run.
 - **The builder is the API, and ImGui is not on the surface AT ALL.**
   Users write `app.Plot(…).Line(…)` and `app.Panel(…).Slider(…)`; no
   public header names ImGui or ImPlot, and lint fails on the token in
@@ -78,8 +97,10 @@ Next: 3-D scene kinds, and more than one window.
   one `plot_draw`, never a second draw path. If a kind ever costs
   more, say so in the commit rather than quietly paying it.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
-  ImGui composites over it in a second LOAD pass; the dockspace's
-  central node is passthru. `ui_on()` is false until a panel is
+  ImGui composites over it in a second LOAD pass — ui_draw is the
+  app's ONE raw-Vulkan seam (dynamic rendering around the backend's
+  RenderDrawData, then clearState) — and the dockspace's central node
+  is passthru. `ui_on()` is false until a panel is
   registered, so an app that asks for no UI builds no ImGui frame at
   all. Viewports are enabled only when the BACKENDS set their own
   capability flags — never by us. No panel sets `NoDocking`. Capture
