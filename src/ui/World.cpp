@@ -48,13 +48,40 @@ void world_camera_input(impl::WorldState &w) {
 
 namespace impl {
 
+// A world with no title IS the window: it draws into the swapchain
+// and the panels float over it, which is what a program whose subject
+// is the 3D scene wants. A titled one is a panel among panels, for a
+// layout with several views. The two differ in nothing but the
+// framebuffer they end up in.
 World world_create(App *a, const WorldDesc &d) {
     if (!a)
         return {};
-    if (!d.title || !*d.title)
-        return set_error("a world needs a title — it names the panel it "
-                         "is shown in"),
-               World{};
+    if (!d.title || !*d.title) {
+        if (a->world)
+            return set_error("this app already has a world in its window — "
+                             "a second one would draw over the first; give "
+                             "it a title and it becomes a panel instead"),
+                   World{};
+        if (a->platform.win) {
+            // The window's framebuffers are built with a depth image
+            // from now on. Requested before the first rebuild, and the
+            // chain is rebuilt here so the very next frame has one.
+            a->platform.sc.want_depth = true;
+            if (!swapchain_rebuild(a->platform.sc, a->platform.ndev))
+                return World{};
+        }
+        a->world = std::make_unique<WorldState>();
+        a->world->gpu = a->scene.gpu;
+        a->world->stats = &a->stats;
+        a->world->pipelines = &a->world_pipelines;
+        a->world->gates = &a->gates;
+        a->world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
+        if (d.grid)
+            world_add_grid(*a->world);
+        if (d.axes)
+            world_add_axes(*a->world);
+        return World{a->world.get()};
+    }
     if (title_taken(a, d.title))
         return set_error(std::string("\"") + d.title +
                          "\" is already the title of a plot, panel or "
@@ -93,6 +120,41 @@ void world_camera(World w, const CameraDesc &d) {
     ws->camera.distance = d.distance > 0.0f ? d.distance : 5.0f;
     ws->camera.q = camera_pose(d.azimuth_deg * kDeg, d.elevation_deg * kDeg);
     ws->camera.fovy = d.fov_deg * kDeg;
+    // The projection is the ONLY thing an orthographic camera changes:
+    // the pose, the turntable and the depth convention are shared, so
+    // switching it mid-run holds everything else still.
+    ws->camera.projection = d.projection == sv::Projection::Orthographic
+                                ? impl::Projection::Orthographic
+                                : impl::Projection::Perspective;
+}
+
+bool world_light(World w, const LightDesc &d) {
+    WorldState *ws = static_cast<WorldState *>(w.p);
+    if (!ws)
+        return false;
+    if (ws->lights.size() >= 4)
+        return set_error("a world takes at most four lights — the set is "
+                         "fixed so every shader's lighting is one loop with "
+                         "no branch on which lights exist"),
+               false;
+    WorldState::Light l;
+    l.direction =
+        normalize(Vec3{d.direction[0], d.direction[1], d.direction[2]});
+    if (length(l.direction) <= 0.0f)
+        return set_error("a light needs a direction that is not the zero "
+                         "vector — it names where the light comes FROM"),
+               false;
+    for (int k = 0; k < 3; ++k)
+        l.color[k] = d.color[k];
+    l.intensity = d.intensity;
+    ws->lights.push_back(l);
+    return true;
+}
+
+void world_ambient(World w, const float rgb[3]) {
+    if (WorldState *ws = static_cast<WorldState *>(w.p))
+        for (int k = 0; k < 3; ++k)
+            ws->ambient[k] = rgb[k];
 }
 
 // The gate bookkeeping a scene does, for the same reasons: a Publish

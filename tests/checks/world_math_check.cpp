@@ -103,14 +103,60 @@ int main() {
     for (int i = 0; i < 16; ++i)
         CHECK(near(I.m[i], (i % 5 == 0) ? 1.0f : 0.0f, 1e-3f));
 
+    // Orthographic, the other projection: linear in view depth, so it
+    // needs a real far plane where the perspective one needs none.
+    const float of = 100.0f, oh = 4.0f, oa = 1.5f;
+    const Mat4 O = proj_ortho_reverse_z(oh, oa, n, of);
+    CHECK(near(transform_point(O, {0.0f, 0.0f, -n}).z, 1.0f, 1e-6f));
+    CHECK(near(transform_point(O, {0.0f, 0.0f, -of}).z, 0.0f, 1e-6f));
+    CHECK(near(transform_point(O, {0.0f, 0.0f, -0.5f * (n + of)}).z, 0.5f,
+               1e-5f));
+    // The box's own corner is the edge of the frame.
+    const Vec3 corner = transform_point(O, {oh * oa * 0.5f, oh * 0.5f, -1.0f});
+    CHECK(near(corner.x, 1.0f, 1e-5f));
+    CHECK(near(corner.y, 1.0f, 1e-5f));
+
+    // What makes it orthographic: distance does not shrink anything.
+    // The same offset lands at the same place at any depth, which is
+    // exactly what the perspective matrix must NOT do.
+    CHECK(near(transform_point(O, {0.5f, 0.0f, -1.0f}).x,
+               transform_point(O, {0.5f, 0.0f, -50.0f}).x, 1e-6f));
+    CHECK_GT(transform_point(P, {0.5f, 0.0f, -1.0f}).x,
+             transform_point(P, {0.5f, 0.0f, -50.0f}).x * 2.0f);
+
+    // The two projections frame the SUBJECT alike: the orthographic
+    // box is built from the height the frustum subtends at the focus,
+    // so switching holds the subject still and changes only the
+    // convergence.
+    Camera3 oc = c;
+    oc.projection = Projection::Orthographic;
+    CHECK(near(camera_view_height(oc),
+               2.0f * oc.distance * std::tan(0.5f * oc.fovy), 1e-5f));
+    const Vec3 pp = transform_point(
+        mat_mul(camera_proj(c, 1.0f), camera_view(c)),
+        c.focus + camera_up(c) * (0.5f * camera_view_height(c)));
+    const Vec3 po = transform_point(
+        mat_mul(camera_proj(oc, 1.0f), camera_view(oc)),
+        oc.focus + camera_up(oc) * (0.5f * camera_view_height(oc)));
+    CHECK(near(pp.y, po.y, 1e-3f));
+
     // The keys the sort reads. Opaque must ascend as things get
     // nearer, transparent must ascend as they get FARTHER — the two
-    // orders a single comparator produces from one std::sort.
-    const float zn = camera_znear(c);
+    // orders a single comparator produces from one std::sort. Taken
+    // through the real projection, so BOTH must order alike.
     const Vec3 fwd = camera_forward(c);
-    const std::uint16_t d_near = depth_key(V, c.focus + fwd * -2.0f, zn);
-    const std::uint16_t d_mid = depth_key(V, c.focus, zn);
-    const std::uint16_t d_far = depth_key(V, c.focus + fwd * 2.0f, zn);
+    for (Projection proj :
+         {Projection::Perspective, Projection::Orthographic}) {
+        Camera3 k = c;
+        k.projection = proj;
+        const Mat4 M = mat_mul(camera_proj(k, 1.0f), camera_view(k));
+        CHECK_GT(depth_key(M, k.focus + fwd * -2.0f), depth_key(M, k.focus));
+        CHECK_GT(depth_key(M, k.focus), depth_key(M, k.focus + fwd * 2.0f));
+    }
+    const Mat4 VP = mat_mul(camera_proj(c, 1.0f), V);
+    const std::uint16_t d_near = depth_key(VP, c.focus + fwd * -2.0f);
+    const std::uint16_t d_mid = depth_key(VP, c.focus);
+    const std::uint16_t d_far = depth_key(VP, c.focus + fwd * 2.0f);
     CHECK_GT(d_near, d_mid);
     CHECK_GT(d_mid, d_far);
     CHECK_LT(opaque_key(0, 0, d_near), opaque_key(0, 0, d_mid));

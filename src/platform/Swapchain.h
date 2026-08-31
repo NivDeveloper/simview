@@ -30,6 +30,11 @@ struct Swapchain {
     std::uint32_t present_mode = 0;   // VkPresentModeKHR, chosen once
     std::uint32_t w = 0, h = 0;
     std::vector<nvrhi::TextureHandle> images;
+    // The window's depth, when something drawing into it tests depth.
+    // Requested once, before the chain is built; rebuilt with the
+    // images, because it must always match their size.
+    nvrhi::TextureHandle depth;
+    bool want_depth = false;
     std::vector<nvrhi::FramebufferHandle> fbs;
     std::vector<std::uint64_t> acquire_sems; // binary, rotated by frame
     std::vector<std::uint64_t> present_sems; // binary, per image
@@ -42,6 +47,10 @@ struct Swapchain {
 
 bool swapchain_open(impl::Swapchain &, impl::VkContext &, nvrhi::IDevice *,
                     SDL_Window *);
+
+// Rebuild the chain in place — what asking for a depth attachment
+// after the window is already up amounts to.
+bool swapchain_rebuild(impl::Swapchain &, nvrhi::IDevice *);
 
 // Acquire the next image and register its wait on NVRHI's graphics
 // queue. False = nothing to draw to this frame (minimized, or the

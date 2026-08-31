@@ -20,12 +20,49 @@ struct CParams {
     float4 color;
     float radius; // world units
     uint count;
-    uint mode; // 0 = solid impostor, 1 = flat disc
-    float pad0;
+    uint mode;  // 0 = solid impostor, 1 = flat disc
+    uint map;   // 0 uniform, 1 magnitude, 2 direction, 3 components
+    float map_scale;
+    float pad0, pad1, pad2;
 };
 
 [[vk::binding(1, 0)]] StructuredBuffer<float> positions; // xyz per point
+// The colour source: xyz per point, read only when `map` is not
+// uniform. Bound ALWAYS — a cloud with no data of its own binds its
+// positions here a second time, which costs nothing and keeps one
+// binding layout for every cloud there is.
+[[vk::binding(2, 0)]] StructuredBuffer<float> values;
 [[vk::push_constant]] ConstantBuffer<CParams> cp;
+
+// Turbo: a perceptually even blue-cyan-green-yellow-red ramp, as a
+// fifth-order fit. Rainbow-shaped without rainbow's false edges.
+float3 turbo(float t) {
+    t = saturate(t);
+    const float t2 = t * t, t3 = t2 * t, t4 = t2 * t2, t5 = t4 * t;
+    const float r = 0.13572138f + 4.61539260f * t - 42.66032258f * t2 +
+                    132.13108234f * t3 - 152.94239396f * t4 + 59.28637943f * t5;
+    const float g = 0.09140261f + 2.19418839f * t + 4.84296658f * t2 -
+                    14.18503333f * t3 + 4.27729857f * t4 + 2.82956604f * t5;
+    const float b = 0.10667330f + 12.64194608f * t - 60.58204836f * t2 +
+                    110.36276771f * t3 - 89.90310912f * t4 + 27.34824973f * t5;
+    return saturate(float3(r, g, b));
+}
+
+float4 mapped_color(uint i) {
+    if (cp.map == 0u)
+        return cp.color;
+    const float3 v = float3(values[i * 3u + 0u], values[i * 3u + 1u],
+                            values[i * 3u + 2u]);
+    const float s = max(cp.map_scale, 1e-6f);
+    if (cp.map == 1u)
+        return float4(turbo(length(v) / s), cp.color.a);
+    if (cp.map == 2u) {
+        const float l = length(v);
+        const float3 n = l > 1e-6f ? v / l : float3(0.0f, 0.0f, 0.0f);
+        return float4(n * 0.5f + 0.5f, cp.color.a);
+    }
+    return float4(saturate(v / s * 0.5f + 0.5f), cp.color.a);
+}
 
 struct C2F {
     float4 pos : SV_Position;
@@ -66,7 +103,7 @@ C2F vsmain(uint vI : SV_VertexID) {
 
     o.pos = mul(vp.view_to_clip, pv);
     o.local = corner;
-    o.color = cp.color;
+    o.color = mapped_color(i);
     o.mode = float(cp.mode);
     return o;
 }
@@ -87,8 +124,8 @@ float4 fsmain(C2F v) : SV_Target {
     // Mode 0: the sphere the quad stands in for. The normal is
     // analytic — the point of the disc is that the depth it writes is
     // the quad's, which keeps early-Z alive; at a radius small against
-    // the scene the difference never shows.
+    // the scene the difference never shows. It is a VIEW-space normal,
+    // which is the space the lights arrive in.
     const float3 n = float3(v.local, sqrt(saturate(1.0f - d2)));
-    const float lambert = saturate(n.z); // a light at the camera
-    return float4(v.color.rgb * (0.3f + 0.7f * lambert), 1.0f);
+    return float4(v.color.rgb * lit_by(n), 1.0f);
 }

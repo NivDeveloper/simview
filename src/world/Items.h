@@ -29,7 +29,7 @@ struct WorldItem;
 // What every item needs about the camera this frame. The matrices are
 // uploaded once per world; this is the CPU-side copy items sort with.
 struct WorldView {
-    impl::Mat4 world_to_clip{}, world_to_view{};
+    impl::Mat4 world_to_clip{}, world_to_view{}, view_to_clip{};
     impl::Vec3 camera_pos{};
     float znear = 1e-4f;
     std::uint32_t tw = 0, th = 0;
@@ -87,15 +87,19 @@ struct WorldItemOps {
     nvrhi::BlendState::RenderTarget blend;
     nvrhi::PrimitiveType topology = nvrhi::PrimitiveType::TriangleList;
 
-    // Whether the item reads a storage buffer at all: the grid and the
-    // axes compute their geometry from the vertex id and bind none.
-    bool has_storage = false;
+    // How many storage buffers the item binds, at bindings 1..n: the
+    // grid and the axes compute their geometry from the vertex id and
+    // bind none, a cloud binds its positions and its colour source.
+    std::uint32_t storage_count = 0;
     std::uint32_t push_bytes = 0;
 };
 
 namespace impl {
 
+struct WorldState;
+
 struct WorldItem {
+    WorldState *owner = nullptr; // the world it was added to
     Gpu gpu;
     Stats *stats = nullptr;
     std::vector<WorldPipelineEntry> *pipelines = nullptr;

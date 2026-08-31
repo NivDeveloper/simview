@@ -19,6 +19,7 @@
 #include <simview/App.h>
 
 #include <list>
+#include <memory>
 #include <vector>
 
 namespace sv {
@@ -35,6 +36,10 @@ struct App {
     // the main scene borrow ONE list, so a Sync drawn by both flips once.
     std::vector<SyncGate> gates;
     SceneState scene;
+    // The world drawn into the WINDOW, when there is one. A world in
+    // a panel lives on its View; this is the other arrangement, and
+    // the one a 3D program wants by default.
+    std::unique_ptr<WorldState> world;
     UiState ui;
     std::list<View> views;
     std::list<PlotState> plots;

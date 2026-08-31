@@ -28,7 +28,10 @@ struct ViewConstants {
     float clip_to_world[16];
     float camera_pos[4];
     float viewport[4];
-    float znear[4];
+    float depth[4];
+    float light_dir[4][4];
+    float light_rgb[4][4];
+    float ambient[4];
 };
 
 void copy_mat(float (&dst)[16], const impl::Mat4 &m) {
@@ -39,13 +42,13 @@ void copy_mat(float (&dst)[16], const impl::Mat4 &m) {
 WorldView view_of(const impl::WorldState &w, std::uint32_t tw,
                   std::uint32_t th) {
     const float aspect = th ? float(tw) / float(th) : 1.0f;
-    const float znear = impl::camera_znear(w.camera);
     const impl::Mat4 v = impl::camera_view(w.camera);
-    const impl::Mat4 p = impl::proj_reverse_z(w.camera.fovy, aspect, znear);
+    const impl::Mat4 p = impl::camera_proj(w.camera, aspect);
     return {.world_to_clip = impl::mat_mul(p, v),
             .world_to_view = v,
+            .view_to_clip = p,
             .camera_pos = impl::camera_position(w.camera),
-            .znear = znear,
+            .znear = impl::camera_znear(w.camera),
             .tw = tw,
             .th = th};
 }
@@ -69,13 +72,10 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
                    false;
     }
 
-    const impl::Mat4 proj = impl::proj_reverse_z(
-        w.camera.fovy, view.th ? float(view.tw) / float(view.th) : 1.0f,
-        view.znear);
     ViewConstants c{};
     copy_mat(c.world_to_clip, view.world_to_clip);
     copy_mat(c.world_to_view, view.world_to_view);
-    copy_mat(c.view_to_clip, proj);
+    copy_mat(c.view_to_clip, view.view_to_clip);
     copy_mat(c.clip_to_world, impl::mat_inverse(view.world_to_clip));
     c.camera_pos[0] = view.camera_pos.x;
     c.camera_pos[1] = view.camera_pos.y;
@@ -84,7 +84,36 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
     c.viewport[1] = float(view.th);
     c.viewport[2] = view.tw ? 1.0f / float(view.tw) : 0.0f;
     c.viewport[3] = view.th ? 1.0f / float(view.th) : 0.0f;
-    c.znear[0] = view.znear;
+    c.depth[0] = view.znear;
+    c.depth[1] = impl::camera_zfar(w.camera);
+    c.depth[2] =
+        w.camera.projection == impl::Projection::Orthographic ? 1.0f : 0.0f;
+
+    // Lights reach the shader in VIEW space, where an impostor knows
+    // its own normal. Rotating them here is one transform a frame
+    // instead of a normal matrix in every shader that shades anything.
+    // An unlit world gets one light at the camera — already view space,
+    // so it is the one direction that needs no rotating.
+    const std::size_t n = w.lights.size() < 4 ? w.lights.size() : 4;
+    if (n == 0) {
+        c.light_dir[0][2] = 1.0f;
+        c.light_dir[0][3] = 0.7f;
+        for (int k = 0; k < 3; ++k)
+            c.light_rgb[0][k] = 1.0f;
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        const impl::Vec3 d = impl::normalize(
+            impl::rotate(impl::conjugate(w.camera.q), w.lights[i].direction));
+        c.light_dir[i][0] = d.x;
+        c.light_dir[i][1] = d.y;
+        c.light_dir[i][2] = d.z;
+        c.light_dir[i][3] = w.lights[i].intensity;
+        for (int k = 0; k < 3; ++k)
+            c.light_rgb[i][k] = w.lights[i].color[k];
+    }
+    for (int k = 0; k < 3; ++k)
+        c.ambient[k] = w.ambient[k];
+    c.ambient[3] = float(n ? n : 1);
     cl->writeBuffer(w.view_cb, &c, sizeof c);
     return true;
 }
@@ -93,6 +122,7 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
 
 impl::WorldItem &world_item_add(impl::WorldState &w, const WorldItemOps *ops) {
     impl::WorldItem &it = w.items.emplace_back();
+    it.owner = &w;
     it.gpu = w.gpu;
     it.stats = w.stats;
     it.pipelines = w.pipelines;
@@ -111,14 +141,23 @@ impl::WorldItem &world_item_add(impl::WorldState &w, const WorldItemOps *ops) {
 
 void world_draw(impl::WorldState &w, nvrhi::ICommandList *cl,
                 impl::RenderTarget &t) {
-    if (!t.fb || !t.depth)
+    if (t.fb && t.depth)
+        world_draw_into(w, cl, t.fb, t.w, t.h);
+}
+
+void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
+                     nvrhi::IFramebuffer *fb, std::uint32_t tw,
+                     std::uint32_t th) {
+    nvrhi::ITexture *depth =
+        fb ? fb->getDesc().depthAttachment.texture : nullptr;
+    if (!fb || !depth || !tw || !th)
         return;
 
     for (impl::WorldItem &it : w.items)
         if (it.ops && it.ops->prepare)
             it.ops->prepare(it, cl);
 
-    WorldView view = view_of(w, t.w, t.h);
+    WorldView view = view_of(w, tw, th);
     if (!write_view_cb(w, cl, view))
         return;
     view.view_cb = w.view_cb;
@@ -143,12 +182,12 @@ void world_draw(impl::WorldState &w, nvrhi::ICommandList *cl,
                   return a.seq < b.seq;
               });
 
-    cl->clearTextureFloat(t.fb->getDesc().colorAttachments[0].texture,
+    cl->clearTextureFloat(fb->getDesc().colorAttachments[0].texture,
                           nvrhi::AllSubresources,
                           nvrhi::Color(0.09f, 0.09f, 0.10f, 1.0f));
     // Zero, not one: under reverse-Z the far plane is 0, so this is
     // the "nothing has been drawn yet" value.
-    cl->clearDepthStencilTexture(t.depth, nvrhi::AllSubresources, true, 0.0f,
+    cl->clearDepthStencilTexture(depth, nvrhi::AllSubresources, true, 0.0f,
                                  false, 0);
 
     std::size_t i = 0;
@@ -162,7 +201,7 @@ void world_draw(impl::WorldState &w, nvrhi::ICommandList *cl,
             for (std::size_t k = i; k < j; ++k) {
                 const DrawCmd &c = w.cmds[k];
                 if (c.item && c.item->ops && c.item->ops->draw)
-                    c.item->ops->draw(*c.item, c, cl, t.fb, view);
+                    c.item->ops->draw(*c.item, c, cl, fb, view);
             }
             cl->endMarker();
         }

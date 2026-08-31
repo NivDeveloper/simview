@@ -59,8 +59,8 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
                                          .setSamplerOffset(0)
                                          .setConstantBufferOffset(0)
                                          .setUnorderedAccessViewOffset(0));
-    if (ops->has_storage)
-        ld.addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1));
+    for (std::uint32_t i = 0; i < ops->storage_count; ++i)
+        ld.addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1 + i));
     auto layout = gpu.dev->createBindingLayout(ld);
     if (!layout)
         return set_error(std::string("binding layout failed for ") + ops->name),

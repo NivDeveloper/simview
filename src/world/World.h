@@ -33,6 +33,19 @@ struct WorldState {
 
     Camera3 camera{};
 
+    // At most four, because a fixed set in the view block is what
+    // keeps every shader's lighting one loop with no branch on which
+    // lights exist. EMPTY means a single light at the camera, so a
+    // world nobody lit still reads as three-dimensional and lighting
+    // costs a caller nothing until it wants to spend something.
+    struct Light {
+        Vec3 direction{0.0f, 0.0f, 1.0f}; // toward the light, world space
+        float color[3] = {1.0f, 1.0f, 1.0f};
+        float intensity = 0.7f;
+    };
+    std::vector<Light> lights;
+    float ambient[3] = {0.3f, 0.3f, 0.3f};
+
     // One volatile constant buffer per world, written once a frame
     // before any state is set. Volatile because the renderer versions
     // it internally: the binding sets items make against it stay valid
@@ -46,7 +59,13 @@ struct WorldState {
 } // namespace impl
 
 // Fill the constants, collect, order, replay. The whole frame of a
-// world; the caller has already resized the target.
+// world, against whatever framebuffer it draws into — a view's target
+// or the window itself. The depth attachment is the framebuffer's
+// own: a world cannot draw without one.
+void world_draw_into(impl::WorldState &, nvrhi::ICommandList *,
+                     nvrhi::IFramebuffer *, std::uint32_t w, std::uint32_t h);
+
+// The same, for a world shown in a panel.
 void world_draw(impl::WorldState &, nvrhi::ICommandList *,
                 impl::RenderTarget &);
 

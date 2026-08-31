@@ -200,11 +200,17 @@ inline Mat4 mat_inverse(const Mat4 &a) {
 // A turntable: the camera sits `distance` from `focus` along its own
 // view-back vector, and every mutation re-derives the position from
 // that one relation rather than carrying a second copy of it.
+// Perspective or orthographic. The two differ ONLY in the projection
+// matrix: the pose, the turntable and the depth convention are shared,
+// so a caller switches one field and everything else holds.
+enum class Projection : int { Perspective = 0, Orthographic = 1 };
+
 struct Camera3 {
     Vec3 focus{};
     float distance = 5.0f;
     Quat q{};
     float fovy = 0.7853981634f;
+    Projection projection = Projection::Perspective;
     float min_distance = 0.05f, max_distance = 1000.0f;
     float orbit_speed = 0.005f, pan_speed = 0.0015f, dolly_speed = 0.1f;
 };
@@ -278,6 +284,38 @@ inline float camera_znear(const Camera3 &c) {
     return n > 1e-4f ? n : 1e-4f;
 }
 
+// Orthographic depth is LINEAR, so it needs a far plane where the
+// perspective one needs none, and the range is what its precision is
+// spent on. Twenty orbits past the camera covers a scene arranged
+// around the focus without spending the buffer on empty distance.
+inline float camera_zfar(const Camera3 &c) { return c.distance * 20.0f; }
+
+// The world height the view covers at the focus. In perspective this
+// is what the frustum subtends there; the orthographic box is built
+// to match it, so switching projections holds the subject the same
+// size and only changes the convergence.
+inline float camera_view_height(const Camera3 &c) {
+    return 2.0f * c.distance * std::tan(0.5f * c.fovy);
+}
+
+// Orthographic, reverse-Z: the near plane maps to 1 and the FAR one to
+// 0. Linear in view depth, so unlike the perspective form it cannot
+// run to infinity — the far plane is a real number and the precision
+// is spread evenly between the two.
+inline Mat4 proj_ortho_reverse_z(float height, float aspect, float znear,
+                                 float zfar) {
+    Mat4 r{};
+    for (float &v : r.m)
+        v = 0.0f;
+    const float span = zfar - znear;
+    r.m[0] = 2.0f / (height * aspect);
+    r.m[5] = 2.0f / height;
+    r.m[10] = 1.0f / span;
+    r.m[14] = zfar / span;
+    r.m[15] = 1.0f;
+    return r;
+}
+
 // Infinite-far reverse-Z: the near plane maps to 1 and infinity to 0,
 // which is what makes a float depth buffer precise across the whole
 // range. m[1][1] is POSITIVE — the renderer flips the viewport height
@@ -294,13 +332,28 @@ inline Mat4 proj_reverse_z(float fovy, float aspect, float znear) {
     return r;
 }
 
+// The projection this camera looks through, against a target of the
+// given aspect.
+inline Mat4 camera_proj(const Camera3 &c, float aspect) {
+    return c.projection == Projection::Orthographic
+               ? proj_ortho_reverse_z(camera_view_height(c), aspect,
+                                      camera_znear(c), camera_zfar(c))
+               : proj_reverse_z(c.fovy, aspect, camera_znear(c));
+}
+
 // The depth a point WOULD be written at, quantized — the sort key's
-// only ingredient, and the same number the depth buffer will hold, so
-// the ordering the sort produces is the ordering the test enforces.
-inline std::uint16_t depth_key(const Mat4 &view, Vec3 p, float znear) {
-    const Vec3 v = transform_point(view, p);
-    const float z = -v.z > znear ? -v.z : znear;
-    float d = znear / z;
+// only ingredient. Taken through the REAL projection rather than a
+// formula of its own, so it is the number the depth buffer will hold
+// under either one, and the order the sort produces is the order the
+// test enforces.
+inline std::uint16_t depth_key(const Mat4 &world_to_clip, Vec3 p) {
+    float w = 0.0f;
+    const Vec3 c = transform_point(world_to_clip, p, &w);
+    // Behind the camera: no depth means anything, and 0 sorts it where
+    // it will be clipped anyway.
+    if (w <= 0.0f)
+        return 0;
+    float d = c.z;
     if (d < 0.0f)
         d = 0.0f;
     if (d > 1.0f)

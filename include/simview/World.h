@@ -9,9 +9,14 @@
 namespace sv {
 
 struct WorldDesc {
-    const char *title = "world";
+    const char *title = nullptr;
     bool grid = true;
     bool axes = true;
+};
+
+enum class Projection : int {
+    Perspective = 0,
+    Orthographic = 1,
 };
 
 struct CameraDesc {
@@ -20,12 +25,21 @@ struct CameraDesc {
     float azimuth_deg = -45.0f;
     float elevation_deg = 30.0f;
     float fov_deg = 45.0f;
+    sv::Projection projection = sv::Projection::Perspective;
+};
+
+struct LightDesc {
+    float direction[3] = {0.0f, 0.0f, 1.0f};
+    float color[3] = {1.0f, 1.0f, 1.0f};
+    float intensity = 0.7f;
 };
 
 namespace impl {
 
 World world_create(App *, const WorldDesc &);
 void world_camera(World, const CameraDesc &);
+bool world_light(World, const LightDesc &);
+void world_ambient(World, const float rgb[3]);
 void world_track(World, SyncGate);
 void world_untracked_pull(World);
 
@@ -41,6 +55,17 @@ class World {
 
     World &Camera(const CameraDesc &d) {
         impl::world_camera(w_, d);
+        return *this;
+    }
+
+    World &Light(const LightDesc &d) {
+        impl::world_light(w_, d);
+        return *this;
+    }
+
+    World &Ambient(float r, float g, float b) {
+        const float rgb[3] = {r, g, b};
+        impl::world_ambient(w_, rgb);
         return *this;
     }
 

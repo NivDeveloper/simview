@@ -89,11 +89,16 @@ row. The 2D cache is left alone: it is keyed `(kind, format)` and says
 why, and a target with a depth attachment is not pipeline-compatible
 with one without in any case.
 
-**6. Worlds live inside a view.** `impl::View` holds a
-`unique_ptr<WorldState>`; null means the 2D case. The panel, the image
-descriptor keyed on the target's generation, the resize path and the
-teardown are shared verbatim — of the eight loops over the App's
-views, six needed no change at all.
+**6. A world is the window, or a panel.** `app.World()` with NO title
+draws into the swapchain itself, with the ImGui panels floating over
+it — what a program whose subject IS the 3D scene wants, and the
+default. A titled one lives on a `View` (`unique_ptr<WorldState>`,
+null meaning the 2D case) and is a panel among panels, for a layout
+with several views. They differ in nothing but the framebuffer they
+end up in: the same items, the same passes, the same camera. The
+window's framebuffers grow a depth image the moment a world asks for
+one, and so does a headless shot's target — without that a `Shot()` of
+a 3D program would come back empty.
 
 ## Where things are
 
@@ -134,6 +139,39 @@ steer the camera, and because ImGui hands over per-frame deltas there
 is no remembered cursor of ours to seed, so the first-frame jump that
 a remembered position causes cannot happen.
 
+## What W2 added
+
+**Orthographic projection.** `CameraDesc::projection`, and nothing
+else changes: the pose, the turntable and the reverse-Z convention are
+shared, so switching holds the subject still and removes only the
+convergence. The orthographic box is built from the height the frustum
+subtends AT THE FOCUS, which is what makes the switch continuous
+rather than a jump. It is linear in view depth, so unlike the
+perspective form it needs a real far plane — twenty orbits, spending
+precision on the scene rather than on empty distance.
+
+**Colormaps over a second channel.** A cloud may carry per-point
+VALUES beside its positions — `Magnitude` (a turbo ramp over
+|v|/scale), `Direction` (the unit vector as rgb), `Components` — and
+that channel answers the same three doors the positions do: `Update`,
+a Sync, or a device buffer re-resolved every frame. Both channels are
+one `Channel` struct, because they are the same problem twice.
+
+A cloud with no values of its own binds its POSITIONS in the value
+slot. One binding layout then serves every cloud there is, at the
+price of nothing, and the shader never reads the slot unless a map is
+on. Fewer values than points degrades to the flat colour rather than
+reading past the end of the buffer.
+
+**A light set.** Up to four directional lights plus an ambient, fixed
+in the view block so every shader's lighting is one loop with no
+branch on which lights exist. Directions are rotated into VIEW space
+on the CPU once a frame, because that is the space an impostor knows
+its own normal in — the alternative is a normal matrix in every shader
+that shades anything. An unlit world gets a single light at the
+camera, which is exactly what W1 had, so nothing changed for a caller
+who never asked.
+
 ## Stated limitations
 
 - **Transparency is sorted per ITEM, not per particle.** Two
@@ -154,8 +192,15 @@ a remembered position causes cannot happen.
   and it reads acceptably; a grid that should sit UNDER transparency
   wants its own row between opaque and transparent, which is a one
   line change to the table and a W2 decision.
-- **No orthographic projection, no lights beyond the fixed headlight,
-  no colormaps, no meshes, no shadows.** All W2+.
+- **A colormap's scale is a number the caller supplies**, not one
+  derived from the data: deriving it would need a reduction over the
+  buffer every frame, and a scale that moves under you is worse than
+  one you set.
+- **No meshes and no shadows** (W3, W5), and no multisampling
+  anywhere — sphere silhouettes and grid lines alias, which is its own
+  decision because it touches the target, the pipelines and the pass
+  table at once. The colour target is 8-bit UNORM, so tone mapping
+  would want a format change first.
 
 ## Named follow-ups
 

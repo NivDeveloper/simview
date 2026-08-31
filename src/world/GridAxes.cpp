@@ -145,7 +145,7 @@ const WorldItemOps kGridOps{
                  .setSrcBlendAlpha(nvrhi::BlendFactor::One)
                  .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha),
     .topology = nvrhi::PrimitiveType::TriangleList,
-    .has_storage = false,
+    .storage_count = 0,
     .push_bytes = sizeof(GridParams),
 };
 
@@ -161,7 +161,7 @@ const WorldItemOps kAxesOps{
     .fs = {axes3_fsmain_spirv, axes3_fsmain_spirv_len, "fsmain"},
     .blend = nvrhi::BlendState::RenderTarget(),
     .topology = nvrhi::PrimitiveType::LineList,
-    .has_storage = false,
+    .storage_count = 0,
     .push_bytes = sizeof(AxesParams),
 };
 // clang-format on

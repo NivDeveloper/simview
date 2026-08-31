@@ -118,10 +118,14 @@ kind answers. What landed with it is the architecture — a fixed pass
 table, draw-command submission with a real sort, reverse-Z depth,
 per-view constants, an orbital camera, grid and axes as ordinary
 items — so the rest is additive:
-- **W2** orthographic projection, the colormap set over a
-  per-particle data buffer, a Lambert light set;
+- **W2** (shipped 2026-08-31): the world may BE the window rather
+  than a panel; orthographic projection; the colormap set over a
+  per-point value channel with its own three doors; up to four
+  directional lights plus ambient;
 - **W3** the mesh registry and instanced meshes (cube, cubesphere at
-  two tiers), then user meshes;
+  two tiers), then user meshes; multisampling is the other decision
+  waiting here, since it touches the target, the pipelines and the
+  pass table at once;
 - **W4** the 100k-instance bench with recorded numbers;
 - **W5** the shadow pass, filling the row already reserved for it;
 - **W6** a flagship: a tensor sim producing device-resident N x 3.

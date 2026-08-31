@@ -223,6 +223,8 @@ void app_quit(App *a) {
     ui_quit(a);
     pipelines_release(a->pipelines);
     world_pipelines_release(a->world_pipelines);
+    if (a->world)
+        world_release(*a->world);
     scene_release(a->scene);
     for (View &v : a->views) {
         if (v.world)

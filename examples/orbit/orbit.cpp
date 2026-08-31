@@ -1,31 +1,38 @@
-// A world you can look around: two shells of particles over a ground
-// grid, with the camera on a turntable. Drag inside the panel to
-// orbit, shift-drag or right-drag to pan, wheel to dolly.
+// A world you can look around: a shell of particles coloured by
+// direction over a ground grid, lit from above and to one side.
+// Drag inside the window to orbit, shift-drag or right-drag to pan,
+// wheel to dolly.
 //
-// The inner shell is solid — lit spheres that occlude one another —
-// and the outer one is translucent, so the two together show what the
-// depth buffer and the blend order are doing.
+// The world has no title, so it IS the window and the panel floats
+// over it. Give it one and it becomes a panel among panels instead.
 #include <simview/simview.h>
 
 #include <cmath>
 #include <vector>
 
-constexpr std::size_t N = 4000;
+constexpr std::size_t N = 6000;
+constexpr std::size_t kHalo = 900;
 
 // Points on a sphere, spread by the golden angle so they do not band.
-std::vector<float> shell(float radius, float squash) {
-    std::vector<float> p(N * 3);
+void shell(std::vector<float> &pos, std::vector<float> &dir, std::size_t n,
+           float radius, float squash) {
+    pos.resize(n * 3);
+    dir.resize(n * 3);
     const float ga = 2.39996323f;
-    for (std::size_t i = 0; i < N; ++i) {
-        const float t = (float(i) + 0.5f) / float(N);
+    for (std::size_t i = 0; i < n; ++i) {
+        const float t = (float(i) + 0.5f) / float(n);
         const float z = 1.0f - 2.0f * t;
         const float r = std::sqrt(std::max(0.0f, 1.0f - z * z));
         const float a = ga * float(i);
-        p[i * 3 + 0] = radius * r * std::cos(a);
-        p[i * 3 + 1] = radius * r * std::sin(a);
-        p[i * 3 + 2] = radius * z * squash;
+        const float x = r * std::cos(a), y = r * std::sin(a);
+        pos[i * 3 + 0] = radius * x;
+        pos[i * 3 + 1] = radius * y;
+        pos[i * 3 + 2] = radius * z * squash;
+        // The outward normal: what the direction colormap reads.
+        dir[i * 3 + 0] = x;
+        dir[i * 3 + 1] = y;
+        dir[i * 3 + 2] = z;
     }
-    return p;
 }
 
 int main() {
@@ -33,17 +40,39 @@ int main() {
     if (!app)
         return 1;
 
-    auto world = app.World({.title = "orbit"});
-    world.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 6.0f});
+    auto world = app.World();
+    world.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 6.0f})
+        .Light({.direction = {0.3f, 0.5f, 1.0f}, .intensity = 0.85f})
+        .Ambient(0.18f, 0.19f, 0.22f);
 
-    auto core = world.Cloud({.color = {1.0f, 0.72f, 0.30f, 1.0f},
-                             .radius = 0.05f,
-                             .mode = sv::CloudMode::Solid});
-    auto halo = world.Cloud({.color = {0.35f, 0.65f, 1.0f, 0.25f},
-                             .radius = 0.09f,
+    auto core = world.Cloud({.radius = 0.06f,
+                             .mode = sv::CloudMode::Solid,
+                             .map = sv::CloudMap::Direction});
+    auto halo = world.Cloud({.color = {0.40f, 0.70f, 1.0f, 0.16f},
+                             .radius = 0.075f,
                              .mode = sv::CloudMode::Alpha});
-    core.Update(shell(1.0f, 0.6f));
-    halo.Update(shell(2.2f, 1.0f));
+
+    std::vector<float> pos, dir;
+    shell(pos, dir, N, 1.0f, 0.65f);
+    core.Update(pos);
+    core.UpdateColors(dir);
+    shell(pos, dir, kHalo, 2.3f, 1.0f);
+    halo.Update(pos);
+
+    // The projection is a field on the camera, so switching it is one
+    // call with everything else held still.
+    static bool ortho = false;
+    bool was = ortho;
+    app.Panel("view").Checkbox("orthographic", ortho);
+    app.OnFrame([&] {
+        if (ortho == was)
+            return;
+        was = ortho;
+        world.Camera({.focus = {0.0f, 0.0f, 0.0f},
+                      .distance = 6.0f,
+                      .projection = ortho ? sv::Projection::Orthographic
+                                          : sv::Projection::Perspective});
+    });
 
     app.Run();
     return 0;

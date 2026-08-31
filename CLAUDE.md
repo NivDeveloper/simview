@@ -138,7 +138,14 @@ Next: 3-D scene kinds, and more than one window.
   check that fails without it, because vklib's equivalent sort was an
   identity function for its whole life. Limits are stated, not
   implied: transparency sorts per ITEM, a cloud keys on its centroid,
-  a billboard writes the quad's depth. `docs/3d-plan.md`.
+  a billboard writes the quad's depth. **A world with no title IS the
+  window** (the panels float over it); a titled one is a panel, for a
+  layout with several views. A camera is perspective or orthographic
+  and nothing else changes; a cloud may carry per-point VALUES beside
+  its positions for a colormap, through the same three doors; up to
+  four directional lights ride the view block, and an unlit world
+  keeps the light at the camera it always had. No multisampling
+  anywhere yet. `docs/3d-plan.md`.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive

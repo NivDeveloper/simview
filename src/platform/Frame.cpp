@@ -82,7 +82,8 @@ void frame_render(impl::App *a, const Presenter &p) {
         std::uint64_t wait = 0;
         for (impl::SyncGate g : a->gates)
             wait = std::max(wait, impl::sync_gate_shown_stamp(g));
-        bool untracked = a->scene.untracked_pulls > 0;
+        bool untracked = a->scene.untracked_pulls > 0 ||
+                         (a->world && a->world->untracked_pulls > 0);
         for (impl::View &v : a->views)
             untracked = untracked || v.scene.untracked_pulls > 0 ||
                         (v.world && v.world->untracked_pulls > 0);
@@ -131,7 +132,12 @@ void frame_render(impl::App *a, const Presenter &p) {
         {
             SV_ZONE("scene");
             timing_begin(pl, cl, "scene");
-            scene_draw(a->scene, cl, t.fb, t.w, t.h, t.format);
+            // One or the other into the window: a world owns the depth
+            // buffer and the clear, so the two cannot share a target.
+            if (a->world)
+                world_draw_into(*a->world, cl, t.fb, t.w, t.h);
+            else
+                scene_draw(a->scene, cl, t.fb, t.w, t.h, t.format);
             timing_end(pl, cl);
         }
         if (ui) {
@@ -341,8 +347,25 @@ bool app_shot(App *a, const char *path) {
         nvrhi::CpuAccessMode::Read);
     if (!st.tex || !st.staging)
         return set_error("shot: target creation failed"), false;
-    st.fb = dev->createFramebuffer(
-        nvrhi::FramebufferDesc().addColorAttachment(st.tex));
+    auto sfb = nvrhi::FramebufferDesc().addColorAttachment(st.tex);
+    // A world in the window draws into this target instead, and it
+    // tests depth: without an attachment here a headless shot of a 3D
+    // program would come back empty.
+    if (a->world) {
+        st.depth = dev->createTexture(
+            nvrhi::TextureDesc()
+                .setWidth(w)
+                .setHeight(h)
+                .setFormat(nvrhi::Format::D32)
+                .setIsRenderTarget(true)
+                .setInitialState(nvrhi::ResourceStates::DepthWrite)
+                .setKeepInitialState(true)
+                .setDebugName("shot depth"));
+        if (!st.depth)
+            return set_error("shot: depth creation failed"), false;
+        sfb.setDepthAttachment(st.depth);
+    }
+    st.fb = dev->createFramebuffer(sfb);
 
     // The same frame app_run draws, into a texture instead of a
     // window. The order lives in frame_render, once — the readback

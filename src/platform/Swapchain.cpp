@@ -81,6 +81,23 @@ bool build_chain(impl::Swapchain &sc, nvrhi::IDevice *ndev) {
     // command list because the initial state is kept.
     sc.images.clear();
     sc.fbs.clear();
+    // One depth image for every swapchain image: only one frame is in
+    // flight, so they cannot be in use at once, and matching the
+    // colour images one for one would buy nothing but memory.
+    sc.depth = nullptr;
+    if (sc.want_depth) {
+        sc.depth = ndev->createTexture(
+            nvrhi::TextureDesc()
+                .setWidth(sc.w)
+                .setHeight(sc.h)
+                .setFormat(nvrhi::Format::D32)
+                .setIsRenderTarget(true)
+                .setInitialState(nvrhi::ResourceStates::DepthWrite)
+                .setKeepInitialState(true)
+                .setDebugName("window depth"));
+        if (!sc.depth)
+            return set_error("window depth texture: creation failed"), false;
+    }
     for (VkImage img : dev.getSwapchainImagesKHR(chain)) {
         auto tex = ndev->createHandleForNativeTexture(
             nvrhi::ObjectTypes::VK_Image, nvrhi::Object(img),
@@ -94,8 +111,10 @@ bool build_chain(impl::Swapchain &sc, nvrhi::IDevice *ndev) {
                 .setDebugName("swapchain"));
         if (!tex)
             return set_error("wrapping a swapchain image failed"), false;
-        sc.fbs.push_back(ndev->createFramebuffer(
-            nvrhi::FramebufferDesc().addColorAttachment(tex)));
+        auto fbd = nvrhi::FramebufferDesc().addColorAttachment(tex);
+        if (sc.depth)
+            fbd.setDepthAttachment(sc.depth);
+        sc.fbs.push_back(ndev->createFramebuffer(fbd));
         sc.images.push_back(std::move(tex));
     }
 
@@ -182,6 +201,13 @@ bool swapchain_open(impl::Swapchain &sc, impl::VkContext &vk,
     }
 }
 
+bool swapchain_rebuild(impl::Swapchain &sc, nvrhi::IDevice *ndev) {
+    if (!sc.chain)
+        return true; // headless, or not up yet: the next build reads the flag
+    ndev->waitForIdle();
+    return build_chain(sc, ndev);
+}
+
 bool swapchain_acquire(impl::Swapchain &sc, nvrhi::IDevice *ndev,
                        void (*gfx_idle)(void *), void *user) {
     try {
@@ -261,6 +287,7 @@ void swapchain_close(impl::Swapchain &sc, nvrhi::IDevice *ndev) {
     vk::Device dev(sc.vk ? sc.vk->device : nullptr);
     sc.fbs.clear();
     sc.images.clear();
+    sc.depth = nullptr;
     if (dev) {
         for (std::uint64_t s : sc.acquire_sems)
             dev.destroySemaphore(reinterpret_cast<VkSemaphore>(s));

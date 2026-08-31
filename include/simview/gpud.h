@@ -16,6 +16,7 @@ Particles particles_from_source(Scene, gpud::BufferSource,
                                 const ParticlesDesc &);
 Lines lines_from_source(Scene, gpud::BufferSource, const LinesDesc &);
 Cloud cloud_from_source(World, gpud::BufferSource, const CloudDesc &);
+bool cloud_values_from_source(Cloud, gpud::BufferSource);
 }
 
 inline gpud::Device &Device(const App &a) { return *impl::app_device(a.Raw()); }

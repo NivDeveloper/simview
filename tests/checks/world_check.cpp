@@ -82,12 +82,17 @@ struct Box {
     bool empty = true;
 };
 
-Box channel_box(const Bmp &img, const Rect &in, int channel, int margin) {
+Box channel_box(const Bmp &img, const Rect &in, int channel, int margin,
+                int floor = 150) {
     Box b;
     for (unsigned y = in.y0; y < in.y1 && y < img.h; ++y)
         for (unsigned x = in.x0; x < in.x1 && x < img.w; ++x) {
             const auto &p = img.at(x, y);
             const int a = p[(channel + 1) % 3], c = p[(channel + 2) % 3];
+            // The floor is what keeps a panel's own blue title bar out
+            // of a blue probe: chrome is dark, geometry is not.
+            if (p[channel] < floor)
+                continue;
             if (p[channel] < a + margin || p[channel] < c + margin)
                 continue;
             if (b.empty) {
@@ -128,7 +133,34 @@ std::vector<float> one_point(float x, float y, float z) { return {x, y, z}; }
 // headless app is laid out for.
 constexpr Rect kWorldRect{0, 0, 300, 230};
 constexpr Rect kBlendRect{310, 0, 620, 230};
+constexpr Rect kMapRect{630, 0, 930, 230};
 constexpr Rect kGroundRect{0, 240, 300, 470};
+constexpr Rect kOrthoRect{310, 240, 620, 470};
+constexpr Rect kLightRect{630, 240, 930, 470};
+
+// The image inside a pinned panel — the panel less its chrome. The
+// title bar is a blue strip with white text on it, and the ANTIALIASED
+// edges of that text are bright and blue-dominant: a colour probe over
+// the whole panel finds them and answers for the geometry.
+constexpr Rect content_of(const Rect &r) {
+    return {r.x0 + 4, r.y0 + 26, r.x1 - 4, r.y1 - 4};
+}
+
+// A panel, pinned where the check put it.
+void pin(sv::App &app, const char *title, const Rect &r) {
+    app.OnUi([title, r] {
+        ImGui::SetWindowPos(title, ImVec2(float(r.x0), float(r.y0)));
+        ImGui::SetWindowSize(title,
+                             ImVec2(float(r.x1 - r.x0), float(r.y1 - r.y0)));
+    });
+}
+
+// The brightness at a point, as one number.
+int brightness_at(const Bmp &img, unsigned cx, unsigned cy, unsigned r) {
+    int mr = 0, mg = 0, mb = 0;
+    mean_at(img, cx, cy, r, mr, mg, mb);
+    return mr + mg + mb;
+}
 
 } // namespace
 
@@ -136,13 +168,16 @@ int main() {
     harness::begin();
     using namespace sv;
 
-    App app({.size = {640, 480}, .headless = true});
+    App app({.size = {940, 700}, .headless = true});
     if (!app)
         return check::skip("world", LastError());
 
-    // A world is a panel: it must be named, and two windows of one name
-    // would draw into each other.
-    CHECK(!app.World({.title = ""}));
+    // A world with NO title is the window itself; a titled one is a
+    // panel. There can be one of the first and any number of the
+    // second, and two panels of one name would draw into each other.
+    sv::World main = app.World({.grid = false, .axes = false});
+    REQUIRE(bool(main));
+    CHECK(!app.World({}));
 
     sv::World w = app.World({.title = "world", .grid = false, .axes = false});
     REQUIRE(bool(w));
@@ -154,10 +189,7 @@ int main() {
 
     // The panel is pinned, so the geometry below is about the world and
     // not about how ImGui chose to lay the window out.
-    app.OnUi([] {
-        ImGui::SetWindowPos("world", ImVec2(0, 0));
-        ImGui::SetWindowSize("world", ImVec2(300, 230));
-    });
+    pin(app, "world", kWorldRect);
 
     // ── the camera drew what the caller asked for ────────────────────
     // One point AT the focus: whatever the matrices did, it belongs in
@@ -177,9 +209,9 @@ int main() {
 
     Bmp img;
     REQUIRE(harness::shot(app, "world_centre", img));
-    const Bmp::Box panel = panel_box(img, kWorldRect);
+    const Bmp::Box panel = panel_box(img, content_of(kWorldRect));
     REQUIRE(!panel.empty);
-    const Box red = channel_box(img, kWorldRect, 0, 40);
+    const Box red = channel_box(img, content_of(kWorldRect), 0, 40);
     CHECK(!red.empty);
     if (!red.empty && !panel.empty) {
         const unsigned rx = (red.x0 + red.x1) / 2, ry = (red.y0 + red.y1) / 2;
@@ -206,7 +238,7 @@ int main() {
     app.Step();
     REQUIRE(harness::shot(app, "world_depth", img));
     {
-        const Bmp::Box p = panel_box(img, kWorldRect);
+        const Bmp::Box p = panel_box(img, content_of(kWorldRect));
         REQUIRE(!p.empty);
         int r = 0, g = 0, b = 0;
         mean_at(img, (p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2, 6, r, g, b);
@@ -224,10 +256,7 @@ int main() {
               .distance = 4.0f,
               .azimuth_deg = 0.0f,
               .elevation_deg = 0.0f});
-    app.OnUi([] {
-        ImGui::SetWindowPos("blend", ImVec2(310, 0));
-        ImGui::SetWindowSize("blend", ImVec2(300, 230));
-    });
+    pin(app, "blend", kBlendRect);
     sv::Cloud near_blue = t.Cloud({.color = {0.2f, 0.3f, 1.0f, 0.5f},
                                    .radius = 0.6f,
                                    .mode = CloudMode::Alpha});
@@ -244,7 +273,7 @@ int main() {
     Bmp blend;
     REQUIRE(harness::shot(app, "world_blend", blend));
     {
-        const Bmp::Box p = panel_box(blend, kBlendRect);
+        const Bmp::Box p = panel_box(blend, content_of(kBlendRect));
         CHECK(!p.empty);
         if (!p.empty) {
             int r = 0, g = 0, b = 0;
@@ -310,15 +339,135 @@ int main() {
                      : std::size_t(0));
     }
 
+    // ── orthographic: distance stops shrinking things ────────────────
+    // Two spheres of one size at different depths. Under perspective
+    // the near one is half again as wide; under the orthographic
+    // projection they measure the same, which is the whole reason a
+    // caller reaches for it.
+    sv::World o = app.World({.title = "ortho", .grid = false, .axes = false});
+    REQUIRE(bool(o));
+    o.Camera({.focus = {0.0f, 0.0f, 0.0f},
+              .distance = 6.0f,
+              .azimuth_deg = 0.0f,
+              .elevation_deg = 0.0f,
+              .projection = Projection::Orthographic});
+    pin(app, "ortho", kOrthoRect);
+    sv::Cloud o_near = o.Cloud({.color = {1.0f, 0.25f, 0.25f, 1.0f},
+                                .radius = 0.45f,
+                                .mode = CloudMode::Solid});
+    sv::Cloud o_far = o.Cloud({.color = {0.25f, 0.35f, 1.0f, 1.0f},
+                               .radius = 0.45f,
+                               .mode = CloudMode::Solid});
+    CHECK(o_near.Update(one_point(2.0f, 0.0f, 0.9f)));
+    CHECK(o_far.Update(one_point(-2.0f, 0.0f, -0.9f)));
+
+    app.Step();
+    app.Step();
+    Bmp ortho;
+    REQUIRE(harness::shot(app, "world_ortho", ortho));
+    {
+        const Box r = channel_box(ortho, content_of(kOrthoRect), 0, 40);
+        const Box b = channel_box(ortho, content_of(kOrthoRect), 2, 40);
+        CHECK(!r.empty);
+        CHECK(!b.empty);
+        if (!r.empty && !b.empty) {
+            const unsigned wr = r.x1 - r.x0 + 1, wb = b.x1 - b.x0 + 1;
+            const unsigned hi = wr > wb ? wr : wb, lo = wr > wb ? wb : wr;
+            std::printf("  ortho widths: near %u px, far %u px\n", wr, wb);
+            CHECK_LT(hi * 100u, lo * 125u); // within a quarter of each other
+        }
+    }
+
+    // ── a colormap reads per-point values ────────────────────────────
+    // Three points, three directions, three colours. It fails unless
+    // the second buffer is bound AND indexed by the same point index
+    // the position was.
+    sv::World m = app.World({.title = "map", .grid = false, .axes = false});
+    REQUIRE(bool(m));
+    m.Camera({.focus = {0.0f, 0.0f, 0.0f},
+              .distance = 6.0f,
+              .azimuth_deg = 0.0f,
+              .elevation_deg = 0.0f});
+    pin(app, "map", kMapRect);
+    sv::Cloud tri = m.Cloud({.radius = 0.45f,
+                             .mode = CloudMode::Solid,
+                             .map = CloudMap::Direction});
+    REQUIRE(bool(tri));
+    const std::vector<float> tri_pts{0.0f, -1.6f, 0.0f, 0.0f, 0.0f,
+                                     0.0f, 0.0f,  1.6f, 0.0f};
+    const std::vector<float> dirs{1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                                  0.0f, 0.0f, 0.0f, 1.0f};
+    CHECK(tri.Update(tri_pts));
+    CHECK(tri.UpdateColors(dirs));
+
+    app.Step();
+    app.Step();
+    Bmp mapped;
+    REQUIRE(harness::shot(app, "world_map", mapped));
+    {
+        const Box r = channel_box(mapped, content_of(kMapRect), 0, 30);
+        const Box g = channel_box(mapped, content_of(kMapRect), 1, 30);
+        const Box b = channel_box(mapped, content_of(kMapRect), 2, 30);
+        CHECK(!r.empty);
+        CHECK(!g.empty);
+        CHECK(!b.empty);
+        // Three separate points, so three separate patches: a map that
+        // ignored the index would paint all three alike.
+        if (!r.empty && !g.empty && !b.empty) {
+            std::printf("  map boxes: r[%u,%u] g[%u,%u] b[%u,%u]\n", r.x0, r.x1,
+                        g.x0, g.x1, b.x0, b.x1);
+            CHECK(r.x1 < g.x0 || g.x1 < r.x0);
+            CHECK(g.x1 < b.x0 || b.x1 < g.x0);
+        }
+    }
+
+    // ── a light comes from somewhere ─────────────────────────────────
+    // One sphere, one light from the side, no ambient. The lit half is
+    // brighter than the dark half; a light at the camera — which is
+    // what W1 had — lights a disc symmetrically and fails this.
+    sv::World l = app.World({.title = "light", .grid = false, .axes = false});
+    REQUIRE(bool(l));
+    l.Camera({.focus = {0.0f, 0.0f, 0.0f},
+              .distance = 5.0f,
+              .azimuth_deg = 0.0f,
+              .elevation_deg = 0.0f});
+    l.Ambient(0.02f, 0.02f, 0.02f);
+    CHECK(bool(l.Light({.direction = {0.0f, 1.0f, 0.0f}, .intensity = 1.0f})));
+    pin(app, "light", kLightRect);
+    sv::Cloud ball = l.Cloud({.color = {0.9f, 0.9f, 0.9f, 1.0f},
+                              .radius = 1.2f,
+                              .mode = CloudMode::Solid});
+    CHECK(ball.Update(one_point(0.0f, 0.0f, 0.0f)));
+
+    app.Step();
+    app.Step();
+    Bmp lit;
+    REQUIRE(harness::shot(app, "world_light", lit));
+    {
+        const Bmp::Box p = panel_box(lit, content_of(kLightRect));
+        CHECK(!p.empty);
+        if (!p.empty) {
+            // Two probes INSIDE the sphere, either side of its centre.
+            // A light at the camera lights a disc symmetrically, so
+            // these two agree; a light from the side is what makes
+            // them differ.
+            const unsigned cx = (p.x0 + p.x1) / 2, cy = (p.y0 + p.y1) / 2;
+            const unsigned off = p.w() / 5;
+            const int left = brightness_at(lit, cx - off, cy, 4);
+            const int right = brightness_at(lit, cx + off, cy, 4);
+            const int diff = left > right ? left - right : right - left;
+            std::printf("  lit sides: left %d, right %d (diff %d)\n", left,
+                        right, diff);
+            CHECK_GT(diff, 120);
+        }
+    }
+
     // ── the grid and the axes ────────────────────────────────────────
     // A world that draws nothing of its own still draws its
     // orientation: two items, two draws.
     sv::World g = app.World({.title = "ground"});
     REQUIRE(bool(g));
-    app.OnUi([] {
-        ImGui::SetWindowPos("ground", ImVec2(0, 240));
-        ImGui::SetWindowSize("ground", ImVec2(300, 230));
-    });
+    pin(app, "ground", kGroundRect);
     app.Step();
     const std::uint64_t draws_before = app.Stats().draws;
     Bmp ground;

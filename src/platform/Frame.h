@@ -56,6 +56,9 @@ Presenter swapchain_presenter(impl::App *);
 struct ShotTarget {
     impl::App *app = nullptr;
     nvrhi::TextureHandle tex;
+    // A shot of a world needs somewhere to test depth, exactly as its
+    // window does. Created with the target and thrown away with it.
+    nvrhi::TextureHandle depth;
     nvrhi::FramebufferHandle fb;
     nvrhi::StagingTextureHandle staging;
     std::uint32_t w = 0, h = 0;
