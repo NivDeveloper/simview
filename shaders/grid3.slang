@@ -56,7 +56,7 @@ float4 fsmain(G2F v) : SV_Target {
     float2 dudv = float2(length(float2(ddx(v.uv.x), ddy(v.uv.x))),
                          length(float2(ddx(v.uv.y), ddy(v.uv.y))));
 
-    const float min_px = 8.0f; // >= 4x the line width, or it moires
+    const float min_px = 11.0f; // >= 4x the line width, or it moires
     const float lod = max(0.0f,
                           log10(length(dudv) * min_px / gp.cell) + 1.0f);
     const float fade = frac(lod);
@@ -80,16 +80,18 @@ float4 fsmain(G2F v) : SV_Target {
     const float c1 = max(a1.x, a1.y);
     const float c2 = max(a2.x, a2.y);
 
-    const float blend = smoothstep(0.8f, 1.0f, fade);
+    const float blend = smoothstep(0.45f, 1.0f, fade);
     float alpha = (c2 > 0.0f) ? gp.thick_alpha
                               : ((c1 > 0.0f) ? lerp(gp.thick_alpha, gp.color.a, blend)
                                              : gp.color.a);
     const float cover = (c2 > 0.0f) ? c2 : ((c1 > 0.0f) ? c1 : c0 * (1.0f - blend));
 
-    // Fade out toward the quad's edge, so the grid ends in nothing
-    // rather than in a rim.
+    // Fade out well before the quad's edge, so the grid ends in
+    // nothing rather than in a rim — and so the grazing far field,
+    // where a cell is thinner than a pixel and no amount of
+    // anti-aliasing saves it, is gone before it can shimmer.
     const float dist = length(v.uv - v.cam) / gp.size;
-    alpha *= cover * (1.0f - smoothstep(0.5f, 1.0f, dist));
+    alpha *= cover * (1.0f - smoothstep(0.33f, 1.0f, dist));
 
     if (alpha <= 0.0f)
         discard;

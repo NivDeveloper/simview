@@ -207,6 +207,14 @@ who never asked.
   not export depth, which keeps early-Z alive. At a radius small
   against the scene the difference does not show; where a sphere meets
   a surface it would.
+- **The grid's EXTENT follows the camera; its CELL does not.** A grid
+  is a ruler, so the finest cell is a world length and the
+  level-of-detail picks which decade of it to draw. The quad and its
+  fade are the opposite: twelve orbit distances wide, fading over the
+  last two thirds. Both fixed, as they were at first, is wrong in both
+  directions — zoomed out past the extent the whole grid sits beyond
+  its own fade and disappears, and zoomed in the fade never engages,
+  so the far field grazes the plane and turns to moire.
 - **The overlay pass draws after transparency**, so the grid paints
   over a translucent cloud rather than under it. It is what
   "depth-aware overlay" means with a pass that does not write depth,

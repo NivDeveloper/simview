@@ -32,6 +32,10 @@ struct WorldView {
     impl::Mat4 world_to_clip{}, world_to_view{}, view_to_clip{};
     impl::Vec3 camera_pos{};
     float znear = 1e-4f;
+    // How far the camera orbits its focus — the ONE length that says
+    // how big the view is, which is what anything sized to the view
+    // rather than to the world scales by.
+    float distance = 1.0f;
     std::uint32_t tw = 0, th = 0;
     // The world's constant buffer, holding exactly these numbers. An
     // item binds it beside its own storage, which is why the binding

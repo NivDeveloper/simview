@@ -475,6 +475,43 @@ int main() {
     CHECK_GT(app.Stats().draws - draws_before, std::uint64_t(1));
     CHECK_GT(ground.distinct(), std::size_t(4));
 
+    // The grid is drawn at whatever scale the camera is looking from.
+    // It used to be a hundred world units wide and faded from fifty,
+    // both fixed: zoomed out past that the whole thing sat beyond its
+    // own fade and vanished, which is invisible to every other check
+    // here. Count what it covers, close in and far out.
+    const auto grid_pixels = [](const Bmp &img, const Rect &in) {
+        std::size_t n = 0;
+        for (unsigned y = in.y0; y < in.y1 && y < img.h; ++y)
+            for (unsigned x = in.x0; x < in.x1 && x < img.w; ++x) {
+                const auto &p = img.at(x, y);
+                if (p[0] + p[1] + p[2] > 72 + 40)
+                    ++n;
+            }
+        return n;
+    };
+    std::size_t covered[2] = {0, 0};
+    const float zooms[2] = {6.0f, 400.0f};
+    for (int i = 0; i < 2; ++i) {
+        g.Camera({.focus = {0.0f, 0.0f, 0.0f},
+                  .distance = zooms[i],
+                  .azimuth_deg = -50.0f,
+                  .elevation_deg = 18.0f});
+        app.Step();
+        Bmp shot;
+        REQUIRE(harness::shot(app, "world_zoom", shot));
+        covered[i] = grid_pixels(shot, content_of(kGroundRect));
+    }
+    std::printf("  grid pixels: %zu at distance 6, %zu at 400\n", covered[0],
+                covered[1]);
+    CHECK_GT(covered[0], std::size_t(200));
+    CHECK_GT(covered[1], std::size_t(200));
+    // And it looks the SAME at both: a grid whose extent follows the
+    // camera covers a like part of the frame however far out it is.
+    const std::size_t hi = covered[0] > covered[1] ? covered[0] : covered[1];
+    const std::size_t lo = covered[0] > covered[1] ? covered[1] : covered[0];
+    CHECK_LT(hi, lo * 3);
+
     if (probe::validation_on(app.Raw()))
         CHECK_EQ(probe::validation_errors(app.Raw()), std::size_t(0));
 

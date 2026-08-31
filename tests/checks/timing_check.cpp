@@ -75,10 +75,17 @@ int main() {
     dev.flush();
 
     // Graphics: three shots, each a frame that is waited and collected.
+    // Shoot until a frame's stamps come back, not a fixed number of
+    // times. A driver may publish them AFTER the semaphore the frame's
+    // wait returned on — MoltenVK does, from the command buffer's
+    // completion handler — so a collect that finds none is a frame
+    // that has not been published yet, not a frame that was not
+    // stamped. Waiting for them on the hot path is what the engine
+    // refuses to do, so the check waits instead, by asking again.
     std::vector<probe::ComputeBatch> batches;
     probe::GpuSection sections[32];
     std::size_t n_sections = 0;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 10 && n_sections == 0; ++i) {
         Bmp img;
         CHECK(harness::shot(app, "timing", img));
         n_sections = probe::gpu_sections(app.Raw(), sections, 32);

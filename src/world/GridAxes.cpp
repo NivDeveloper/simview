@@ -33,8 +33,10 @@ struct AxesParams {
 
 struct GridState {
     nvrhi::BindingSetHandle bset;
-    float color[4] = {0.55f, 0.58f, 0.62f, 0.30f};
-    float size = 100.0f;
+    float color[4] = {0.58f, 0.61f, 0.66f, 0.34f};
+    // The finest cell is a WORLD length and stays one: a grid is a
+    // ruler, and the level-of-detail picks which decade of it to draw.
+    // The extent is not — see grid_draw.
     float cell = 0.1f;
     float thick_alpha = 0.85f;
 };
@@ -79,7 +81,13 @@ void grid_draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     GridParams p{};
     for (int c = 0; c < 4; ++c)
         p.color[c] = gs.color[c];
-    p.size = gs.size;
+    // The extent FOLLOWS THE CAMERA. A fixed one is wrong in both
+    // directions: zoomed out past it the whole grid sits beyond its
+    // own fade and disappears, and zoomed in the fade never engages,
+    // so the far field grazes the plane and turns to moire. Twelve
+    // orbit distances is past the edge of any view at this field of
+    // view, and the fade below covers the last two thirds of it.
+    p.size = view.distance * 12.0f;
     p.cell = gs.cell;
     p.thick_alpha = gs.thick_alpha;
     cl->setGraphicsState(

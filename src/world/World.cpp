@@ -49,6 +49,7 @@ WorldView view_of(const impl::WorldState &w, std::uint32_t tw,
             .view_to_clip = p,
             .camera_pos = impl::camera_position(w.camera),
             .znear = impl::camera_znear(w.camera),
+            .distance = w.camera.distance,
             .tw = tw,
             .th = th};
 }
