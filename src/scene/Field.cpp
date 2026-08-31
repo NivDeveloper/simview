@@ -232,13 +232,14 @@ Field field_new(Scene s, const FieldDesc &d, HostSource host) {
     it.stats = sc->stats;
     it.pipelines = sc->pipelines;
     it.ops = &kFieldOps;
-    auto *f = new FieldState{.w = d.extent.w,
-                             .h = d.extent.h,
-                             .cmap = std::int32_t(d.map),
-                             .lo = d.lo,
-                             .hi = d.hi,
-                             .buf = buf,
-                             .host = host};
+    auto *f = new FieldState;
+    f->w = d.extent.w;
+    f->h = d.extent.h;
+    f->cmap = std::int32_t(d.map);
+    f->lo = d.lo;
+    f->hi = d.hi;
+    f->buf = buf;
+    f->host = host;
     f->shadow.assign(std::size_t(d.extent.w) * d.extent.h, 0.0f);
     it.state = f;
     return Field{&it};
@@ -304,13 +305,15 @@ Field field_from_source(Scene s, gpud::BufferSource src, const FieldDesc &d) {
     it.stats = sc->stats;
     it.pipelines = sc->pipelines;
     it.ops = &kFieldOps;
-    it.state = new FieldState{.w = d.extent.w,
-                              .h = d.extent.h,
-                              .cmap = std::int32_t(d.map),
-                              .lo = d.lo,
-                              .hi = d.hi,
-                              .external = true,
-                              .src = src};
+    auto *f = new FieldState;
+    f->w = d.extent.w;
+    f->h = d.extent.h;
+    f->cmap = std::int32_t(d.map);
+    f->lo = d.lo;
+    f->hi = d.hi;
+    f->external = true;
+    f->src = src;
+    it.state = f;
     return Field{&it};
 }
 

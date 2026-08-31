@@ -68,7 +68,7 @@ const impl::PipelineEntry *pipeline_for(const impl::Gpu &gpu,
             .setPrimType(nvrhi::PrimitiveType::TriangleList)
             .setRenderState(rstate)
             .addBindingLayout(layout),
-        fb);
+        fb->getFramebufferInfo());
     if (!pipeline)
         return set_error(std::string("pipeline creation failed for ") +
                          kind->name),

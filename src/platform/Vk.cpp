@@ -132,14 +132,19 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     vk::PhysicalDeviceVulkan13Features f13q;
     vk::PhysicalDeviceVulkan12Features f12q;
     f12q.pNext = &f13q;
+    vk::PhysicalDeviceVulkan11Features f11q;
+    f11q.pNext = &f12q;
     vk::PhysicalDeviceFeatures2 f2q;
-    f2q.pNext = &f12q;
+    f2q.pNext = &f11q;
     phys.getFeatures2(&f2q);
     std::string missing;
     const auto need = [&](vk::Bool32 have, const char *name) {
         if (!have)
             missing += missing.empty() ? name : (std::string(", ") + name);
     };
+    // slangc's SV_InstanceID lowers through the DrawParameters
+    // capability (gl_BaseInstance), a 1.1 feature that is opt-in.
+    need(f11q.shaderDrawParameters, "shaderDrawParameters");
     need(f12q.timelineSemaphore, "timelineSemaphore");
     need(f12q.bufferDeviceAddress, "bufferDeviceAddress");
     need(f13q.dynamicRendering, "dynamicRendering");
@@ -170,6 +175,11 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
             break;
         }
     bool same_family_two = false;
+    // SIMVIEW_ONE_QUEUE=1: force the one-shared-queue path (what a
+    // single-queue driver gets), for measuring what a second queue buys
+    // — 5.4x on examples/ising (3367 against 628 sweeps/s, MoltenVK).
+    if (const char *oq = std::getenv("SIMVIEW_ONE_QUEUE"); oq && *oq == '1')
+        c.comp_family = std::uint32_t(fams.size());
     if (c.comp_family == fams.size()) {
         if (fams[c.gfx_family].queueCount >= 2) {
             c.comp_family = c.gfx_family;
@@ -215,8 +225,11 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     f12.pNext = &f13;
     f12.timelineSemaphore = VK_TRUE;
     f12.bufferDeviceAddress = VK_TRUE;
+    vk::PhysicalDeviceVulkan11Features f11;
+    f11.pNext = &f12;
+    f11.shaderDrawParameters = VK_TRUE;
     vk::PhysicalDeviceFeatures2 f2;
-    f2.pNext = &f12;
+    f2.pNext = &f11;
     vk::DeviceCreateInfo dci;
     dci.pNext = &f2;
     dci.setQueueCreateInfos(qcis);

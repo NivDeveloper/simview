@@ -13,6 +13,8 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <string>
 
 namespace sv {
 namespace {
@@ -53,7 +55,14 @@ bool build_chain(impl::Swapchain &sc, nvrhi::IDevice *ndev) {
     ci.imageColorSpace = vk::ColorSpaceKHR(sc.vk_color_space);
     ci.imageExtent = extent;
     ci.imageArrayLayers = 1;
-    ci.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
+    // TRANSFER_DST too: NVRHI clears a target with vkCmdClearColorImage,
+    // which the validation layer refuses on a bare color attachment.
+    ci.imageUsage = vk::ImageUsageFlagBits::eColorAttachment |
+                    vk::ImageUsageFlagBits::eTransferDst;
+    if (!(caps.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferDst))
+        return set_error("swapchain: the surface cannot be a transfer "
+                         "destination, which the scene clear needs"),
+               false;
     ci.imageSharingMode = vk::SharingMode::eExclusive;
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
@@ -136,17 +145,37 @@ bool swapchain_open(impl::Swapchain &sc, impl::VkContext &vk,
                         : nvrhi::Format::RGBA8_UNORM;
 
         // IMMEDIATE first — vklib's policy: the frame loop uncapped,
-        // tearing accepted in a sim viewer. FIFO is the mandated
-        // fallback.
+        // tearing accepted in a sim viewer — EXCEPT on a portability
+        // driver. Measured on MoltenVK 1.3 (examples/ising, M4 Pro):
+        // IMMEDIATE spins in [CAMetalLayer nextDrawable] inside
+        // vkQueueSubmit and the compute queue starves — 629 sweeps/s
+        // against 3367 under FIFO, at 60 frames/s either way. FIFO is
+        // the mandated fallback everywhere. SIMVIEW_PRESENT=fifo|immediate
+        // overrides, for measuring.
+        bool want_immediate = true;
+        for (const auto &e : vk.device_extensions)
+            if (e == "VK_KHR_portability_subset")
+                want_immediate = false;
+        if (const char *ov = std::getenv("SIMVIEW_PRESENT"))
+            want_immediate = std::string(ov) == "immediate";
         sc.present_mode = std::uint32_t(VK_PRESENT_MODE_FIFO_KHR);
-        for (auto m : phys.getSurfacePresentModesKHR(vk::SurfaceKHR(surface)))
-            if (m == vk::PresentModeKHR::eImmediate) {
-                sc.present_mode = std::uint32_t(VK_PRESENT_MODE_IMMEDIATE_KHR);
-                break;
-            }
+        if (want_immediate)
+            for (auto m :
+                 phys.getSurfacePresentModesKHR(vk::SurfaceKHR(surface)))
+                if (m == vk::PresentModeKHR::eImmediate) {
+                    sc.present_mode =
+                        std::uint32_t(VK_PRESENT_MODE_IMMEDIATE_KHR);
+                    break;
+                }
         if (!build_chain(sc, ndev))
             return set_error("swapchain: nothing to build (zero extent?)"),
                    false;
+        if (vk.validation)
+            SDL_Log("simview: swapchain %ux%u, %u images, %s", sc.w, sc.h,
+                    unsigned(sc.images.size()),
+                    sc.present_mode == VK_PRESENT_MODE_IMMEDIATE_KHR
+                        ? "IMMEDIATE"
+                        : "FIFO");
         return true;
     } catch (const std::exception &e) {
         return set_error(std::string("swapchain: ") + e.what()), false;
@@ -199,7 +228,8 @@ void swapchain_present(impl::Swapchain &sc) {
     const VkSemaphore wait =
         reinterpret_cast<VkSemaphore>(sc.present_sems[sc.index]);
     const VkSwapchainKHR chain = reinterpret_cast<VkSwapchainKHR>(sc.chain);
-    VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    VkPresentInfoKHR pi{};
+    pi.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     pi.waitSemaphoreCount = 1;
     pi.pWaitSemaphores = &wait;
     pi.swapchainCount = 1;

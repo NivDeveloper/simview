@@ -35,9 +35,8 @@ App *app_init(const Config &c) {
 
     App *a = new App;
     Platform &pl = a->platform;
-    const auto fail = [&](const char *stage) -> App * {
-        if (!stage)
-            ; // LastError already set by the failing layer
+    // LastError is already set by whichever layer refused.
+    const auto fail = [&]() -> App * {
         if (pl.win) {
             swapchain_close(pl.sc, pl.ndev);
             SDL_DestroyWindow(pl.win);
@@ -56,7 +55,7 @@ App *app_init(const Config &c) {
     // library both ADOPT it — one device, two queues, and the timeline
     // between them.
     if (!vk_open(pl.vk, !c.headless))
-        return fail(nullptr);
+        return fail();
 
     std::vector<const char *> dexts;
     for (const auto &e : pl.vk.device_extensions)
@@ -73,7 +72,7 @@ App *app_init(const Config &c) {
     pl.nraw = nvrhi::vulkan::createDevice(dd);
     if (!pl.nraw) {
         set_error("nvrhi device creation failed");
-        return fail(nullptr);
+        return fail();
     }
     pl.ndev = pl.vk.validation
                   ? nvrhi::validation::createValidationLayer(pl.nraw)
@@ -99,7 +98,7 @@ App *app_init(const Config &c) {
     pl.gdev = gpud::vulkan::try_open_on(ad);
     if (!pl.gdev) {
         set_error("gpud could not adopt the device (GPUD_LOG=1 says why)");
-        return fail(nullptr);
+        return fail();
     }
 
     pl.ui_size = c.size;
@@ -115,10 +114,10 @@ App *app_init(const Config &c) {
                                       SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (!pl.win) {
             set_error(SDL_GetError());
-            return fail(nullptr);
+            return fail();
         }
         if (!swapchain_open(pl.sc, pl.vk, pl.ndev, pl.win))
-            return fail(nullptr);
+            return fail();
     }
     pl.cl = pl.ndev->createCommandList();
     pl.frame_query = pl.ndev->createEventQuery();

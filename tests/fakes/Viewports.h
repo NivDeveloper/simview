@@ -132,6 +132,7 @@ inline void render_window(ImGuiViewport *vp, void *) {
     cl->setTextureState(w->tex, nvrhi::AllSubresources,
                         nvrhi::ResourceStates::RenderTarget);
     cl->commitBarriers();
+    cl->clearState(); // ends NVRHI's pass unconditionally (see ui_draw)
 
     const auto cmd = VkCommandBuffer(
         cl->getNativeObject(nvrhi::ObjectTypes::VK_CommandBuffer).pointer);

@@ -32,13 +32,13 @@ constexpr float two_pi = 2.0f * pi;
 
 float delta_of(float T) { return std::min(pi, 0.9f + 0.8f * T); }
 
-Mask checkerboard(tensor::SlotDevice &sdev) {
+Mask checkerboard(gpud::Device &sdev) {
     using namespace tensor;
     auto k = gen::Iota<L, L>(0);
     return eval(sdev, (k / side + k % side) % 2);
 }
 
-Field random_angles(tensor::SlotDevice &sdev) {
+Field random_angles(gpud::Device &sdev) {
     using namespace tensor;
     return eval(sdev, rng::Uniform<float, L, L>() * two_pi);
 }
@@ -46,7 +46,7 @@ Field random_angles(tensor::SlotDevice &sdev) {
 // The neighbour field, one component per eval: every MENTION of a
 // leaf is a binding in the emitted program, so the fully fused
 // update overflows the 16-slot budget — materialize the stencils.
-Field field_x(tensor::SlotDevice &sdev, const Field &theta) {
+Field field_x(gpud::Device &sdev, const Field &theta) {
     using namespace tensor;
     using namespace tensor::indices;
     return eval(sdev, math::Cos(theta[wrap(i + 1_c), j]) +
@@ -54,7 +54,7 @@ Field field_x(tensor::SlotDevice &sdev, const Field &theta) {
                           math::Cos(theta[i, wrap(j + 1_c)]) +
                           math::Cos(theta[i, wrap(j - 1_c)]));
 }
-Field field_y(tensor::SlotDevice &sdev, const Field &theta) {
+Field field_y(gpud::Device &sdev, const Field &theta) {
     using namespace tensor;
     using namespace tensor::indices;
     return eval(sdev, math::Sin(theta[wrap(i + 1_c), j]) +
@@ -65,8 +65,7 @@ Field field_y(tensor::SlotDevice &sdev, const Field &theta) {
 
 // One checkerboard Metropolis sweep: rotate by a uniform angle in
 // [-delta, delta]; dE against the neighbour field (hx, hy).
-void metropolis(tensor::SlotDevice &sdev, Field &theta, const Mask &colour,
-                float T) {
+void metropolis(gpud::Device &sdev, Field &theta, const Mask &colour, float T) {
     using namespace tensor;
     using namespace tensor::indices;
     const float delta = delta_of(T);
@@ -89,7 +88,7 @@ void metropolis(tensor::SlotDevice &sdev, Field &theta, const Mask &colour,
 
 // The microcanonical reflection about the local field: no trig
 // identity needed on the host, one Atan2 on the device.
-void overrelax(tensor::SlotDevice &sdev, Field &theta, const Mask &colour) {
+void overrelax(gpud::Device &sdev, Field &theta, const Mask &colour) {
     using namespace tensor;
     using namespace tensor::indices;
     for (int col = 0; col < 2; ++col) {
@@ -104,14 +103,14 @@ void overrelax(tensor::SlotDevice &sdev, Field &theta, const Mask &colour) {
 
 // theta grows by +-delta per accepted move; rewrap periodically so
 // float precision never becomes the colormap's problem.
-void rewrap(tensor::SlotDevice &sdev, Field &theta) {
+void rewrap(gpud::Device &sdev, Field &theta) {
     using namespace tensor;
     theta = eval(sdev, theta - math::Floor(theta * (1.0f / two_pi)) * two_pi);
 }
 
 // One frame of dynamics: a Metropolis sweep, then two microcanonical
 // sweeps to speed decorrelation.
-void step(tensor::SlotDevice &sdev, Field &theta, const Mask &colour, float T) {
+void step(gpud::Device &sdev, Field &theta, const Mask &colour, float T) {
     metropolis(sdev, theta, colour, T);
     overrelax(sdev, theta, colour);
     overrelax(sdev, theta, colour);
@@ -122,7 +121,7 @@ int main() {
     if (!app)
         return 1;
 
-    tensor::SlotDevice sdev{sv::Device(app)};
+    gpud::Device &sdev = sv::Device(app);
 
     // The state, resident on the device for the whole run.
     Mask colour = checkerboard(sdev);

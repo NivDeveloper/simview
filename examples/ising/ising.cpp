@@ -34,14 +34,14 @@ constexpr int side = L;
 using Spins = tensor::Tensor<float, L, L>;
 using Mask = tensor::Tensor<int, L, L>;
 
-Mask checkerboard(tensor::SlotDevice &sdev) {
+Mask checkerboard(gpud::Device &sdev) {
     using namespace tensor;
     auto k = gen::Iota<L, L>(0);
     return eval(sdev, (k / side + k % side) % 2);
 }
 
 // A random +-1 lattice: a fresh uniform draw, thresholded.
-Spins random_spins(tensor::SlotDevice &sdev) {
+Spins random_spins(gpud::Device &sdev) {
     using namespace tensor;
     using namespace tensor::indices;
     auto u = eval(sdev, rng::Uniform<float, L, L>());
@@ -51,7 +51,7 @@ Spins random_spins(tensor::SlotDevice &sdev) {
 // The neighbour sum, materialized: each mention of a leaf is a slot in
 // the emitted program, and the fully fused update would overflow the
 // budget — the same reason xy-gpu materializes its stencils.
-Spins neighbours(tensor::SlotDevice &sdev, const Spins &s) {
+Spins neighbours(gpud::Device &sdev, const Spins &s) {
     using namespace tensor;
     using namespace tensor::indices;
     return eval(sdev, s[wrap(i + 1_c), j] + s[wrap(i - 1_c), j] +
@@ -60,8 +60,8 @@ Spins neighbours(tensor::SlotDevice &sdev, const Spins &s) {
 
 // One colour of a Metropolis sweep: a fused accept-or-keep over the
 // whole lattice, reading one lattice and producing the next.
-Spins pass(tensor::SlotDevice &sdev, const Spins &s, const Mask &colour,
-           int col, float T) {
+Spins pass(gpud::Device &sdev, const Spins &s, const Mask &colour, int col,
+           float T) {
     using namespace tensor;
     using namespace tensor::indices;
     auto u = eval(sdev, rng::Uniform<float, L, L>());
@@ -72,8 +72,7 @@ Spins pass(tensor::SlotDevice &sdev, const Spins &s, const Mask &colour,
 }
 
 // One checkerboard sweep: both colours.
-Spins sweep(tensor::SlotDevice &sdev, const Spins &s, const Mask &colour,
-            float T) {
+Spins sweep(gpud::Device &sdev, const Spins &s, const Mask &colour, float T) {
     return pass(sdev, pass(sdev, s, colour, 0, T), colour, 1, T);
 }
 
@@ -83,7 +82,7 @@ int main() {
     if (!app)
         return 1;
 
-    tensor::SlotDevice sdev{sv::Device(app)};
+    gpud::Device &sdev = sv::Device(app);
     Mask colour = checkerboard(sdev);
 
     // The state: three resident lattices the sim and the frame share

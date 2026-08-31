@@ -264,6 +264,12 @@ void ui_draw(impl::App *a, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb) {
     cl->setTextureState(target, nvrhi::AllSubresources,
                         nvrhi::ResourceStates::RenderTarget);
     cl->commitBarriers();
+    // commitBarriers ends NVRHI's own rendering pass ONLY when a
+    // barrier was pending; the scene's last draw may have left it
+    // open with the target already a render target. clearState ends
+    // it unconditionally — a nested vkCmdBeginRendering is a driver
+    // crash, not a message.
+    cl->clearState();
 
     const auto cmd = VkCommandBuffer(
         cl->getNativeObject(nvrhi::ObjectTypes::VK_CommandBuffer).pointer);
