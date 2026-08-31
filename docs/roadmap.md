@@ -148,9 +148,8 @@ items — so the rest is additive:
 - **W6** (shipped 2026-09-01): the flagship — tensor's own BGK
   example, 8192 test particles thermalizing in a periodic box, stepped
   on the GPU and drawn from the buffers tensor evaluated into. The
-  physics is INCLUDED, not copied: tensor's example defines
-  BGK_NO_MAIN for exactly this, so what runs is that example's step()
-  and cannot drift from it. `examples/bgk/`.
+  physics is reproduced in the example rather than included from
+  tensor, so it reads and builds as one file. `examples/bgk/`.
 Named smaller ones live in 3d-plan.md: the `render/` hoist trigger,
 and per-item culling granularity.
 

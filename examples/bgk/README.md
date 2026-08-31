@@ -25,16 +25,18 @@ the frame on the main one; the Sync is what makes "no copy" also mean
 The relaxation time is the physical knob: large and the discs pass
 through each other, small and they thermalize on contact.
 
-## The physics is included, not copied
+## The physics is reproduced here
 
-`bgk.cpp` here is the VIEW. The sim is tensor's own
-`examples/bgk/bgk.cpp`, included as a source — that example defines
-`BGK_NO_MAIN` for exactly this purpose, and tensor's benchmark
-includes it the same way. So the step this draws cannot drift from the
-one tensor tests.
+The sim is tensor's own `examples/bgk`, written out in this file
+rather than included from it, so the example reads as one file and
+builds from one: the expressions, the transport and the drawing in the
+order they happen.
 
-CMake passes the path as `BGK_SOURCE` rather than adding an include
-directory, because this file has the same name as the one it includes.
+That is a copy, with the copy's one cost — tensor's version can change
+without this one noticing. The parts that were dropped are the ones
+that only make sense over there: the CPU/GPU switch (this build is
+always on a device), the benchmark's size and fixed-point knobs, and
+the reporting `main`.
 
 ## Two things worth knowing
 

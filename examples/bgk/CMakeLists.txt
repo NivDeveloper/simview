@@ -26,14 +26,8 @@ FetchContent_MakeAvailable(tensor)
 
 add_executable(bgk bgk.cpp)
 target_link_libraries(bgk PRIVATE simview::simview tensor::gpu)
-# The physics is tensor's own example, included as a source rather than
-# copied: BGK_NO_MAIN exists for exactly this, and tensor's benchmark
-# includes it the same way, so it cannot drift from the thing it claims
-# to be running. The path comes through a define rather than an include
-# directory because this file has the SAME NAME as the one it includes.
-target_compile_definitions(bgk PRIVATE
-    BGK_SOURCE="${tensor_SOURCE_DIR}/examples/bgk/bgk.cpp")
 set_target_properties(bgk PROPERTIES
     CXX_STANDARD 26 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_compile_options(bgk PRIVATE -freflection -Wall -Wextra)
+
 
