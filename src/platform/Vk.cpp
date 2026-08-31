@@ -156,6 +156,16 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     // createInstance reads them through pointers.
     static const VkBool32 kFalse = VK_FALSE, kTrue = VK_TRUE;
     static const char *const kCallbackOnly = "VK_DBG_LAYER_ACTION_CALLBACK";
+    // Messages the layer emits about ITSELF, filtered by id with the
+    // reason on record — never a weaker gate. One entry:
+    // UNASSIGNED-VkSemaphore-state-timeout, VVL 1.3.275 (Ubuntu 24.04)
+    // on lavapipe: "Timeout waiting for timeline semaphore state to
+    // update. This is most likely a validation bug." with its own
+    // completed value already past the awaited one; not seen on
+    // 1.4.304. It still costs the layer's 10 s internal timeout when
+    // it happens.
+    static const char *const kSelfDiagnosed =
+        "UNASSIGNED-VkSemaphore-state-timeout";
     std::vector<vk::LayerSettingEXT> settings;
     const auto setting = [&](const char *layer, const char *name,
                              const VkBool32 &value) {
@@ -190,13 +200,17 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         setting(vl, "printf_enable", c.vvl.printf ? kTrue : kFalse);
         setting(vl, "printf_to_stdout", kFalse);
         setting(vl, "validate_best_practices", c.vvl.best ? kTrue : kFalse);
-        vk::LayerSettingEXT action;
-        action.pLayerName = vl;
-        action.pSettingName = "debug_action";
-        action.type = vk::LayerSettingTypeEXT::eString;
-        action.valueCount = 1;
-        action.pValues = &kCallbackOnly;
-        settings.push_back(action);
+        const auto text = [&](const char *name, const char *const &value) {
+            vk::LayerSettingEXT s;
+            s.pLayerName = vl;
+            s.pSettingName = name;
+            s.type = vk::LayerSettingTypeEXT::eString;
+            s.valueCount = 1;
+            s.pValues = &value;
+            settings.push_back(s);
+        };
+        text("debug_action", kCallbackOnly);
+        text("message_id_filter", kSelfDiagnosed);
     }
     vk::LayerSettingsCreateInfoEXT layer_settings;
     layer_settings.setSettings(settings);
