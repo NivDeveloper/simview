@@ -136,7 +136,11 @@ items — so the rest is additive:
   timestamps went in first, because culling is a claim about cost and
   a claim wants attribution: the cull measures 19.2x on a scene mostly
   off screen;
-- **W5** the shadow pass, filling the row already reserved for it;
+- **W5** (shipped 2026-08-31): the shadow pass, filling the row
+  reserved for it in W1, fitted to the bounds W4 made available; the
+  `render/` hoist, on the trigger W1 named. One light casts
+  (`LightDesc{.shadow = true}`); the ground takes a tone where that
+  light reaches it, so a shadow has something to fall on;
 - **W6** a flagship: a tensor sim producing device-resident N x 3.
 Named smaller ones live in 3d-plan.md: the `render/` hoist trigger,
 and per-item culling granularity.

@@ -51,8 +51,8 @@ double scene_ms(sv::App &app, int frames) {
         bool any = false;
         for (std::size_t k = 0; k < n; ++k) {
             const std::string name(s[k].name);
-            if (name == "opaque" || name == "ground" || name == "transparent" ||
-                name == "overlay") {
+            if (name == "shadow" || name == "opaque" || name == "ground" ||
+                name == "transparent" || name == "overlay") {
                 total += double(s[k].end_ns - s[k].begin_ns) / 1e6;
                 any = true;
             }

@@ -42,7 +42,9 @@ int main() {
 
     auto world = app.World();
     world.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 6.0f})
-        .Light({.direction = {0.3f, 0.5f, 1.0f}, .intensity = 0.85f})
+        .Light({.direction = {0.3f, 0.5f, 1.0f},
+                .intensity = 0.85f,
+                .shadow = true})
         .Ambient(0.18f, 0.19f, 0.22f);
 
     // Real geometry for the core — the triangle budget drops itself as

@@ -130,6 +130,14 @@ std::size_t mesh_tiers(impl::App *a, const char *title, unsigned *triangles,
     return n;
 }
 
+void shadows(impl::App *a, bool on) {
+    for (impl::View &v : a->views)
+        if (v.world)
+            v.world->cast = on;
+    if (a->world)
+        a->world->cast = on;
+}
+
 void culling(impl::App *a, bool on) {
     for (impl::View &v : a->views)
         if (v.world)

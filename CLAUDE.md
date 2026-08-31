@@ -178,8 +178,13 @@ Next: 3-D scene kinds, and more than one window.
   its positions for a colormap, through the same three doors; up to
   four directional lights ride the view block, and an unlit world
   keeps the light at the camera it always had. Four-sample
-  multisampling with a resolve, in the world stratum only.
-  `docs/3d-plan.md`.
+  multisampling with a resolve, in the world stratum only. **ONE of
+  those lights may cast** (`LightDesc{.shadow = true}`, a second is
+  refused by name): a fitted orthographic map, and a ground that takes
+  a tone where that light reaches it — a shadow needs something LIT to
+  fall on, and the grid's ground was transparent. The shadow map is
+  the one depth buffer here that is NOT reverse-Z, because the
+  renderer hardcodes a comparison sampler to LESS. `docs/3d-plan.md`.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive

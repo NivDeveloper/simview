@@ -49,6 +49,20 @@ struct WorldView {
     // against it before their submit; an item that wants it for its
     // own parts has it here.
     impl::Frustum frustum{};
+
+    // The caster's half of the frame. `shadow_map` is always a real
+    // texture — one texel when nothing casts — because the binding
+    // layout is the same either way, and two layouts for one item
+    // would split the pipeline cache on a world's lighting.
+    impl::Mat4 light_to_clip{};
+    nvrhi::ITexture *shadow_map = nullptr;
+    nvrhi::ISampler *shadow_sampler = nullptr;
+    std::uint32_t shadow_px = 0; // the map's edge, 0 when off
+    // Whether a light SHINES on the ground, which is a different
+    // question from whether the map is live: the ground takes a tone
+    // from the first and a shadow from the second.
+    bool lit_ground = false;
+    float shadow_bias = 0.0f; // in light-space depth units
     // The world's constant buffer, holding exactly these numbers. An
     // item binds it beside its own storage, which is why the binding
     // set is the item's to make and not the world's.
@@ -93,6 +107,19 @@ struct WorldItemOps {
                  nvrhi::IFramebuffer *, const WorldView &) = nullptr;
 
     void (*release)(impl::WorldItem &) = nullptr;
+
+    // The same geometry from the LIGHT's side, depth only. Null means
+    // this item casts no shadow — which is the right answer for a
+    // ground plane and for anything drawn as an overlay, and the
+    // world reads it rather than asking the item to remember.
+    //
+    // A fragment stage even though nothing is written: a billboard
+    // has to discard outside its disc or it casts a square, and one
+    // shape of pipeline is simpler than two.
+    void (*draw_shadow)(impl::WorldItem &, const DrawCmd &,
+                        nvrhi::ICommandList *, nvrhi::IFramebuffer *,
+                        const WorldView &) = nullptr;
+    Shader shadow_vs, shadow_fs;
 
     // The item's extent in world units, if it has one. Read by the
     // world, not by the item: it is what decides whether `submit` is
@@ -154,6 +181,14 @@ void world_pipelines_release(std::vector<WorldPipelineEntry> &);
 // Where a pipeline sits in the cache — the sort key's state field.
 std::uint32_t world_pipeline_id(const std::vector<WorldPipelineEntry> &,
                                 const WorldPipelineEntry *);
+
+// Where the shadow map and its comparison sampler sit in every world
+// item's binding set. Above the storage buffers rather than beside
+// them: the binding offsets are all zeroed, so a slot means one thing
+// across every descriptor type, and leaving room means a fourth
+// storage buffer does not renumber the shadow map.
+inline constexpr std::uint32_t kShadowMapBinding = 8;
+inline constexpr std::uint32_t kShadowSamplerBinding = 9;
 
 // How big something of this world radius, at this world point, comes
 // out on screen — in pixels of radius. What a level of detail should

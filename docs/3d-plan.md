@@ -419,3 +419,86 @@ nearest corner instead of the furthest; the near plane ignoring the
 bounds; the tier reading the count again; bounds guessed for device
 data; and a box too tight by the radius, which is the one the first
 version of the check could not see.
+
+## W5 — the shadow pass
+
+The row reserved in W1 finally draws, into the light's own depth map,
+fitted to the bounds W4 made available. Four things about it were not
+obvious, and three of them cost a wrong picture first.
+
+**The shadow map is the one depth buffer here that is not reverse-Z.**
+A comparison sampler is what makes a soft shadow four taps instead of
+nine, and NVRHI hardcodes its comparison to `eLess`
+(`vulkan-texture.cpp`). Under reverse-Z that reads every surface as
+being behind itself: the entire scene comes out shadowed, which looks
+exactly like a bias problem and is not one. So this map counts depth
+the other way — near 0, far 1, cleared to 1 — and `proj_ortho_forward_z`
+exists solely for it.
+
+**A shadow needs something LIT to fall on.** The grid was drawn as
+lines over a transparent quad, so between the lines there was nothing
+to darken: the pass ran, the map filled, and the picture was
+unchanged. The ground now takes a tone where the casting light reaches
+it, and the shadow is that tone's ABSENCE rather than a wash laid over
+it — which is both what a shadow is, and what keeps a world with no
+casting light looking exactly as it did before.
+
+**The box has to cover where shadows LAND, not just where casters
+are.** Fitted to the geometry alone, every lookup on the ground falls
+off the edge of the map and reads as lit. The fit therefore includes
+each corner's projection onto the ground plane, which is the term that
+grows the box as the light gets lower.
+
+**A binding set that skips a slot its layout declares is not
+reported.** The shadow set bound storage slots 1 and 3 while the
+layout declared 1, 2 and 3; the renderer accepted it, and the caster
+sampled a garbage map and turned black. Nothing failed, nothing
+logged — the sphere was simply dark. The set now fills every slot the
+layout names, including the value buffer this pass never reads.
+
+Scope, stated rather than implied: **one light casts.** A second map
+is a second pass, a second fit and a second sampler for a picture that
+reads almost the same, so a second casting light is refused by name.
+Translucent clouds cast nothing — an opaque shadow from a thing you
+can see through is worse than none. The grid receives and does not
+cast; the axes do neither.
+
+### The numbers
+
+| what | measured |
+| --- | --- |
+| the shadow pass, `examples/orbit`, 1024 px map | 3.45 ms of a 16.7 ms frame |
+| the same at 2048 px | 5.11 ms |
+| the opaque pass beside it | 5.9-7.9 ms |
+
+The map is 1024 because the box is FITTED: it spends its texels on
+what is in the scene rather than on the world, so a thousand across is
+a thousand across whatever the scale. Four times the texels bought a
+third more pass for a sharpness nothing in a scientific picture reads.
+What moves these: the device, the instance count (this pass is
+vertex-bound here, not fill-bound — 4x the pixels cost 1.5x), and the
+map size.
+
+### What the check proves
+
+`shadow_check` never converts a world point to a pixel by hand. A
+MARKER sphere is drawn at the point the ray geometry says the shadow
+lands on, its centroid is read out of the picture, and the shadow's
+centroid must agree with it — both through the same camera, so no
+convention about which way a viewport runs enters the check at all.
+
+Two casters, at different heights and off-axis in both directions,
+because **one sphere cannot detect a mirrored lookup**: the map is
+fitted around what casts, so a single sphere sits in the middle of it
+and is symmetric under either flip. Measured — with one centred
+sphere, flipping v moved the shadow by 2 px and the check passed. With
+two, the flip puts 100% shadow at a mirror point that must be lit.
+
+The control is the SAME light with the lookup switched off
+(`probe::shadows`), not no light: a world with no lights keeps a
+headlight at the camera, so turning one on changes the shading
+everywhere and the difference measured would be the lighting.
+
+Four drills, each watched red then restored: the map sampled with v
+flipped; the map back to reverse-Z; the box fitted to casters only;
+and the pass disabled again.

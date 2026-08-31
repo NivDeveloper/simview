@@ -316,6 +316,29 @@ inline Mat4 proj_ortho_reverse_z(float height, float aspect, float znear,
     return r;
 }
 
+// Orthographic FORWARD-Z: near maps to 0 and far to 1, which is the
+// opposite of everything else here and is not a choice.
+//
+// A comparison sampler is what makes a soft shadow four taps instead
+// of nine, and the renderer hardcodes its comparison to LESS. Under
+// reverse-Z that reads every surface as being behind itself, and the
+// whole scene comes out in shadow — which looks like a bias problem
+// and is not one. So the shadow map, alone in this engine, counts
+// depth the other way.
+inline Mat4 proj_ortho_forward_z(float height, float aspect, float znear,
+                                 float zfar) {
+    Mat4 r{};
+    for (float &v : r.m)
+        v = 0.0f;
+    const float span = zfar - znear;
+    r.m[0] = 2.0f / (height * aspect);
+    r.m[5] = 2.0f / height;
+    r.m[10] = -1.0f / span;
+    r.m[14] = -znear / span;
+    r.m[15] = 1.0f;
+    return r;
+}
+
 // Infinite-far reverse-Z: the near plane maps to 1 and infinity to 0,
 // which is what makes a float depth buffer precise across the whole
 // range. m[1][1] is POSITIVE — the renderer flips the viewport height
@@ -485,6 +508,137 @@ inline float focal_px(const Camera3 &c, std::uint32_t th) {
         return h > 0.0f ? float(th) / h : 0.0f;
     }
     return float(th) / (2.0f * std::tan(0.5f * c.fovy));
+}
+
+// An orthographic reverse-Z projection is what a DIRECTIONAL light
+// looks through: its rays are parallel, so there is no eye position
+// for a perspective one to be at.
+//
+// The box is fitted to what is actually in the scene, which is the
+// whole reason the shadow pass had to wait for bounds. A fixed box
+// either clips the scene out of the map or spends most of its texels
+// on empty space, and the second failure looks like a resolution
+// problem rather than a fitting one.
+struct LightFit {
+    Mat4 world_to_clip{};
+    float world_per_texel = 0.0f; // how coarse the map is, in world units
+    bool valid = false;
+};
+
+// A rotation-only view matrix looking along `forward` from `eye`. Up
+// is the world's +Z unless the light is nearly vertical, where +Y
+// takes over — any fixed up vector degenerates somewhere, and the
+// only question is whether the code says where.
+inline Mat4 mat_look_along(Vec3 forward, Vec3 eye) {
+    const Vec3 f = normalize(forward);
+    Vec3 up{0.0f, 0.0f, 1.0f};
+    if (std::fabs(dot(f, up)) > 0.99f)
+        up = {0.0f, 1.0f, 0.0f};
+    const Vec3 r = normalize(cross(f, up));
+    const Vec3 u = cross(r, f);
+
+    // Rows are the basis, so the matrix takes world into light space;
+    // view space looks down -Z, hence the negated forward.
+    Mat4 m{};
+    m.m[0] = r.x;
+    m.m[4] = r.y;
+    m.m[8] = r.z;
+    m.m[12] = -dot(r, eye);
+    m.m[1] = u.x;
+    m.m[5] = u.y;
+    m.m[9] = u.z;
+    m.m[13] = -dot(u, eye);
+    m.m[2] = -f.x;
+    m.m[6] = -f.y;
+    m.m[10] = -f.z;
+    m.m[14] = dot(f, eye);
+    m.m[3] = 0.0f;
+    m.m[7] = 0.0f;
+    m.m[11] = 0.0f;
+    m.m[15] = 1.0f;
+    return m;
+}
+
+// Fit a directional light's box around `scene`. `toward` points AT the
+// light, the way a LightDesc spells it, so the rays travel along its
+// negation.
+inline LightFit light_fit(Vec3 toward, const Aabb &scene, std::uint32_t map_px,
+                          float ground_z = 0.0f) {
+    LightFit fit{};
+    if (!scene.valid || length(toward) <= 0.0f || !map_px)
+        return fit;
+
+    const Vec3 dir = normalize(toward);
+
+    // Where the casters ARE is not where their shadows LAND, and the
+    // box has to hold both: a fit around the geometry alone leaves the
+    // ground outside the map, every lookup there falls off the edge
+    // and reads as lit, and the result is a scene with no shadows in
+    // it and a shadow pass that ran perfectly.
+    //
+    // The ground is the world's XY plane, which is a fact about this
+    // engine and not an assumption: Z is up and the grid is drawn at
+    // z = 0. A low light throws a long shadow, so this is the term
+    // that grows the box, and it is capped in the caller's units
+    // rather than here.
+    Vec3 pts[16];
+    int n = 0;
+    for (int i = 0; i < 8; ++i) {
+        const Vec3 c{i & 1 ? scene.hi.x : scene.lo.x,
+                     i & 2 ? scene.hi.y : scene.lo.y,
+                     i & 4 ? scene.hi.z : scene.lo.z};
+        pts[n++] = c;
+        if (dir.z > 1e-3f && c.z > ground_z) {
+            const float t = (c.z - ground_z) / dir.z;
+            pts[n++] = c - dir * t;
+        }
+    }
+
+    Vec3 centre = pts[0];
+    for (int i = 1; i < n; ++i)
+        centre = centre + pts[i];
+    centre = centre * (1.0f / float(n));
+    const Mat4 rot = mat_look_along(dir * -1.0f, centre);
+
+    // Every point through the rotation, because a box rotated into
+    // light space is not a box: the min and max of two opposite
+    // corners would fit a volume that misses the other six.
+    Vec3 lo{}, hi{};
+    for (int i = 0; i < n; ++i) {
+        const Vec3 p = transform_point(rot, pts[i]);
+        if (i == 0) {
+            lo = hi = p;
+            continue;
+        }
+        lo = {p.x < lo.x ? p.x : lo.x, p.y < lo.y ? p.y : lo.y,
+              p.z < lo.z ? p.z : lo.z};
+        hi = {p.x > hi.x ? p.x : hi.x, p.y > hi.y ? p.y : hi.y,
+              p.z > hi.z ? p.z : hi.z};
+    }
+
+    // A square box, so a rotating light does not change how coarse the
+    // map is — a shadow whose softness breathes as the scene turns
+    // reads as flicker.
+    float half = 0.5f * (hi.x - lo.x);
+    const float half_y = 0.5f * (hi.y - lo.y);
+    if (half_y > half)
+        half = half_y;
+    if (!(half > 0.0f))
+        half = 1.0f;
+    half *= 1.02f; // a hair of margin, so the edge texel is not the edge
+
+    // Push the eye back past the nearest corner and take the far one
+    // as the far plane. Light space looks down -Z, so the box spans
+    // -hi.z (nearest) to -lo.z (furthest) in depth.
+    const float depth = hi.z - lo.z;
+    const float pad = depth * 0.05f + half * 0.01f + 1e-3f;
+    const Mat4 view = mat_look_along(dir * -1.0f, centre + dir * (hi.z + pad));
+
+    fit.world_to_clip = mat_mul(
+        proj_ortho_forward_z(2.0f * half, 1.0f, pad, depth + 2.0f * pad), view);
+    fit.world_per_texel = 2.0f * half / float(map_px);
+    fit.valid = true;
+    return fit;
 }
 
 // The depth a point WOULD be written at, quantized — the sort key's

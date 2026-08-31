@@ -23,7 +23,13 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
                    Stats *stats, const WorldItemOps *ops, PassId pass,
                    nvrhi::IFramebuffer *fb) {
     const auto &fbd = fb->getDesc();
-    const nvrhi::Format cf = fbd.colorAttachments[0].texture->getDesc().format;
+    // A shadow map has NO colour attachment, which is itself part of
+    // the key: a depth-only pipeline is not compatible with one that
+    // writes colour, and UNKNOWN is how that says so.
+    const nvrhi::Format cf =
+        fbd.colorAttachments.empty()
+            ? nvrhi::Format::UNKNOWN
+            : fbd.colorAttachments[0].texture->getDesc().format;
     const nvrhi::Format df = fbd.depthAttachment.texture
                                  ? fbd.depthAttachment.texture->getDesc().format
                                  : nvrhi::Format::UNKNOWN;
@@ -37,15 +43,27 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
             e.samples == ms)
             return &e;
 
+    // The shadow pass draws the same item from the light's side, so
+    // it is the same ops with different stages — and a different
+    // binding shape, since the map it would sample is the one it is
+    // writing.
+    const bool shadow = pass == PassId::Shadow;
+    const Shader &vsrc = shadow ? ops->shadow_vs : ops->vs;
+    const Shader &fsrc = shadow ? ops->shadow_fs : ops->fs;
+    if (!vsrc.code || !fsrc.code)
+        return set_error(std::string("no shaders for ") + ops->name +
+                         (shadow ? " in the shadow pass" : "")),
+               nullptr;
+
     auto vs =
         gpu.dev->createShader(nvrhi::ShaderDesc()
                                   .setShaderType(nvrhi::ShaderType::Vertex)
-                                  .setEntryName(ops->vs.entry),
-                              ops->vs.code, ops->vs.len);
+                                  .setEntryName(vsrc.entry),
+                              vsrc.code, vsrc.len);
     auto fs = gpu.dev->createShader(nvrhi::ShaderDesc()
                                         .setShaderType(nvrhi::ShaderType::Pixel)
-                                        .setEntryName(ops->fs.entry),
-                                    ops->fs.code, ops->fs.len);
+                                        .setEntryName(fsrc.entry),
+                                    fsrc.code, fsrc.len);
     if (!vs || !fs)
         return set_error(std::string("shader creation failed for ") +
                          ops->name),
@@ -67,6 +85,13 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
                                          .setUnorderedAccessViewOffset(0));
     for (std::uint32_t i = 0; i < ops->storage_count; ++i)
         ld.addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1 + i));
+    // Every colour-pass item can read the map, whether its shader
+    // does or not: one layout for all of them keeps the cache keyed
+    // on the item and the pass, and not on how a world is lit.
+    if (!shadow) {
+        ld.addItem(nvrhi::BindingLayoutItem::Texture_SRV(kShadowMapBinding));
+        ld.addItem(nvrhi::BindingLayoutItem::Sampler(kShadowSamplerBinding));
+    }
     auto layout = gpu.dev->createBindingLayout(ld);
     if (!layout)
         return set_error(std::string("binding layout failed for ") + ops->name),
@@ -82,7 +107,8 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
     rstate.depthStencilState.depthFunc = pd.depth_func;
     rstate.depthStencilState.stencilEnable = false;
     rstate.rasterState.setCullNone();
-    rstate.blendState.targets[0] = ops->blend;
+    if (!shadow)
+        rstate.blendState.targets[0] = ops->blend;
 
     auto pipeline =
         gpu.dev->createGraphicsPipeline(nvrhi::GraphicsPipelineDesc()

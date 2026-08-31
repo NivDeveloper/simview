@@ -11,8 +11,16 @@
 // how it treats depth and how its draws are ordered, so the day a
 // scheduler is wanted the declarations already exist.
 //
-// The shadow row is present and disabled rather than absent, because a
-// row appended later is a row that renumbers everything after it.
+// The shadow row was present and DISABLED for four tickets before it
+// drew anything, because a row appended later is a row that renumbers
+// everything after it. It is the one row whose framebuffer is not the
+// frame's: it draws into the light's own depth map, at the map's size.
+//
+// It is also the one row that is NOT reverse-Z, which is why its
+// comparison reads the opposite way to every other row here. The
+// renderer hardcodes a comparison sampler to LESS, and a shadow map
+// that counted depth the other way would report the whole world as
+// being behind itself — see proj_ortho_forward_z.
 
 #include <nvrhi/nvrhi.h>
 
@@ -57,9 +65,9 @@ struct PassDesc {
 // is what it did until this row existed.
 // clang-format off: the table reads as a table
 inline constexpr PassDesc kPasses[] = {
-    {.name = "shadow",      .enabled = false, .clear_color = false, .clear_depth = true,
+    {.name = "shadow",      .enabled = true,  .clear_color = false, .clear_depth = true,
      .depth_test = true, .depth_write = true,
-     .depth_func = nvrhi::ComparisonFunc::GreaterOrEqual,
+     .depth_func = nvrhi::ComparisonFunc::LessOrEqual,
      .sort = PassDesc::Sort::StateThenNear},
     {.name = "opaque",      .enabled = true,  .clear_color = true,  .clear_depth = true,
      .depth_test = true, .depth_write = true,

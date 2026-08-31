@@ -67,6 +67,7 @@ float4 mapped_color(uint i) {
 }
 
 struct M2F {
+    float3 wpos : TEXCOORD2; // where the shadow is asked about
     float4 pos : SV_Position;
     float3 normal : TEXCOORD0; // view space, where the lights are
     float4 color : TEXCOORD1;
@@ -91,6 +92,7 @@ M2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
                positions[iI * 3u + 2u]);
 
     const float3 world = centre + v * (mp.radius * 2.0f);
+    o.wpos = world;
     o.pos = mul(vp.world_to_clip, float4(world, 1.0f));
     o.normal = mul(vp.world_to_view, float4(n, 0.0f)).xyz;
     o.color = mapped_color(iI);
@@ -99,5 +101,6 @@ M2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
 
 [shader("fragment")]
 float4 fsmain(M2F v) : SV_Target {
-    return float4(v.color.rgb * lit_by(normalize(v.normal)), v.color.a);
+    return float4(v.color.rgb * lit_by(normalize(v.normal), shadow_at(v.wpos)),
+                  v.color.a);
 }

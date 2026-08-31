@@ -65,6 +65,7 @@ float4 mapped_color(uint i) {
 }
 
 struct C2F {
+    float3 world : TEXCOORD3; // where the shadow is asked about
     float4 pos : SV_Position;
     float2 local : TEXCOORD0; // -1..1 across the quad
     float4 color : TEXCOORD1;
@@ -101,6 +102,12 @@ C2F vsmain(uint vI : SV_VertexID) {
     float4 pv = mul(vp.world_to_view, float4(centre, 1.0f));
     pv.xy += corner * cp.radius;
 
+    // The same corner in WORLD units, for the shadow lookup. Rows 0
+    // and 1 of the view matrix are the camera's right and up, and
+    // they are orthonormal, so this is the quad's own geometry rather
+    // than an approximation of it.
+    o.world = centre + vp.world_to_view[0].xyz * (corner.x * cp.radius) +
+              vp.world_to_view[1].xyz * (corner.y * cp.radius);
     o.pos = mul(vp.view_to_clip, pv);
     o.local = corner;
     o.color = mapped_color(i);
@@ -127,5 +134,5 @@ float4 fsmain(C2F v) : SV_Target {
     // the scene the difference never shows. It is a VIEW-space normal,
     // which is the space the lights arrive in.
     const float3 n = float3(v.local, sqrt(saturate(1.0f - d2)));
-    return float4(v.color.rgb * lit_by(n), 1.0f);
+    return float4(v.color.rgb * lit_by(n, shadow_at(v.world)), 1.0f);
 }

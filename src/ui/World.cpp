@@ -164,6 +164,18 @@ bool world_light(World w, const LightDesc &d) {
     for (int k = 0; k < 3; ++k)
         l.color[k] = d.color[k];
     l.intensity = d.intensity;
+    l.shadow = d.shadow;
+    // One caster. A second map is a second pass, a second fit and a
+    // second sampler for a picture that reads almost the same, so the
+    // second one is refused by name rather than quietly ignored —
+    // which is the failure where a light seems not to work.
+    if (l.shadow)
+        for (const auto &existing : ws->lights)
+            if (existing.shadow)
+                return set_error("a world takes at most one shadow-casting "
+                                 "light — the others still light the scene, "
+                                 "they just do not cast"),
+                       false;
     ws->lights.push_back(l);
     return true;
 }

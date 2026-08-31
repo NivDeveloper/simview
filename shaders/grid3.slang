@@ -101,9 +101,30 @@ float4 fsmain(G2F v) : SV_Target {
     // where a cell is thinner than a pixel and no amount of
     // anti-aliasing saves it, is gone before it can shimmer.
     const float dist = length(v.uv - v.cam) / gp.size;
-    alpha *= cover * (1.0f - smoothstep(0.33f, 1.0f, dist));
+    const float falloff = 1.0f - smoothstep(0.33f, 1.0f, dist);
+    alpha *= cover * falloff;
 
-    if (alpha <= 0.0f)
+    // A shadow can only be seen on something LIT, and this quad is
+    // the only ground the engine draws. Left transparent between its
+    // lines there is nothing for a shadow to fall on: the pass runs,
+    // the map fills, and the picture is unchanged.
+    //
+    // So where a light shines on the ground, the ground takes a tone —
+    // and the shadow is that tone's ABSENCE rather than a darkening
+    // laid over it, which is both what a shadow is and what keeps a
+    // world with no casting light looking exactly as it did.
+    const float shade = shadow_at(float3(v.uv, 0.0f));
+    const float ga = vp.shadow.w * 0.55f * falloff * shade;
+
+    // Union of the two coverages, each contributing its own colour —
+    // the line over the ground, not instead of it. A line crossing a
+    // shadow dims with it, or it reads as floating above.
+    const float a = alpha + ga * (1.0f - alpha);
+    if (a <= 0.0f)
         discard;
-    return float4(gp.color.rgb, alpha);
+    const float3 line_rgb = gp.color.rgb * (0.45f + 0.55f * shade);
+    const float3 rgb =
+        (line_rgb * alpha + float3(0.22f, 0.23f, 0.26f) * ga * (1.0f - alpha)) /
+        a;
+    return float4(rgb, a);
 }
