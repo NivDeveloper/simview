@@ -13,7 +13,7 @@ build/CMakeCache.txt:
 	    -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=$(CXX) \
 	    -DSIMVIEW_ROOT=$(ROOT)
 
-.PHONY: all run debug clean
+.PHONY: all run debug trace clean
 all: build/CMakeCache.txt
 	cmake --build build -j
 
@@ -31,5 +31,15 @@ debug: build-debug/CMakeCache.txt
 run: all
 	./build/xy-gpu
 
+# The tracing build (Tracy's client in simview), its own tree:
+# ./build-trace/<name> then connect tracy-profiler.
+build-trace/CMakeCache.txt:
+	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build-trace \
+	    -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=$(CXX) \
+	    -DSIMVIEW_ROOT=$(ROOT) -DSIMVIEW_TRACE=ON
+
+trace: build-trace/CMakeCache.txt
+	cmake --build build-trace -j
+
 clean:
-	rm -rf build build-debug
+	rm -rf build build-debug build-trace

@@ -36,12 +36,30 @@ windowed: none 25.7k, core 22.0k, sync 16.5k sweeps/s.
 
 | question | command |
 | --- | --- |
+| **the numbers, no tool**: ms/frame, ms per graphics section, compute batches and busy % | `SIMVIEW_TIMINGS=1 ./build/examples/gas/gas` — one line a second; `timing_check` is the same probe as a gate |
+| **the flame graph** — frame thread, sim thread, graphics queue and compute queue on one timeline | `make trace`, run `./build-trace/examples/<x>/<x>`, then `~/Projects/toolchains/tracy/bin/tracy-profiler` → Connect (the client waits for it; nothing is recorded before). The flagship: `make -C examples/ising trace && ./examples/ising/build-trace/ising` |
+| the same, to a file | `tracy-capture -o run.tracy -s 10` beside the running program, then `tracy-profiler run.tracy`; `tracy-csvexport -g run.tracy` lists the GPU zones as text |
 | where a thread sits (what found the IMMEDIATE stall) | `sample <pid> 2 -file out.txt`, then read the thread's subtree |
 | both GPU queues on one timeline | `xcrun xctrace record --template 'Metal System Trace' --launch -- ./build/examples/gas/gas` |
 | a frame's GPU commands, in Xcode | `MVK_CONFIG_AUTO_GPU_CAPTURE_SCOPE=1 MVK_CONFIG_AUTO_GPU_CAPTURE_OUTPUT_FILE=frame.gputrace ./…` (1 = frame, 2 = device) |
 | MoltenVK's per-activity cost (shader compile, pipeline, submit) | `MVK_CONFIG_PERFORMANCE_TRACKING=1 MVK_CONFIG_ACTIVITY_PERFORMANCE_LOGGING_STYLE=2 ./…` |
 | the generated MSL | `MVK_CONFIG_SHADER_DUMP_DIR=/tmp/msl ./…` |
 | the sim rate beside its window | the isingfps probe (scratch): `isingfps 0 shared` prints 500 ms buckets — repeat 3×, the spread is ±20% |
+
+What Tracy shows here: the main thread's zones (poll, wait previous
+frame, flip, frame callbacks, build, render → acquire, views, scene,
+ui, finish, viewports), the sim thread's `step` (the Executor) and
+`publish` (the Sync), the "graphics" GPU context with a zone per
+section, and the "compute (gpud)" context with a zone per batch, named
+by dispatch count. Sampling is not available on macOS, so the sim
+thread's own work shows as the gap between its `step` zones — put a
+`ZoneScopedN` inside a step to see more (the example must include
+`tracy/Tracy.hpp` itself; the library's zones stay in the library).
+The profiler binary must match the client's version, 0.13.1: brew
+ships no bottle for macOS 27, so it was built from source into
+`~/Projects/toolchains/tracy-0.13.1` (`git clone -b v0.13.1`, cmake
+the `profiler`, `capture` and `csvexport` folders; glfw and freetype
+from brew, capstone fetched).
 
 ## Capture and replay — hand a driver bug to someone
 

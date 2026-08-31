@@ -1,5 +1,6 @@
 #include "Frame.h"
 
+#include "../core/Trace.h"
 #include "../ui/Ui.h"
 #include "Input.h"
 
@@ -37,6 +38,7 @@ void frame_wait_previous(impl::App *a) {
         return;
     platform_wait_graphics(pl, pl.frame_instance, "the previous frame");
     pl.frame_instance = 0;
+    timing_collect(pl);
 }
 
 } // namespace
@@ -101,25 +103,50 @@ void frame_render(impl::App *a, const Presenter &p) {
         }
     }
 
-    nvrhi::ICommandList *cl = a->platform.cl;
+    impl::Platform &pl = a->platform;
+    nvrhi::ICommandList *cl = pl.cl;
     cl->open();
+    timing_frame_open(pl, cl);
     Target t{};
-    const bool have = p.acquire(p.self, cl, &t);
+    bool have = false;
+    {
+        SV_ZONE("acquire");
+        have = p.acquire(p.self, cl, &t);
+    }
     if (have) {
         ++a->stats.frames;
-        ui_views_draw(a, cl);
-        scene_draw(a->scene, cl, t.fb, t.w, t.h, t.format);
-        if (ui)
+        {
+            SV_ZONE("views");
+            timing_begin(pl, cl, "views");
+            ui_views_draw(a, cl);
+            timing_end(pl, cl);
+        }
+        {
+            SV_ZONE("scene");
+            timing_begin(pl, cl, "scene");
+            scene_draw(a->scene, cl, t.fb, t.w, t.h, t.format);
+            timing_end(pl, cl);
+        }
+        if (ui) {
+            SV_ZONE("ui");
+            timing_begin(pl, cl, "ui");
             ui_draw(a, cl, t.fb);
+            timing_end(pl, cl);
+        }
     }
 
     // Submitted BEFORE the torn-out windows, which sample what it
     // wrote from command buffers of their own. Still outside the
     // acquire: a torn-out panel keeps presenting while this window is
     // minimized.
-    p.finish(p.self, cl, have);
-    if (ui)
+    {
+        SV_ZONE("finish");
+        p.finish(p.self, cl, have);
+    }
+    if (ui) {
+        SV_ZONE("viewports");
         ui_viewports(a, /*render=*/true);
+    }
 }
 
 namespace {
@@ -175,16 +202,21 @@ bool shot_acquire(void *self, nvrhi::ICommandList *, Target *out) {
 // put it anywhere else.
 void shot_finish(void *self, nvrhi::ICommandList *cl, bool acquired) {
     ShotTarget *s = static_cast<ShotTarget *>(self);
-    if (acquired)
+    impl::Platform &pl = s->app->platform;
+    if (acquired) {
+        timing_begin(pl, cl, "readback");
         cl->copyTexture(s->staging, nvrhi::TextureSlice(), s->tex,
                         nvrhi::TextureSlice());
+        timing_end(pl, cl);
+    }
     cl->close();
-    platform_execute(s->app->platform, cl);
+    platform_execute(pl, cl);
     // Waited here, bounded, so the staging map that follows finds the
     // copy complete — NVRHI's own wait inside the map is not bounded.
-    if (acquired)
-        platform_wait_graphics(s->app->platform, s->app->platform.gfx_last,
-                               "the shot's frame");
+    if (acquired) {
+        platform_wait_graphics(pl, pl.gfx_last, "the shot's frame");
+        timing_collect(pl);
+    }
 }
 
 } // namespace
@@ -218,17 +250,36 @@ void app_run(App *a) {
     while (!a->platform.quit) {
         if (budget > 0 && iterations++ >= budget)
             break;
-        poll(a);
-        frame_wait_previous(a); // before the flips — the reverse edge
-        frame_sync(a);
-        in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
+        {
+            SV_ZONE("poll");
+            poll(a);
+        }
+        {
+            SV_ZONE("wait previous frame");
+            frame_wait_previous(a); // before the flips — the reverse edge
+        }
+        {
+            SV_ZONE("flip");
+            frame_sync(a);
+        }
+        {
+            SV_ZONE("frame callbacks");
+            in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
+        }
         // A frame callback may quit; nothing after this point should
         // run when it did.
         if (a->platform.quit)
             break;
 
-        frame_build(a);
-        frame_render(a, swapchain_presenter(a));
+        {
+            SV_ZONE("build");
+            frame_build(a);
+        }
+        {
+            SV_ZONE("render");
+            frame_render(a, swapchain_presenter(a));
+        }
+        SV_FRAME_MARK();
     }
 }
 

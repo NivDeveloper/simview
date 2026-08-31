@@ -25,6 +25,11 @@ endif()
 
 option(SIMVIEW_BUILD_EXAMPLES "Build simview examples" ${PROJECT_IS_TOP_LEVEL})
 option(SIMVIEW_BUILD_TESTS "Build simview tests" ${PROJECT_IS_TOP_LEVEL})
+# The tracing build: Tracy's client linked in, its zones live, its GPU
+# contexts fed from platform/Timing.cpp. OFF is a build with no trace
+# of it — src/core/Trace.h compiles the macros away. A separate tree
+# (`make trace`), never the default one.
+option(SIMVIEW_TRACE "Link the Tracy profiler client" OFF)
 
 # SDL3 must be found BEFORE gpud: gpud's own SDL3 probe is what turns
 # its sdl backend on. Consumers of the core surface see neither
@@ -43,11 +48,11 @@ set(GPUD_BACKEND_VULKAN ON)
 set(GPUD_BUILD_TESTS OFF)
 FetchContent_Declare(gpud
     GIT_REPOSITORY https://github.com/NivDeveloper/gpud
-    # v0.9.1, pinned by hash. The tensor the GPU examples pin declares
+    # v0.10.1, pinned by hash. The tensor the GPU examples pin declares
     # gpud too, at the same hash by convention only: FetchContent is
     # first-declare-wins, and in those subprojects THIS declaration is
     # the one that counts.
-    GIT_TAG        a82a47950f3da1a565126d689d8f241d642b4e3d)
+    GIT_TAG        0227662ce72897a865488e0f020d52b17b3ef158)
 FetchContent_MakeAvailable(gpud)
 
 # NVRHI: the renderer layer over the app-owned Vulkan device. Static,
@@ -195,6 +200,7 @@ add_library(simview STATIC
     src/platform/Vk.cpp
     src/platform/Frame.cpp
     src/platform/Input.cpp
+    src/platform/Timing.cpp
     src/scene/Field.cpp
     src/scene/Lines.cpp
     src/scene/Particles.cpp
@@ -229,6 +235,23 @@ target_include_directories(simview PRIVATE
     ${implot3d_SOURCE_DIR})
 target_compile_definitions(simview PRIVATE
     SIMVIEW_VERSION="${PROJECT_VERSION}")
+if(SIMVIEW_TRACE)
+    # The client's version must match the profiler that reads it
+    # (the wire protocol is per release): 0.13.1, what
+    # ~/Projects/toolchains/tracy was built from. ON_DEMAND: nothing is
+    # recorded until a profiler connects, so a traced showcase runs at
+    # its normal rate until asked.
+    set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    set(TRACY_STATIC ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy
+        GIT_TAG        v0.13.1
+        GIT_SHALLOW    TRUE)
+    FetchContent_MakeAvailable(tracy)
+    target_link_libraries(simview PRIVATE Tracy::TracyClient)
+    target_compile_definitions(simview PRIVATE SIMVIEW_TRACE=1)
+endif()
 set_target_properties(simview PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(NOT MSVC)

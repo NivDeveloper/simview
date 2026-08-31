@@ -54,7 +54,16 @@ struct VkContext {
     std::uint64_t wait_ns = 0;
     std::uint64_t messenger = 0; // VkDebugUtilsMessengerEXT, when the
                                  // Khronos layer is actually present
-    std::vector<std::string> device_extensions; // what vk_open enabled
+    // VK_EXT_debug_utils, enabled whenever the loader offers it: object
+    // names and command-buffer labels are what a capture, a validation
+    // message or a trace shows instead of handles. Cheap, so always.
+    bool debug_utils = false;
+    // The graphics family timestamps (timestampValidBits > 0), and the
+    // device's ns per tick — what platform/Timing.h stamps with.
+    bool timestamps = false;
+    float timestamp_period = 1.0f;
+    std::vector<std::string> instance_extensions; // what vk_open enabled
+    std::vector<std::string> device_extensions;   // what vk_open enabled
 };
 
 } // namespace impl
@@ -65,6 +74,11 @@ struct VkContext {
 // and honors SIMVIEW_VVL's `abort`.
 std::size_t vk_validation_errors();
 void vk_validation_error(const char *source, const char *text);
+
+// Name a queue or a semaphore (handles as uint64_t) for whatever
+// captures the device; no-ops without VK_EXT_debug_utils.
+void vk_name_queue(impl::VkContext &, VkQueue, const char *);
+void vk_name_semaphore(impl::VkContext &, std::uint64_t, const char *);
 
 // A host wait on a timeline semaphore (the handle as uint64_t), bounded
 // by wait_ns when set. `lost` is VK_ERROR_DEVICE_LOST.

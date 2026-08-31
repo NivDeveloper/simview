@@ -3,6 +3,7 @@
 // mutex, fine at per-tick and per-frame rates — the wait-free refinement
 // waits for a measurement that wants it.
 
+#include "../core/Trace.h"
 #include <simview/sync/Sync.h>
 
 #include <atomic>
@@ -113,7 +114,10 @@ void worker_loop(ExecutorImpl *e) {
             if (e->st == St::Step)
                 e->st = St::Paused; // one-shot
         }
-        e->run_body();
+        {
+            SV_ZONE("step");
+            e->run_body();
+        }
         {
             std::lock_guard lk(e->m);
             e->ticks.fetch_add(1, std::memory_order_release);
@@ -160,6 +164,7 @@ void sync_gate_destroy(SyncGate g) {
 }
 
 void sync_gate_publish(SyncGate g) {
+    SV_ZONE("publish");
     auto *s = static_cast<GateImpl *>(g.p);
     if (!s)
         return;

@@ -234,10 +234,11 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         has_instance_extension("VK_EXT_layer_settings");
     if (layer_settings_ok)
         exts.push_back("VK_EXT_layer_settings");
-    const bool messenger_ok =
-        layer_on && has_instance_extension("VK_EXT_debug_utils");
-    if (messenger_ok)
+    c.debug_utils = has_instance_extension("VK_EXT_debug_utils");
+    if (c.debug_utils)
         exts.push_back("VK_EXT_debug_utils");
+    const bool messenger_ok = layer_on && c.debug_utils;
+    c.instance_extensions.assign(exts.begin(), exts.end());
 
     vk::ApplicationInfo app;
     app.pApplicationName = "simview";
@@ -344,6 +345,8 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         }
     if (c.gfx_family == fams.size())
         return set_error("no graphics queue family"), false;
+    c.timestamps = fams[c.gfx_family].timestampValidBits > 0;
+    c.timestamp_period = props.limits.timestampPeriod;
     c.comp_family = std::uint32_t(fams.size());
     for (std::uint32_t i = 0; i < fams.size(); ++i)
         if (i != c.gfx_family &&
@@ -422,6 +425,10 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         c.comp_q = static_cast<VkQueue>(dev.getQueue(c.gfx_family, 1));
     else
         c.comp_q = static_cast<VkQueue>(dev.getQueue(c.comp_family, 0));
+    // gpud names the compute queue at adoption; a shared queue is both.
+    vk_name_queue(c, c.gfx_q,
+                  c.shared_queue ? "graphics + compute queue (shared)"
+                                 : "graphics queue");
     return true;
 }
 
@@ -452,6 +459,28 @@ void vk_validation_error(const char *source, const char *text) {
         SDL_Log("SIMVIEW_VVL abort: first validation error");
         std::abort();
     }
+}
+
+namespace {
+void vk_name(impl::VkContext &c, VkObjectType type, std::uint64_t handle,
+             const char *text) {
+    if (!c.debug_utils || !c.device || !handle)
+        return;
+    VkDebugUtilsObjectNameInfoEXT ni{};
+    ni.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    ni.objectType = type;
+    ni.objectHandle = handle;
+    ni.pObjectName = text;
+    VULKAN_HPP_DEFAULT_DISPATCHER.vkSetDebugUtilsObjectNameEXT(c.device, &ni);
+}
+} // namespace
+
+void vk_name_queue(impl::VkContext &c, VkQueue q, const char *text) {
+    vk_name(c, VK_OBJECT_TYPE_QUEUE, reinterpret_cast<std::uint64_t>(q), text);
+}
+
+void vk_name_semaphore(impl::VkContext &c, std::uint64_t s, const char *text) {
+    vk_name(c, VK_OBJECT_TYPE_SEMAPHORE, s, text);
 }
 
 WaitResult vk_wait_timeline(impl::VkContext &c, std::uint64_t semaphore,

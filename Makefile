@@ -8,7 +8,7 @@ PREFIX ?= $(HOME)/Projects/toolchains/sdl3
 build/CMakeCache.txt:
 	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-.PHONY: all test lint install-check run debug san tsan flagship validate clean
+.PHONY: all test lint install-check run debug san tsan flagship validate trace clean
 all: build/CMakeCache.txt
 	cmake --build build -j $(JOBS)
 
@@ -83,6 +83,16 @@ ifeq ($(shell uname),Darwin)
 	    SIMVIEW_FRAMES=120 ./build/examples/$$x/$$x || exit 1; done
 endif
 
+# The tracing build, its own tree: Tracy's client linked, every zone
+# and both GPU contexts live. Run any example from it and connect
+# ~/Projects/toolchains/tracy/bin/tracy-profiler (or tracy-capture -o
+# x.tracy -s 10 for a file); docs/debugging.md has the recipe. The
+# flagship traces from its own tree: make -C examples/ising trace.
+trace:
+	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build-trace \
+	    -DCMAKE_BUILD_TYPE=Release -DSIMVIEW_TRACE=ON
+	cmake --build build-trace -j $(JOBS)
+
 # The flagship (examples/xy-gpu) needs tensor's compiler, so no runner
 # and no in-tree build reaches it — this is the local gate that keeps
 # it from rotting when the door changes.
@@ -91,4 +101,4 @@ flagship: all
 	$(MAKE) -C examples/ising
 
 clean:
-	rm -rf build build-debug build-san build-tsan
+	rm -rf build build-debug build-san build-tsan build-trace

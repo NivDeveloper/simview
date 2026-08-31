@@ -116,9 +116,11 @@ App *app_init(const Config &c) {
     if (!vk_open(pl.vk, !c.headless))
         return fail();
 
-    std::vector<const char *> dexts;
+    std::vector<const char *> dexts, iexts;
     for (const auto &e : pl.vk.device_extensions)
         dexts.push_back(e.c_str());
+    for (const auto &e : pl.vk.instance_extensions)
+        iexts.push_back(e.c_str());
     nvrhi::vulkan::DeviceDesc dd;
     dd.errorCB = &g_nvrhi_log;
     dd.instance = pl.vk.instance;
@@ -126,6 +128,10 @@ App *app_init(const Config &c) {
     dd.device = pl.vk.device;
     dd.graphicsQueue = pl.vk.gfx_q;
     dd.graphicsQueueIndex = int(pl.vk.gfx_family);
+    // The instance list is how NVRHI learns VK_EXT_debug_utils is on —
+    // its debugNames become object names and its markers labels.
+    dd.instanceExtensions = iexts.data();
+    dd.numInstanceExtensions = iexts.size();
     dd.deviceExtensions = dexts.data();
     dd.numDeviceExtensions = dexts.size();
     pl.nraw = nvrhi::vulkan::createDevice(dd);
@@ -133,6 +139,12 @@ App *app_init(const Config &c) {
         set_error("nvrhi device creation failed");
         return fail();
     }
+    vk_name_semaphore(
+        pl.vk,
+        reinterpret_cast<std::uint64_t>(
+            static_cast<nvrhi::vulkan::IDevice *>(pl.nraw.Get())
+                ->getQueueSemaphore(nvrhi::CommandQueue::Graphics)),
+        "graphics timeline");
     pl.ndev = pl.vk.validation
                   ? nvrhi::validation::createValidationLayer(pl.nraw)
                   : pl.nraw;
@@ -158,6 +170,7 @@ App *app_init(const Config &c) {
     // one sentence or the other, never a freeze.
     gpud::Options go;
     go.wait_ms = std::uint32_t(pl.vk.wait_ns / 1000000ull);
+    go.profile = timing_wanted(); // its batches on the same clock
     pl.gdev = gpud::vulkan::try_open_on(ad, go);
     if (!pl.gdev) {
         set_error("gpud could not adopt the device (GPUD_LOG=1 says why)");
@@ -183,6 +196,7 @@ App *app_init(const Config &c) {
             return fail();
     }
     pl.cl = pl.ndev->createCommandList();
+    timing_init(pl);
     ui_init(a, c);
     return a;
 }
@@ -217,6 +231,7 @@ void app_quit(App *a) {
         sync_gate_release(g);
     a->gates.clear();
     pl.cl = nullptr;
+    timing_quit(pl);
     if (pl.win) {
         swapchain_close(pl.sc, pl.ndev);
         SDL_DestroyWindow(pl.win);

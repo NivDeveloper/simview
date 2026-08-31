@@ -110,6 +110,24 @@ Next: 3-D scene kinds, and more than one window.
   `VK_ERROR_DEVICE_LOST` after ~8 s of Metal's watchdog. `hang_check`
   stalls a frame on purpose and passes on the sentence. Unset, every
   wait is unbounded, as a long dispatch needs.
+- **Where the time goes is measured on ONE clock, and nothing is
+  measured that nobody asked for.** `SIMVIEW_TIMINGS=1` stamps every
+  frame's graphics sections (views, scene, ui, readback) with timestamp
+  queries on the frame's own command list and turns on gpud's batch
+  stamps (`Options::profile`), both on the device clock; a
+  once-a-second line reports frames, ms/frame, ms per section, and the
+  compute queue's batches, dispatches and busy %. `timing_check` proves
+  the stamps real (ordered, non-zero, every dispatch accounted for, one
+  clock). The flame graph is the same data in Tracy: `make trace`
+  builds `build-trace/` with the client linked (`SIMVIEW_TRACE=ON`),
+  `SV_ZONE`/`SV_FRAME_MARK` (src/core/Trace.h) compile to nothing
+  elsewhere, and platform/Timing.cpp feeds two GPU contexts — the
+  graphics sections and gpud's batches — so both queues lie on the
+  profiler's timeline beside the frame thread and the sim thread. The
+  client is `TRACY_ON_DEMAND`: a traced showcase runs at its normal
+  rate until a profiler connects. Debug labels (`VK_EXT_debug_utils`,
+  on whenever the loader has it) name the queues, the timelines, every
+  texture and every section, so a capture reads the same words.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive
@@ -213,6 +231,9 @@ from the developer too.
 | `SIMVIEW_VVL` | comma list of `1`/`core`, `sync`, `gpuav`, `printf`, `best`, `abort` — the Khronos layer's features by `VK_EXT_layer_settings`, NVRHI's validation wrapper, a debug-utils messenger; `abort` = `std::abort()` on the first validation error from either | `src/platform/Vk.cpp`, `Device.cpp` |
 | `SIMVIEW_FRAMES` | quit `Run()` after N loop iterations — a showcase to an exit code | `src/platform/Frame.cpp` |
 | `SIMVIEW_WAIT_MS` | bound on every host wait for the device, gpud's included; past it a sentence and exit 1. Every gate runs at 20000; unset = unbounded | `src/platform/Vk.cpp`, `Device.cpp`, `Swapchain.cpp` |
+| `SIMVIEW_TIMINGS` | `1`: stamp the frame's graphics sections and gpud's batches (device clock), log a line a second; the probe's `gpu_sections`/`compute_batches` read the last frame | `src/platform/Timing.cpp` |
+| `SIMVIEW_TRACE` (CMake) | `ON`: Tracy's client linked, zones and both GPU contexts live — `make trace` → `build-trace/`; `make -C examples/ising trace` for the flagship | `CMakeLists.txt`, `src/core/Trace.h` |
+| `GPUD_PROFILE` | `1`: gpud stamps and labels its batches even where the app did not ask (`SIMVIEW_TIMINGS` asks) | gpud |
 | `SIMVIEW_PRESENT` | `fifo` / `immediate`, overriding the portability-driver policy | `src/platform/Swapchain.cpp` |
 | `SIMVIEW_ONE_QUEUE` | `1`: force the one-shared-queue path, for measuring what a second queue buys | `src/platform/Vk.cpp` |
 | `GPUD_LOG` | `1`: gpud says why a device did not come up | gpud |

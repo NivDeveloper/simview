@@ -14,6 +14,7 @@
 #include <simview/Types.h>
 
 #include <cstddef>
+#include <cstdint>
 
 struct ImGuiContext;
 struct ImPlotContext;
@@ -49,6 +50,23 @@ void queue_unlock(impl::App *);
 // wrapper, process-wide — and whether SIMVIEW_VVL turned them on.
 bool validation_on(impl::App *);
 std::size_t validation_errors(impl::App *);
+
+// Where the time went (SIMVIEW_TIMINGS=1): the last collected frame's
+// graphics sections, and the compute batches gpud had completed by
+// that collect — both on the device clock. Plain records, so the probe
+// stays SDK-free.
+struct GpuSection {
+    const char *name;
+    std::uint64_t begin_ns, end_ns;
+};
+struct ComputeBatch {
+    std::uint64_t first, last; // tickets
+    std::uint32_t dispatches;
+    std::uint64_t begin_ns, end_ns;
+};
+bool timings_on(impl::App *);
+std::size_t gpu_sections(impl::App *, GpuSection *out, std::size_t cap);
+std::size_t compute_batches(impl::App *, ComputeBatch *out, std::size_t cap);
 
 // Make the next graphics submission wait GPU-side on a compute-timeline
 // value nothing will ever signal — the hang a deleted pump or a stamp

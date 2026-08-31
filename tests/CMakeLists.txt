@@ -11,7 +11,7 @@ add_subdirectory(installed_surface)
 set(pure_checks sync_check)
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             view_check resize_check viewport_check lines_check decouple_check
-            hang_check)
+            hang_check timing_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     # Quoted includes resolve against the INCLUDING file's directory,
@@ -65,6 +65,10 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
         set_tests_properties(headless.${t} PROPERTIES LABELS "device")
     endif()
 endforeach()
+
+# timing_check needs the stamps on: the switch every gate leaves off.
+set_tests_properties(headless.timing_check PROPERTIES
+    ENVIRONMENT "SIMVIEW_TIMINGS=1")
 
 # hang_check passes on the SENTENCE: a stalled frame must end in
 # "waited N ms for the shot's frame", never return. Its own bound — a

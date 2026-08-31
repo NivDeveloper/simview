@@ -50,6 +50,29 @@ bool validation_on(impl::App *a) { return a && a->platform.vk.vvl.on; }
 
 std::size_t validation_errors(impl::App *) { return vk_validation_errors(); }
 
+bool timings_on(impl::App *a) { return a && a->platform.timing.on; }
+
+std::size_t gpu_sections(impl::App *a, GpuSection *out, std::size_t cap) {
+    if (!a)
+        return 0;
+    std::size_t n = 0;
+    for (const impl::GpuSection &s : a->platform.timing.last)
+        if (n < cap)
+            out[n++] = {s.name, s.begin_ns, s.end_ns};
+    return n;
+}
+
+std::size_t compute_batches(impl::App *a, ComputeBatch *out, std::size_t cap) {
+    if (!a)
+        return 0;
+    std::size_t n = 0;
+    for (const auto &b : a->platform.timing.batches)
+        if (n < cap)
+            out[n++] = {b.first.value, b.last.value, b.dispatches,
+                        b.gpu_begin_ns, b.gpu_end_ns};
+    return n;
+}
+
 void stall_frame(impl::App *a) {
     if (!a)
         return;

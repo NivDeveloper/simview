@@ -6,6 +6,7 @@
 
 #include "../core/Callbacks.h"
 #include "Swapchain.h"
+#include "Timing.h"
 #include "Vk.h"
 
 #include <simview/Types.h>
@@ -38,6 +39,7 @@ struct Platform {
     std::uint64_t gfx_last = 0;       // the newest graphics submission
     std::uint64_t compute_waited = 0; // the compute-timeline value the
                                       // last frame waited on GPU-side
+    Timing timing;
     Swapchain sc;
     // Null when headless — the ONE spelling of that fact.
     SDL_Window *win = nullptr;
