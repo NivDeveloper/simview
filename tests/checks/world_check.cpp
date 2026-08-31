@@ -286,8 +286,14 @@ int main() {
     } catch (const std::exception &ex) {
         std::printf("  (device door skipped: %s)\n", ex.what());
     }
+    // Declared out here, and AFTER the App: an item pulls from this
+    // Sync at every later frame, so it must outlive the shots below —
+    // and its buffers must not outlive the device, which the reverse
+    // destruction order gives. Scoping it to the branch below left the
+    // world pulling from a dead producer (a crash on lavapipe, silence
+    // on the other two).
+    Sync<gpud::Buffer> dpts;
     if (fill) {
-        Sync<gpud::Buffer> dpts;
         dpts.Next() = dev.alloc(3 * sizeof(float));
         FillScalars sc{0.5f, 3};
         gpud::Buffer *bufs[] = {&dpts.Next()};
