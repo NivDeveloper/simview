@@ -1,30 +1,3 @@
-// The flagship: a tensor sim stepped on the GPU and drawn in 3-D
-// without the particles ever reaching the host.
-//
-// Test-particle Boltzmann relaxation. Two discs of particles collide
-// off-axis in a periodic box and thermalize. Per step — stream,
-// measure n/p/E per cell, histogram the momenta, relax toward the
-// Maxwellian by the relaxation-time approximation, resample, then
-// shift and scale so the cell's momentum and energy come out
-// unchanged. Thirty-odd fused expressions, every one of them
-// evaluated on the device.
-//
-// The physics below is tensor's own examples/bgk, reproduced here so
-// this example reads as one file and builds from one. It is a COPY,
-// with the copy's one cost: tensor's version can change without this
-// one noticing. What it buys is that a reader sees the whole thing —
-// the expressions, the transport and the drawing — in the order they
-// happen, which is what a flagship is for.
-//
-// What it is actually showing is the seam. simview owns the device,
-// tensor evaluates on it, and a frame copies nothing: the positions
-// the vertex shader reads are the buffers tensor wrote. The sim runs
-// on the Executor's thread and the frame on the main one; they share
-// the state through sv::Sync, which is what makes "no copy" also mean
-// "no lock and no torn read".
-//
-// Space toggles, Up/Down move the relaxation time, R restarts,
-// Esc quits.
 #include <simview/gpud.h>
 #include <simview/simview.h>
 
@@ -50,7 +23,7 @@ using tensor::indices::operator""_c;
 using f32 = float;
 using idx = size_t;
 
-constexpr idx N = 8192;       // particles
+constexpr idx N = 100000;     // particles
 constexpr idx C = 4;          // cells per axis
 constexpr idx CC = C * C * C; // cells in the grid
 constexpr idx B = 24;         // momentum bins per cell, per component
@@ -78,16 +51,6 @@ struct Cell {
     GridV p;
 };
 
-// Each particle's cell as ONE number: bins per axis, clamped per
-// AXIS, then combined row-major. The clamp must precede the combine —
-// an axis reaching C aliases into the NEXT axis's slot, a valid id no
-// write policy can catch.
-//
-// The combined id is a DATA-LAYOUT choice, measured twice in tensor:
-// the rank-N spelling is proven and byte-identical and its fold side
-// is faster, but the per-particle deposit and gather loops resolve
-// three stored values where this id resolves one, and that priced the
-// step at 1.5x.
 Cells cells(const Vecs &pos) {
     auto a = Fmin(Fmax(bins<C>(pos, -0.5f, 0.5f), 0.0f), f32(C - 1));
     return go((a[i, 0_c] * f32(C) + a[i, 1_c]) * f32(C) + a[i, 2_c]);
@@ -206,12 +169,6 @@ State initial_state() {
             })};
 }
 
-// The view's copy of a state tensor, made ON THE DEVICE: one identity
-// kernel over 24K floats, not a round trip through the host.
-//
-// It exists because step() owns its state by reference and hands back
-// the same two tensors every step, while a Sync slot wants a value it
-// can keep while the sim moves on.
 void publish(sv::Sync<Vecs> &s, const Vecs &v) {
     s.Next() = go(v[i, n]);
     s.Publish();
@@ -238,13 +195,6 @@ int main() {
     publish(pos, Pos);
     publish(mom, Mom);
 
-    // One const element read, and it is not a debug leftover: it SYNCS
-    // the device. Without it the initial state's kernel sits in an
-    // unsubmitted batch — the compute backend batches eagerly and a
-    // couple of dispatches do not fill one — so the window opens on an
-    // empty box and stays that way for the seconds the first step
-    // spends compiling thirty kernels. A const read keeps the parking,
-    // so this costs one download and nothing after it.
     (void)pos.Current()[0, 0];
     (void)mom.Current()[0, 0];
 
@@ -259,7 +209,7 @@ int main() {
 
     // The domain is the unit box, so the grid's decade of cells IS the
     // simulation's own scale.
-    auto gas = world.Cloud(pos, {.radius = 0.006f,
+    auto gas = world.Cloud(pos, {.radius = 0.003f,
                                  .shape = sv::CloudShape::Sphere,
                                  .map = sv::CloudMap::Magnitude,
                                  .map_scale = 1.1f});
@@ -267,10 +217,6 @@ int main() {
         return 1;
     gas.Colors(mom);
 
-    // The one live knob, and a physical one: the relaxation time is
-    // how long a cell takes to forget its distribution. Large and the
-    // discs pass through each other; small and they thermalize on
-    // contact.
     float relax = 0.01f;
     std::atomic<float> tau_now{relax};
 
@@ -280,6 +226,7 @@ int main() {
         publish(pos, Pos);
         publish(mom, Mom);
     });
+
     sim.OnRestart([&] {
         auto s = initial_state();
         Pos = std::move(s.Pos);
@@ -287,6 +234,17 @@ int main() {
         publish(pos, Pos);
         publish(mom, Mom);
     });
+    // Paced, and this is the difference between watching a collision
+    // and watching its aftermath. Uncapped, this sim runs about two
+    // thousand steps a second and the discs are gone into a
+    // thermalized gas before the window has settled — which reads as
+    // "the colours are random", and they are, because a thermalized
+    // gas HAS uncorrelated speeds. Two hundred a second puts the
+    // collision over several seconds, where the two beams are two
+    // colours and the mixing is the thing to look at. The transport
+    // panel's rate box overrides this.
+    sim.SetDt(double(dt));
+    sim.SetDelayNs(5'000'000);
     sim.Play();
 
     app.Controls(sim).Slider("relaxation time", relax, 0.002f, 0.5f);
@@ -299,7 +257,4 @@ int main() {
         .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
     app.Run();
-    // Teardown is the lifetime rule: the Executor (which writes the
-    // Syncs) dies before them, and they die before app — the device's
-    // owner — in reverse declaration order.
 }

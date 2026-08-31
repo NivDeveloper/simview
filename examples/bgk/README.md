@@ -38,6 +38,16 @@ that only make sense over there: the CPU/GPU switch (this build is
 always on a device), the benchmark's size and fixed-point knobs, and
 the reporting `main`.
 
+## It is paced on purpose
+
+Uncapped, this sim runs about two thousand steps a second and the two
+discs are gone into a thermalized gas before the window has settled —
+which reads as "the colours are random", and they are: a thermalized
+gas HAS uncorrelated speeds, and the colour is speed. Two hundred
+steps a second puts the collision over several seconds, where the
+beams are two colours and the mixing is the thing to look at. The
+transport panel's rate box overrides it.
+
 ## Two things worth knowing
 
 **The first step takes seconds.** It compiles thirty-odd kernels, once.

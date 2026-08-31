@@ -138,6 +138,7 @@ constexpr Rect kGroundRect{0, 240, 300, 470};
 constexpr Rect kOrthoRect{310, 240, 620, 470};
 constexpr Rect kLightRect{630, 240, 930, 470};
 constexpr Rect kDoorRect{0, 480, 300, 695};
+constexpr Rect kMagRect{310, 480, 620, 695};
 
 // The image inside a pinned panel — the panel less its chrome. The
 // title bar is a blue strip with white text on it, and the ANTIALIASED
@@ -443,6 +444,52 @@ int main() {
                         g.x0, g.x1, b.x0, b.x1);
             CHECK(r.x1 < g.x0 || g.x1 < r.x0);
             CHECK(g.x1 < b.x0 || b.x1 < g.x0);
+        }
+    }
+
+    // ── and the magnitude map is ORDERED ─────────────────────────────
+    // The direction map above proves the value buffer is read per
+    // point. This proves the other half: that the number it reads is
+    // the LENGTH of the value, and that the colormap walks in the
+    // order it claims. Three points of rising speed must come out
+    // blue, then green, then red along the row — the same colours a
+    // caller reads a velocity field by, and the reason a thermalized
+    // gas looks like noise is that its speeds really are uncorrelated,
+    // not that this is unhooked.
+    sv::World mg = app.World({.title = "mag", .grid = false, .axes = false});
+    REQUIRE(bool(mg));
+    mg.Camera({.focus = {0.0f, 0.0f, 0.0f},
+               .distance = 6.0f,
+               .azimuth_deg = 0.0f,
+               .elevation_deg = 0.0f});
+    pin(app, "mag", kMagRect);
+    sv::Cloud speeds = mg.Cloud({.radius = 0.45f,
+                                 .mode = CloudMode::Solid,
+                                 .map = CloudMap::Magnitude,
+                                 .map_scale = 1.0f});
+    REQUIRE(bool(speeds));
+    CHECK(speeds.Update(tri_pts));
+    // Magnitudes 0.15, 0.5 and 0.85 of the scale: turbo is blue,
+    // green and red there.
+    const std::vector<float> mags{0.15f, 0.0f, 0.0f, 0.5f, 0.0f,
+                                  0.0f,  0.0f, 0.0f, 0.85f};
+    CHECK(speeds.UpdateColors(mags));
+    app.Step();
+    app.Step();
+    Bmp ramp;
+    REQUIRE(harness::shot(app, "world_magnitude", ramp));
+    {
+        const Box b = channel_box(ramp, content_of(kMagRect), 2, 30);
+        const Box g = channel_box(ramp, content_of(kMagRect), 1, 30);
+        const Box r = channel_box(ramp, content_of(kMagRect), 0, 30);
+        CHECK(!b.empty);
+        CHECK(!g.empty);
+        CHECK(!r.empty);
+        if (!b.empty && !g.empty && !r.empty) {
+            std::printf("  speed ramp: blue[%u,%u] green[%u,%u] red[%u,%u]\n",
+                        b.x0, b.x1, g.x0, g.x1, r.x0, r.x1);
+            CHECK_LT(b.x1, g.x0);
+            CHECK_LT(g.x1, r.x0);
         }
     }
 
