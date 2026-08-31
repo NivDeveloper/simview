@@ -1,5 +1,6 @@
 // A world you can look around: a shell of particles coloured by
-// direction over a ground grid, lit from above and to one side.
+// direction, floating over a ground grid, lit from above and to one
+// side and casting its shadow onto the ground.
 // Drag inside the window to orbit, shift-drag or right-drag to pan,
 // wheel to dolly.
 //
@@ -12,6 +13,12 @@
 
 constexpr std::size_t N = 6000;
 constexpr std::size_t kHalo = 900;
+
+// The shell floats ABOVE the ground rather than sitting on it, so the
+// light throws its shadow somewhere you can see. Centred on the
+// origin, the shadow lands underneath the shell and behind the half
+// of it that is below the plane, which is a shadow nobody ever sees.
+constexpr float kLift = 1.6f;
 
 // Points on a sphere, spread by the golden angle so they do not band.
 void shell(std::vector<float> &pos, std::vector<float> &dir, std::size_t n,
@@ -27,7 +34,7 @@ void shell(std::vector<float> &pos, std::vector<float> &dir, std::size_t n,
         const float x = r * std::cos(a), y = r * std::sin(a);
         pos[i * 3 + 0] = radius * x;
         pos[i * 3 + 1] = radius * y;
-        pos[i * 3 + 2] = radius * z * squash;
+        pos[i * 3 + 2] = radius * z * squash + kLift;
         // The outward normal: what the direction colormap reads.
         dir[i * 3 + 0] = x;
         dir[i * 3 + 1] = y;
@@ -41,7 +48,7 @@ int main() {
         return 1;
 
     auto world = app.World();
-    world.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 6.0f})
+    world.Camera({.focus = {0.0f, 0.0f, 1.1f}, .distance = 6.5f})
         .Light({.direction = {0.3f, 0.5f, 1.0f},
                 .intensity = 0.85f,
                 .shadow = true})
@@ -74,8 +81,8 @@ int main() {
         if (ortho == was)
             return;
         was = ortho;
-        world.Camera({.focus = {0.0f, 0.0f, 0.0f},
-                      .distance = 6.0f,
+        world.Camera({.focus = {0.0f, 0.0f, 1.1f},
+                      .distance = 6.5f,
                       .projection = ortho ? sv::Projection::Orthographic
                                           : sv::Projection::Perspective});
     });

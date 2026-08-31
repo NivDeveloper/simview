@@ -463,6 +463,12 @@ Translucent clouds cast nothing — an opaque shadow from a thing you
 can see through is worse than none. The grid receives and does not
 cast; the axes do neither.
 
+A caster sitting ON the ground shows nothing, which is worth saying
+because `examples/orbit` was written that way and had to be changed:
+its shell was centred on the origin and straddled the plane, so the
+shadow landed underneath it and behind the half that was below. The
+shell now floats, and the example shows the feature it turns on.
+
 ### The numbers
 
 | what | measured |
