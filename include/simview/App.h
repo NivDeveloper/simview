@@ -5,6 +5,7 @@
 #include "Plots.h"
 #include "Scene.h"
 #include "Types.h"
+#include "World.h"
 
 #include <cstdint>
 #include <forward_list>
@@ -105,6 +106,10 @@ class App {
 
     sv::Scene View(const ViewDesc &d = {}) {
         return sv::Scene{impl::view_create(a_, d)};
+    }
+
+    sv::World World(const WorldDesc &d = {}) {
+        return sv::World{impl::world_create(a_, d)};
     }
 
     sv::Field Field(const FieldDesc &d) { return Scene().Field(d); }

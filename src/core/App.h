@@ -29,6 +29,7 @@ struct App {
     Input input;
     Stats stats;
     std::vector<PipelineEntry> pipelines;
+    std::vector<WorldPipelineEntry> world_pipelines;
     // Every Sync a scene draws, flipped once at the top of each frame.
     // Owned here for the same reason pipelines are: a view's scene and
     // the main scene borrow ONE list, so a Sync drawn by both flips once.

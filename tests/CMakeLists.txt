@@ -11,7 +11,7 @@ add_subdirectory(installed_surface)
 set(pure_checks sync_check)
 foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             view_check resize_check viewport_check lines_check decouple_check
-            hang_check timing_check)
+            hang_check timing_check world_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     # Quoted includes resolve against the INCLUDING file's directory,
@@ -78,6 +78,21 @@ set_tests_properties(headless.hang_check PROPERTIES
     ENVIRONMENT "SIMVIEW_WAIT_MS=500"
     PASS_REGULAR_EXPRESSION "waited 500 ms for the shot's frame"
     SKIP_REGULAR_EXPRESSION "^SKIP:")
+
+# The world's arithmetic, with no device: it includes src/world/Math.h
+# directly, so it needs the src include dir the foreach checks lack —
+# and it is `pure`, which is what puts it in the sanitizer job.
+add_executable(world_math_check checks/world_math_check.cpp)
+target_include_directories(world_math_check PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
+set_target_properties(world_math_check PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(NOT MSVC)
+    target_compile_options(world_math_check PRIVATE ${SIMVIEW_WARNINGS})
+endif()
+add_test(NAME headless.world_math_check COMMAND world_math_check)
+set_tests_properties(headless.world_math_check PROPERTIES
+    SKIP_RETURN_CODE 77 LABELS "pure")
 
 # S2's bring-up gate: the app-owned Vulkan stack with NVRHI and gpud
 # both adopting it, headless. It speaks src/ internals on purpose —

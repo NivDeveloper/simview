@@ -210,6 +210,11 @@ add_library(simview STATIC
     src/ui/Plot.cpp
     src/ui/PlotDraw.cpp
     src/ui/View.cpp
+    src/ui/World.cpp
+    src/world/World.cpp
+    src/world/Pipelines.cpp
+    src/world/Cloud.cpp
+    src/world/GridAxes.cpp
     src/door/Gpud.cpp
     src/sync/Sync.cpp)
 add_library(simview::simview ALIAS simview)
@@ -268,6 +273,7 @@ if(SIMVIEW_BUILD_EXAMPLES)
     add_subdirectory(examples/hello)
     add_subdirectory(examples/hello-window)
     add_subdirectory(examples/gas)
+    add_subdirectory(examples/orbit)
     add_subdirectory(examples/ising-cpu)
     add_subdirectory(examples/plots)
 endif()

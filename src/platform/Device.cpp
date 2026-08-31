@@ -222,8 +222,11 @@ void app_quit(App *a) {
     // textures, and the swapchain holds wrapped images.
     ui_quit(a);
     pipelines_release(a->pipelines);
+    world_pipelines_release(a->world_pipelines);
     scene_release(a->scene);
     for (View &v : a->views) {
+        if (v.world)
+            world_release(*v.world);
         scene_release(v.scene);
         target_release(v.target);
     }

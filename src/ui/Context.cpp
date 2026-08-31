@@ -364,10 +364,15 @@ void view_draw(impl::View &v) {
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             v.bound_gen = v.target.gen;
         }
-        if (v.imgui_tex)
+        if (v.imgui_tex) {
             ImGui::Image(ImTextureRef(ImTextureID(
                              reinterpret_cast<intptr_t>(v.imgui_tex))),
                          avail);
+            // Right after the image, while it is the current item: the
+            // drag belongs to whatever it was started on.
+            if (v.world)
+                world_camera_input(*v.world);
+        }
     }
     ImGui::End();
 }
@@ -388,8 +393,12 @@ void ui_views_resize(impl::App *a) {
 }
 
 void ui_views_draw(impl::App *a, nvrhi::ICommandList *cl) {
-    for (impl::View &v : a->views)
-        target_draw(v.scene, cl, v.target);
+    for (impl::View &v : a->views) {
+        if (v.world)
+            world_draw(*v.world, cl, v.target);
+        else
+            target_draw(v.scene, cl, v.target);
+    }
 }
 
 } // namespace sv

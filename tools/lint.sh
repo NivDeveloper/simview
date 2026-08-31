@@ -26,7 +26,7 @@ for h in $(find include/simview -name "*.h" | sort); do
     base=$(basename "$h")
     # (a): every include is <std-ish> or "sibling.h"
     bad_inc=$(grep -nE '^#include' "$h" | grep -vE '#include <[a-z_]+>' \
-              | grep -vE '#include "(\.\./)?((scene|sync)/)?(Types|App|Event|Field|Panel|Plots|Scene|Sync|Particles|Lines|simview)\.h"' || true)
+              | grep -vE '#include "(\.\./)?((scene|sync|world)/)?(Types|App|Event|Field|Panel|Plots|Scene|Sync|Particles|Lines|World|Cloud|simview)\.h"' || true)
     if [ "$base" = "gpud.h" ]; then
         bad_inc=$(echo "$bad_inc" | grep -v '#include <gpud/Device\.h>' || true)
     fi
@@ -65,7 +65,8 @@ if [ -n "$stray" ]; then
     fail=1
 fi
 
-# (j): the include DAG inside src/, core -> platform -> scene -> ui.
+# (j): the include DAG inside src/, core -> platform -> scene -> world
+# -> ui.
 # scene/ may name nothing from ui/ and never the composed App: a kind
 # sees a device and a counter block, not the world. And the layer
 # STATE headers (platform/Device.h, platform/Input.h) may not name ui/
@@ -73,11 +74,23 @@ fi
 # L4 by content and may, which is why this rule is on headers and on
 # scene/, not on every file under platform/.
 dag=$( (grep -ln '"\.\./ui/\|core/App\.h' src/scene/*.cpp src/scene/*.h; \
+        grep -ln '"\.\./ui/\|core/App\.h' src/world/*.cpp src/world/*.h; \
         grep -ln '"\.\./ui/\|core/App\.h' src/platform/Device.h src/platform/Input.h) \
        2>/dev/null || true)
 if [ -n "$dag" ]; then
-    echo "LINT: a layer reaches UP the DAG (core -> platform -> scene -> ui):"
+    echo "LINT: a layer reaches UP the DAG (core -> platform -> scene ->"
+    echo "      world -> ui):"
     echo "$dag"
+    fail=1
+fi
+
+# The 2D and 3D strata are SIBLINGS, and the arrow points one way: a
+# world may borrow the target and the device a scene defined, a scene
+# may not know a world exists.
+crossed=$(grep -ln '"\.\./world/' src/scene/*.cpp src/scene/*.h 2>/dev/null || true)
+if [ -n "$crossed" ]; then
+    echo "LINT: scene/ reaches into world/ — the arrow points the other way:"
+    echo "$crossed"
     fail=1
 fi
 

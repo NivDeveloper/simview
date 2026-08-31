@@ -104,13 +104,30 @@ out of them.
  N panels rather than one field per App;
 the refusal that exists today becomes a list.
 
-**6. 3D.** ImPlot3D for plot-shaped 3D (shipped: `app.Plot3D()` as a
-sibling builder over the same impl — one draw path, the family
-switched at the bracket; Line, Scatter, Surface, Mesh, each proven by
-geometry and the family mismatch refused by name). Still to come, for
-particle/volume work — the one genuinely excellent piece of vklib
-worth stealing: its BDA-addressed particle path with Slang shaders,
-zero readback.
+**6. 3D.** Two answers, and the docs say which to reach for.
+ImPlot3D for plot-shaped 3D (shipped: `app.Plot3D()` as a sibling
+builder over the same impl — one draw path, the family switched at the
+bracket; Line, Scatter, Surface, Mesh, each proven by geometry and the
+family mismatch refused by name) — small, CPU-side, axes for free.
+
+The WORLD stratum (W1 shipped 2026-08-31, `docs/3d-plan.md`) is the
+other regime: many points living on the device. `app.World()` is a
+panel with a camera; a `Cloud` is vklib's BDA-addressed particle path
+with the zero readback intact, through the same three doors every 2D
+kind answers. What landed with it is the architecture — a fixed pass
+table, draw-command submission with a real sort, reverse-Z depth,
+per-view constants, an orbital camera, grid and axes as ordinary
+items — so the rest is additive:
+- **W2** orthographic projection, the colormap set over a
+  per-particle data buffer, a Lambert light set;
+- **W3** the mesh registry and instanced meshes (cube, cubesphere at
+  two tiers), then user meshes;
+- **W4** the 100k-instance bench with recorded numbers;
+- **W5** the shadow pass, filling the row already reserved for it;
+- **W6** a flagship: a tensor sim producing device-resident N x 3.
+Named smaller ones live in 3d-plan.md: the `render/` hoist trigger,
+per-pass timestamps, a bounds-driven near plane, and a headless check
+for the camera gesture.
 
 **7. The transport** (shipped). The Executor keeps the clock — a
 `Tick` the body reads and never fabricates — and from that one fact

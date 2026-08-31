@@ -6,7 +6,7 @@ g++-16/reflection world). Structure and patterns: docs/architecture.md;
 how it got there: docs/design.md; what is next: docs/roadmap.md.
 Current state: the APP owns the Vulkan stack (src/platform/Vk.cpp:
 one instance, one device, two queues) and both halves adopt it —
-NVRHI renders on the graphics queue, gpud v0.7 computes on the
+NVRHI renders on the graphics queue, gpud computes on the
 compute queue (try_open_on; buffers CONCURRENT-shared) — with an
 app-managed swapchain (FIFO on a portability driver: MoltenVK's
 IMMEDIATE spins in nextDrawable inside vkQueueSubmit and starves the
@@ -128,6 +128,17 @@ Next: 3-D scene kinds, and more than one window.
   rate until a profiler connects. Debug labels (`VK_EXT_debug_utils`,
   on whenever the loader has it) name the queues, the timelines, every
   texture and every section, so a capture reads the same words.
+- **3D is a stratum, not a kind.** `app.World()` is a panel with a
+  camera, a fixed pass table (shadow reserved, opaque, transparent,
+  overlay), items that SUBMIT draws for one `std::sort` to order, and
+  reverse-Z depth whose five parts must agree — a D32 attachment,
+  a 0 clear, an explicit `GreaterOrEqual`, the viewport range left
+  alone, and a projection with a POSITIVE m[1][1] (the renderer flips
+  the viewport itself). The world is Z-up. Ordering shipped with the
+  check that fails without it, because vklib's equivalent sort was an
+  identity function for its whole life. Limits are stated, not
+  implied: transparency sorts per ITEM, a cloud keys on its centroid,
+  a billboard writes the quad's depth. `docs/3d-plan.md`.
 - **Dev, validation, debug and profiling facilities never touch the
   public surface.** They are environment variables read at bring-up,
   Makefile targets, or accessors in the test-only `sv::probe` archive
@@ -337,20 +348,29 @@ Design rationale lives in docs/, implementation commentary in `src/`
 include/simview/   the installed surface: simview.h (umbrella),
                    Types.h, App.h, Scene.h, Plots.h, Panel.h, Event.h,
                    gpud.h (the door); scene/{Field,Particles,Lines}.h
-                   — a kind's public half is ONE file here; sync/Sync.h
+                   — a kind's public half is ONE file here;
+                   World.h + world/Cloud.h the 3D stratum's;
+                   sync/Sync.h
 third_party/       vendored deps, one dir each, PIN + LICENSE
                    required (README.md is the contract; exempt from
                    the format gate, never from the warning flags)
 src/               folded by LAYER, not by stratum (the namespace
-                   already carries that): core/ platform/ scene/ ui/
-                   door/ sync/ testing/. A feature is one folder;
-                   its exported and internal halves are files in it
+                   already carries that): core/ platform/ scene/
+                   world/ ui/ door/ sync/ testing/. A feature is one
+                   folder; its exported and internal halves are
+                   files in it
 src/core/App.h     the composed App: each member's type from its own
                    layer's header. Lint rule (j) is the DAG: scene/
                    and the platform state headers never name ui/
 src/scene/         a kind is ONE file: state, uniform block, shaders,
                    KindOps, and its exported functions. Nothing else
                    names a kind
+src/world/         the 3D stratum BESIDE scene, not inside it: a pass
+                   table, items that submit draws, one sort, reverse-Z
+                   depth, the camera. An item is ONE file, the same
+                   shape as a kind. It borrows Gpu and RenderTarget
+                   from scene/ and the arrow points one way (lint).
+                   docs/3d-plan.md is the decision record
 src/testing/       sv::probe — the ONLY test-only code, in its own
                    never-installed archive (lint rule (i))
 examples/hello/    init headless, report, quit; doubles as the

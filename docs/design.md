@@ -7,9 +7,13 @@ with a sim/render sync layer that keeps the two honest.
 What simview is NOT — the scope fence, stated first because its
 predecessor (vklib) grew past it: not a renderer abstraction (SDL_GPU
 is), not a GUI toolkit (Dear ImGui is), not a compute layer (the sim
-owns its compute — tensor, gpud, plain loops), not a shader DSL, and
-no 3-D scene system in v1 (camera/mesh/material stay out; a 3-D slice
-view is a future decision, not a founding one).
+owns its compute — tensor, gpud, plain loops), not a shader DSL. The 3-D
+fence moved once, deliberately: v1 kept camera/mesh/material out and
+called a 3-D view "a future decision, not a founding one", and on
+2026-08-31 that decision was taken — the world stratum
+(`docs/3d-plan.md`) is a second scene layer with a camera, a pass
+table and its own items. The fence still stands where it was drawn
+for the rest: no asset pipeline, no material graph, no user shaders.
 
 ## The two-strata public surface
 

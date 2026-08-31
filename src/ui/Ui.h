@@ -26,6 +26,7 @@ namespace sv {
 namespace impl {
 
 struct App;
+struct WorldState;
 
 struct UiState {
     ::ImGuiContext *ctx = nullptr;
@@ -60,6 +61,9 @@ void ui_views_resize(impl::App *);
 // Draw every view's scene into its target, ahead of the scene that
 // will sample them.
 void ui_views_draw(impl::App *, nvrhi::ICommandList *);
+
+// The camera gesture, read off the panel the world is shown in.
+void world_camera_input(impl::WorldState &);
 
 // Is there a UI frame to build? A context exists AND somebody asked
 // for a panel. With nobody asking, no ImGui frame is built at all and

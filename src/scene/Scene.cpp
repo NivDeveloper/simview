@@ -43,6 +43,7 @@ void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
         return;
     t.fb = nullptr;
     t.tex = nullptr;
+    t.depth = nullptr;
 
     t.tex = gpu.dev->createTexture(
         nvrhi::TextureDesc()
@@ -58,8 +59,30 @@ void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
         t.w = t.h = 0;
         return;
     }
-    t.fb = gpu.dev->createFramebuffer(
-        nvrhi::FramebufferDesc().addColorAttachment(t.tex));
+    // Reverse-Z wants a FLOAT depth format: the precision it buys
+    // comes from the exponent, and a normalized one would throw it
+    // away. The world clears this to 0 and tests GreaterOrEqual.
+    if (t.want_depth) {
+        t.depth = gpu.dev->createTexture(
+            nvrhi::TextureDesc()
+                .setWidth(t.want_w)
+                .setHeight(t.want_h)
+                .setFormat(nvrhi::Format::D32)
+                .setIsRenderTarget(true)
+                .setInitialState(nvrhi::ResourceStates::DepthWrite)
+                .setKeepInitialState(true)
+                .setDebugName("view depth"));
+        if (!t.depth) {
+            set_error("view depth texture: creation failed");
+            t.tex = nullptr;
+            t.w = t.h = 0;
+            return;
+        }
+    }
+    auto fbd = nvrhi::FramebufferDesc().addColorAttachment(t.tex);
+    if (t.depth)
+        fbd.setDepthAttachment(t.depth);
+    t.fb = gpu.dev->createFramebuffer(fbd);
     t.w = t.want_w;
     t.h = t.want_h;
     ++t.gen;
@@ -74,6 +97,7 @@ void target_draw(impl::SceneState &sc, nvrhi::ICommandList *cl,
 void target_release(impl::RenderTarget &t) {
     t.fb = nullptr;
     t.tex = nullptr;
+    t.depth = nullptr;
     t.w = t.h = 0;
 }
 

@@ -152,7 +152,8 @@ never the reverse.
 L0  core       Types, Error                        no SDK
 L1  platform   Device, Window, Presenter port      SDL / gpud
 L2  scene      SceneState, kinds via the ops table L0 L1 sync
-L3  ui         Context, Panel, Plot, View          L0 L1 L2 sync + ImGui
+L2b world      WorldState, items, passes, camera   L0 L1 L2 sync
+L3  ui         Context, Panel, Plot, View, World   L0 L1 L2 sync + ImGui
 L4  app        the frame over the Presenter port   L1 L2 L3
 L5  doors      gpud.h                              public vocabulary
     sync       Executor, Sync, Tick                std + Types.h — a
@@ -166,6 +167,7 @@ L5  doors      gpud.h                              public vocabulary
 struct App {
     Platform platform;   Input input;   Stats stats;
     std::vector<PipelineEntry> pipelines;
+    std::vector<WorldPipelineEntry> world_pipelines;
     SceneState scene;    UiState ui;
     std::list<View> views;  std::list<PlotState> plots;  std::list<PanelState> panels;
 };
@@ -193,10 +195,19 @@ until the types were separated, and two were structural:
   `Stats *` and the pipeline cache — what a kind actually asks of the
   world — and `src/scene/` includes nothing from `ui/` or `App.h`.
 
-Lint rule (j) enforces the DAG: `scene/` and the platform *state*
-headers may name nothing from `ui/` and never `core/App.h`. The
-`.cpp` files that orchestrate a frame or a lifecycle are L4 by
+Lint rule (j) enforces the DAG: `scene/`, `world/` and the platform
+*state* headers may name nothing from `ui/` and never `core/App.h`.
+The `.cpp` files that orchestrate a frame or a lifecycle are L4 by
 content and may.
+
+`world/` (2026-08-31, `docs/3d-plan.md`) sits BESIDE `scene/` rather
+than inside it: the 3D stratum varies exactly what the 2D kind
+contract fixes — depth state, pass membership, draw order. It borrows
+two things from its sibling, `impl::Gpu` and `RenderTarget`, and a
+second lint clause holds the arrow one way: a scene may not include
+`../world/`. Those two shared types are the named trigger for a
+future `render/` layer — when a second consumer of them appears, they
+hoist; one consumer is not an abstraction.
 
 Two things stayed deliberately small. `Platform` declares `gdev`
 before `dev` because `dev` is borrowed from it and destruction is

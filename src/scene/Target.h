@@ -17,6 +17,12 @@ namespace impl {
 
 struct RenderTarget {
     nvrhi::TextureHandle tex;
+    // A depth attachment, only where something asked for one: a 2D
+    // scene never tests depth, and a framebuffer that carries an
+    // attachment nobody writes is a pipeline incompatibility waiting
+    // to be discovered. Set before the first resize; never after.
+    nvrhi::TextureHandle depth;
+    bool want_depth = false;
     nvrhi::FramebufferHandle fb;
     std::uint32_t w = 0, h = 0;
     std::uint32_t want_w = 256, want_h = 256;

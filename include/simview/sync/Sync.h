@@ -23,6 +23,13 @@ struct SyncGate {
     explicit operator bool() const { return p != nullptr; }
 };
 
+template <class> inline constexpr bool no_door = false;
+
+template <class P>
+concept Synced = requires(const P &p) {
+    { p.Gate() } -> std::same_as<SyncGate>;
+};
+
 SyncGate sync_gate_create();
 void sync_gate_destroy(SyncGate);
 void sync_gate_retain(SyncGate);

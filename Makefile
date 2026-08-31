@@ -65,7 +65,7 @@ tsan:
 # no Vulkan-level tool could name it. Release tree: layers need no
 # debug build. The four swap-era defects were all invisible to a green
 # suite and all named here.
-VALIDATE_EXAMPLES := hello-window gas ising-cpu plots
+VALIDATE_EXAMPLES := hello-window gas ising-cpu plots orbit
 validate: all
 	$(WAIT_MS) SIMVIEW_VVL=sync,abort ctest --test-dir build \
 	    --output-on-failure --timeout 300 -E installed_surface

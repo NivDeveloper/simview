@@ -38,6 +38,12 @@ void frame_wait_previous(impl::App *a) {
         return;
     platform_wait_graphics(pl, pl.frame_instance, "the previous frame");
     pl.frame_instance = 0;
+    // The renderer learns that a frame finished ONLY from its own wait
+    // or from here. Ours is a bounded wait on the semaphore beneath it,
+    // so without this call its command buffers are never retired, the
+    // resources they reference are never released, and a versioned
+    // constant buffer runs out of versions after a few seconds.
+    pl.ndev->runGarbageCollection();
     timing_collect(pl);
 }
 
@@ -78,7 +84,8 @@ void frame_render(impl::App *a, const Presenter &p) {
             wait = std::max(wait, impl::sync_gate_shown_stamp(g));
         bool untracked = a->scene.untracked_pulls > 0;
         for (impl::View &v : a->views)
-            untracked = untracked || v.scene.untracked_pulls > 0;
+            untracked = untracked || v.scene.untracked_pulls > 0 ||
+                        (v.world && v.world->untracked_pulls > 0);
         if (untracked)
             wait = std::max(wait, gdev->submitted().value);
         if (wait) {
