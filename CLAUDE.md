@@ -81,6 +81,16 @@ Next: 3-D scene kinds, and more than one window.
   applies to CODE: a drill that cannot tell a branch apart has found
   dead weight, not a passing gate (the camera's grab latch went that
   way — ImGui already owns a drag from its press).
+- **A picture is asked what it is MADE OF, not only what colour it
+  is.** `tests/harness/Bmp.h` carries the structure vocabulary —
+  `lit_count`, `quadrants`, `runs_in_row`/`runs_in_col` (lines
+  crossing a scan), `shades` (that a line was anti-aliased rather than
+  stamped) — because the questions a colour probe can answer are not
+  the ones that catch a grid with a quadrant missing or a family of
+  lines gone. `grid_check` is the worked example: four quadrants
+  compared, both line families demanded in each, the picture asserted
+  IDENTICAL a decade of zoom apart, and the camera flown around
+  through the input harness before asking again.
 - **An interaction is testable, and therefore tested.**
   `tests/harness/Input.h` spells a gesture the way a person performs
   it — `input::drag(app, x0, y0, x1, y1)`, `wheel`, `press`,

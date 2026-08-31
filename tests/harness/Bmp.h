@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -83,6 +84,101 @@ struct Bmp {
 
 // Two images agree when almost every pixel is within tolerance —
 // never byte equality, because three drivers never round alike.
+// ── structure ────────────────────────────────────────────────────────
+// What a picture is made of, rather than what colour it is. A colour
+// probe can say "there are grey pixels here"; none of these can be
+// answered that way, and a grid with a whole quadrant missing passes
+// every colour probe there is.
+
+// A pixel that is not the background — brighter than it by `floor`,
+// summed over the channels.
+inline bool lit(const Bmp &img, unsigned x, unsigned y, int floor = 40) {
+    if (x >= img.w || y >= img.h)
+        return false;
+    const auto &p = img.at(x, y);
+    return p[0] + p[1] + p[2] > 23 + 23 + 26 + floor;
+}
+
+inline std::size_t lit_count(const Bmp &img, unsigned x0, unsigned y0,
+                             unsigned x1, unsigned y1, int floor = 40) {
+    std::size_t n = 0;
+    for (unsigned y = y0; y < y1 && y < img.h; ++y)
+        for (unsigned x = x0; x < x1 && x < img.w; ++x)
+            if (lit(img, x, y, floor))
+                ++n;
+    return n;
+}
+
+// Runs of lit pixels along one scan — the number of LINES crossing it.
+// Scanning a row counts the lines that run down the picture; scanning
+// a column counts the ones that run across it. A grid missing one
+// family answers zero to one of them and not to the other.
+inline std::size_t runs_in_row(const Bmp &img, unsigned y, unsigned x0,
+                               unsigned x1, int floor = 40) {
+    std::size_t runs = 0;
+    bool was = false;
+    for (unsigned x = x0; x < x1 && x < img.w; ++x) {
+        const bool now = lit(img, x, y, floor);
+        if (now && !was)
+            ++runs;
+        was = now;
+    }
+    return runs;
+}
+
+inline std::size_t runs_in_col(const Bmp &img, unsigned x, unsigned y0,
+                               unsigned y1, int floor = 40) {
+    std::size_t runs = 0;
+    bool was = false;
+    for (unsigned y = y0; y < y1 && y < img.h; ++y) {
+        const bool now = lit(img, x, y, floor);
+        if (now && !was)
+            ++runs;
+        was = now;
+    }
+    return runs;
+}
+
+// The four quadrants of a region, lit-pixel counts, in the order
+// top-left, top-right, bottom-left, bottom-right.
+struct Quadrants {
+    std::size_t tl, tr, bl, br;
+    std::size_t lowest() const {
+        std::size_t m = tl;
+        m = tr < m ? tr : m;
+        m = bl < m ? bl : m;
+        return br < m ? br : m;
+    }
+    std::size_t highest() const {
+        std::size_t m = tl;
+        m = tr > m ? tr : m;
+        m = bl > m ? bl : m;
+        return br > m ? br : m;
+    }
+};
+
+inline Quadrants quadrants(const Bmp &img, unsigned x0, unsigned y0,
+                           unsigned x1, unsigned y1, int floor = 40) {
+    const unsigned mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    return {lit_count(img, x0, y0, mx, my, floor),
+            lit_count(img, mx, y0, x1, my, floor),
+            lit_count(img, x0, my, mx, y1, floor),
+            lit_count(img, mx, my, x1, y1, floor)};
+}
+
+// How many DISTINCT brightnesses a region holds, which is what says a
+// line was anti-aliased rather than drawn as an on/off mask.
+inline std::size_t shades(const Bmp &img, unsigned x0, unsigned y0, unsigned x1,
+                          unsigned y1, int step = 8) {
+    std::set<int> seen;
+    for (unsigned y = y0; y < y1 && y < img.h; ++y)
+        for (unsigned x = x0; x < x1 && x < img.w; ++x) {
+            const auto &p = img.at(x, y);
+            seen.insert((p[0] + p[1] + p[2]) / step);
+        }
+    return seen.size();
+}
+
 inline bool similar(const Bmp &a, const Bmp &b, int tol = 24,
                     double allowed_fraction = 0.01) {
     if (a.w != b.w || a.h != b.h)

@@ -207,6 +207,15 @@ who never asked.
   not export depth, which keeps early-Z alive. At a radius small
   against the scene the difference does not show; where a sphere meets
   a surface it would.
+- **A remainder that places a grid line must be POSITIVE.** `fmod`
+  carries the sign of its dividend, so at negative world coordinates
+  it returns a negative remainder, the saturate clamps it to zero and
+  the line disappears: one quadrant of the plane with no grid at all
+  and two with one family of lines each. `frac(x/n)*n` is the same
+  quantity without the hole. Every colour probe in the suite passed
+  the whole time it was broken — there were grey pixels, the content
+  box was full, the picture changed when the camera moved — which is
+  what `grid_check` and the structure vocabulary exist for.
 - **The grid's EXTENT follows the camera; its CELL does not.** A grid
   is a ruler, so the finest cell is a world length and the
   level-of-detail picks which decade of it to draw. The quad and its

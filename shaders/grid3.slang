@@ -68,14 +68,24 @@ float4 fsmain(G2F v) : SV_Target {
     dudv *= 2.0f; // a line is about two pixels
     float2 uv = v.uv + dudv * 0.5f;
 
+    // Distance past the last line, ALWAYS POSITIVE. fmod carries the
+    // sign of its dividend, so at negative world coordinates it
+    // returns a negative remainder, saturate clamps that to zero and
+    // the line vanishes — which is one whole quadrant of the plane
+    // with no grid on it and two with only half of one. frac is
+    // x - floor(x), so this is the same quantity without the hole.
+    const float2 m0 = frac(uv / lod0) * lod0;
+    const float2 m1 = frac(uv / lod1) * lod1;
+    const float2 m2 = frac(uv / lod2) * lod2;
+
     // Coverage of each tier's nearest line, anti-aliased by the same
     // derivative that set the width.
-    const float2 a0 = float2(1.0f, 1.0f) -
-                      abs(saturate(fmod(uv, lod0) / dudv) * 2.0f - float2(1.0f, 1.0f));
-    const float2 a1 = float2(1.0f, 1.0f) -
-                      abs(saturate(fmod(uv, lod1) / dudv) * 2.0f - float2(1.0f, 1.0f));
-    const float2 a2 = float2(1.0f, 1.0f) -
-                      abs(saturate(fmod(uv, lod2) / dudv) * 2.0f - float2(1.0f, 1.0f));
+    const float2 a0 =
+        float2(1.0f, 1.0f) - abs(saturate(m0 / dudv) * 2.0f - float2(1.0f, 1.0f));
+    const float2 a1 =
+        float2(1.0f, 1.0f) - abs(saturate(m1 / dudv) * 2.0f - float2(1.0f, 1.0f));
+    const float2 a2 =
+        float2(1.0f, 1.0f) - abs(saturate(m2 / dudv) * 2.0f - float2(1.0f, 1.0f));
     const float c0 = max(a0.x, a0.y);
     const float c1 = max(a1.x, a1.y);
     const float c2 = max(a2.x, a2.y);
