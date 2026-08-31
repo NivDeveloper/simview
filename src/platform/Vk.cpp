@@ -347,6 +347,13 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         return set_error("no graphics queue family"), false;
     c.timestamps = fams[c.gfx_family].timestampValidBits > 0;
     c.timestamp_period = props.limits.timestampPeriod;
+    // Four samples is the one step worth taking: it removes the
+    // staircase on a silhouette, and beyond it the cost climbs faster
+    // than the picture improves. Both attachments must agree, so the
+    // two limits are intersected.
+    const auto counts = props.limits.framebufferColorSampleCounts &
+                        props.limits.framebufferDepthSampleCounts;
+    c.samples = (counts & vk::SampleCountFlagBits::e4) ? 4u : 1u;
     c.comp_family = std::uint32_t(fams.size());
     for (std::uint32_t i = 0; i < fams.size(); ++i)
         if (i != c.gfx_family &&

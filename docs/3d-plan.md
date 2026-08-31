@@ -193,6 +193,46 @@ that shades anything. An unlit world gets a single light at the
 camera, which is exactly what W1 had, so nothing changed for a caller
 who never asked.
 
+## What W3 added
+
+**Points drawn as geometry.** A shape is a field on the cloud, not a
+kind of its own: `Billboard` is the impostor disc, `Sphere` and `Cube`
+are real meshes drawn one instance a point in one indexed call.
+Everything else — the three doors, the colormaps, the lights, the
+sort — is the same code, which is what the shape being a field rather
+than a kind buys.
+
+The built-in shapes are generated, not shipped, and the sphere comes
+in TIERS: 972 triangles below four thousand instances and 108 above,
+chosen by the item from the count. That is a measured decision, not a
+taste: across the boundary a sphere costs 0.33 us at the fine tier and
+0.20 at the coarse, and `make bench` is where the number lives.
+vklib learned the same thing the other way, at fifty thousand
+instances of a three-and-a-half-thousand-triangle sphere.
+
+Instancing keeps a mesh in the one binding shape everything else uses:
+the vertices are a storage buffer read by index, because there is no
+vertex input layout anywhere in this engine and a mesh is not where
+one starts. A unit shape scaled and moved is a uniform scale and a
+translation, so a normal survives it untouched and there is no normal
+matrix — the view rotation is orthonormal, so lighting in view space
+survives too.
+
+**Multisampling**, four samples where the device allows both
+attachments to carry them. A world draws into a multisampled pair of
+its own and RESOLVES into whatever it was asked to fill, so a panel
+world and a window world get it the same way and neither knows. The
+pipeline cache keys on the sample count, because a pipeline is
+compiled against one and cannot be used with another. It is the one
+thing shading cannot fix: a silhouette is a hard edge, and the check
+counts the partly-covered pixels along one — 84 with it, exactly 0
+without.
+
+**A ground pass**, between the opaque geometry and the translucent.
+The grid is the floor of the scene, so solid things occlude it and
+translucent things wash over it; in the overlay it painted over a
+cloud that was in front of it.
+
 ## Stated limitations
 
 - **Transparency is sorted per ITEM, not per particle.** Two
@@ -224,20 +264,19 @@ who never asked.
   directions — zoomed out past the extent the whole grid sits beyond
   its own fade and disappears, and zoomed in the fade never engages,
   so the far field grazes the plane and turns to moire.
-- **The overlay pass draws after transparency**, so the grid paints
-  over a translucent cloud rather than under it. It is what
-  "depth-aware overlay" means with a pass that does not write depth,
-  and it reads acceptably; a grid that should sit UNDER transparency
-  wants its own row between opaque and transparent, which is a one
-  line change to the table and a W2 decision.
 - **A colormap's scale is a number the caller supplies**, not one
   derived from the data: deriving it would need a reduction over the
   buffer every frame, and a scale that moves under you is worse than
   one you set.
-- **No meshes and no shadows** (W3, W5), and no multisampling
-  anywhere — sphere silhouettes and grid lines alias, which is its own
-  decision because it touches the target, the pipelines and the pass
-  table at once. The colour target is 8-bit UNORM, so tone mapping
+- **A mesh tier is chosen from the instance COUNT, not from how big
+  the shapes are on screen.** A dozen spheres filling the frame get
+  the round mesh and ten thousand specks get the cheap one, which is
+  right; ten thousand spheres each filling a quarter of the frame get
+  the cheap one too, which is not. Screen size would be the better
+  signal and needs a bounds the item does not yet compute.
+- **No shadows** (W5), and no user meshes yet: the built-ins cover
+  particles, and geometry a caller computed is the next thing the
+  registry grows. The colour target is 8-bit UNORM, so tone mapping
   would want a format change first.
 
 ## Named follow-ups

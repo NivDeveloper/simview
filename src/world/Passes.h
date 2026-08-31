@@ -23,8 +23,9 @@ namespace sv {
 enum class PassId : std::uint8_t {
     Shadow = 0,
     Opaque = 1,
-    Transparent = 2,
-    Overlay = 3,
+    Ground = 2,
+    Transparent = 3,
+    Overlay = 4,
 };
 
 struct PassDesc {
@@ -48,6 +49,12 @@ struct PassDesc {
 // is 0 and the test passes on GREATER. Transparent tests strictly
 // greater — a translucent surface coplanar with the opaque one that
 // wrote the depth must not blend itself twice.
+//
+// GROUND sits between the opaque geometry and the translucent: it is
+// the floor of the scene, so it is occluded by solid things and
+// translucent things wash over it. Drawing it in the overlay instead
+// puts grid lines ON TOP of a cloud that is in front of them, which
+// is what it did until this row existed.
 // clang-format off: the table reads as a table
 inline constexpr PassDesc kPasses[] = {
     {.name = "shadow",      .enabled = false, .clear_color = false, .clear_depth = true,
@@ -58,6 +65,10 @@ inline constexpr PassDesc kPasses[] = {
      .depth_test = true, .depth_write = true,
      .depth_func = nvrhi::ComparisonFunc::GreaterOrEqual,
      .sort = PassDesc::Sort::StateThenNear},
+    {.name = "ground",      .enabled = true,  .clear_color = false, .clear_depth = false,
+     .depth_test = true, .depth_write = false,
+     .depth_func = nvrhi::ComparisonFunc::GreaterOrEqual,
+     .sort = PassDesc::Sort::Submission},
     {.name = "transparent", .enabled = true,  .clear_color = false, .clear_depth = false,
      .depth_test = true, .depth_write = false,
      .depth_func = nvrhi::ComparisonFunc::Greater,

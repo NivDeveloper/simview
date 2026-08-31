@@ -57,6 +57,7 @@ struct WorldPipelineEntry {
     const struct WorldItemOps *ops;
     PassId pass;
     nvrhi::Format color, depth;
+    std::uint32_t samples;
     nvrhi::GraphicsPipelineHandle pipeline;
     nvrhi::BindingLayoutHandle layout;
 };

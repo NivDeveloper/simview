@@ -46,13 +46,12 @@ struct AxesState {
     float length = 1.0f;
 };
 
-// Both are always visible and never sorted against each other by
-// depth: the overlay pass orders by submission, so the grid draws
-// first and the axes over it.
-void submit_overlay(impl::WorldItem &it, const WorldView &,
-                    std::vector<DrawCmd> &out) {
+// Neither is sorted against anything: both their passes order by
+// submission, so each draws where it was registered.
+void submit_here(impl::WorldItem &it, const WorldView &,
+                 std::vector<DrawCmd> &out) {
     out.push_back(
-        {.key = 0, .seq = 0, .pass = PassId::Overlay, .item = &it, .part = 0});
+        {.key = 0, .seq = 0, .pass = it.ops->pass, .item = &it, .part = 0});
 }
 
 // The set holds only the view block — neither item reads a buffer of
@@ -136,11 +135,13 @@ void axes_release(impl::WorldItem &it) {
 }
 
 // clang-format off: the tables read as tables
+// The grid is the FLOOR, so it draws before anything translucent and
+// lets that wash over it; the axes are a gizmo and belong on top.
 const WorldItemOps kGridOps{
     .name = "grid",
-    .pass = PassId::Overlay,
+    .pass = PassId::Ground,
     .prepare = nullptr,
-    .submit = submit_overlay,
+    .submit = submit_here,
     .draw = grid_draw,
     .release = grid_release,
     .bounds = nullptr,
@@ -161,7 +162,7 @@ const WorldItemOps kAxesOps{
     .name = "axes",
     .pass = PassId::Overlay,
     .prepare = nullptr,
-    .submit = submit_overlay,
+    .submit = submit_here,
     .draw = axes_draw,
     .release = axes_release,
     .bounds = nullptr,

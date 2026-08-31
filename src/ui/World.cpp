@@ -91,6 +91,7 @@ World world_create(App *a, const WorldDesc &d) {
         a->world->pipelines = &a->world_pipelines;
         a->world->gates = &a->gates;
         a->world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
+        a->world->samples = a->platform.vk.samples;
         if (d.grid)
             world_add_grid(*a->world);
         if (d.axes)
@@ -117,6 +118,7 @@ World world_create(App *a, const WorldDesc &d) {
     v.world->pipelines = &a->world_pipelines;
     v.world->gates = &a->gates;
     v.world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
+    v.world->samples = a->platform.vk.samples;
     if (d.grid)
         world_add_grid(*v.world);
     if (d.axes)

@@ -122,11 +122,14 @@ items — so the rest is additive:
   than a panel; orthographic projection; the colormap set over a
   per-point value channel with its own three doors; up to four
   directional lights plus ambient;
-- **W3** the mesh registry and instanced meshes (cube, cubesphere at
-  two tiers), then user meshes; multisampling is the other decision
-  waiting here, since it touches the target, the pipelines and the
-  pass table at once;
-- **W4** the 100k-instance bench with recorded numbers;
+- **W3** (shipped 2026-08-31): the mesh registry and instanced meshes
+  (cube, cubesphere at two tiers, the tier chosen from the count);
+  four-sample multisampling with a resolve; a ground pass so the grid
+  sits under transparency; and `make bench`, because two tiers is a
+  performance claim and a claim wants a number. User meshes are the
+  registry's next entry;
+- **W4** screen-size-driven tiers and culling, on the bounds hook the
+  item contract already declares;
 - **W5** the shadow pass, filling the row already reserved for it;
 - **W6** a flagship: a tensor sim producing device-resident N x 3.
 Named smaller ones live in 3d-plan.md: the `render/` hoist trigger,

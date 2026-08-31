@@ -62,6 +62,10 @@ struct VkContext {
     // device's ns per tick — what platform/Timing.h stamps with.
     bool timestamps = false;
     float timestamp_period = 1.0f;
+    // How many samples a colour AND depth attachment can both carry.
+    // Four where the device allows it, one where it does not — a
+    // world asks for this and never for a number of its own.
+    std::uint32_t samples = 1;
     std::vector<std::string> instance_extensions; // what vk_open enabled
     std::vector<std::string> device_extensions;   // what vk_open enabled
 };

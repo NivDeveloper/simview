@@ -212,6 +212,7 @@ add_library(simview STATIC
     src/ui/View.cpp
     src/ui/World.cpp
     src/world/World.cpp
+    src/world/Geometry.cpp
     src/world/Pipelines.cpp
     src/world/Cloud.cpp
     src/world/GridAxes.cpp
@@ -270,6 +271,7 @@ install(TARGETS simview simview_imgui simview_implot simview_implot3d
 install(DIRECTORY include/simview DESTINATION include)
 
 if(SIMVIEW_BUILD_EXAMPLES)
+    add_subdirectory(bench)
     add_subdirectory(examples/hello)
     add_subdirectory(examples/hello-window)
     add_subdirectory(examples/gas)

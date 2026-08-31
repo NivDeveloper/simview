@@ -81,6 +81,13 @@ void mouse_button(impl::App *, int button, bool down);
 void mouse_wheel(impl::App *, float dy);
 void mouse_modifier_shift(impl::App *, bool down);
 
+// The built-in meshes a world has had to make, newest last, as their
+// triangle counts. A tier is chosen from how many instances there
+// are, so this is how a check asks whether that rule fired without
+// timing anything.
+std::size_t mesh_tiers(impl::App *, const char *title, unsigned *triangles,
+                       std::size_t cap);
+
 // Where a world's camera is now — what an input check asserts against,
 // since a picture can only say something moved. `title` names a
 // world shown in a panel; null asks for the one in the window.

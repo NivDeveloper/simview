@@ -118,6 +118,18 @@ void mouse_modifier_shift(impl::App *a, bool down) {
         io->AddKeyEvent(ImGuiMod_Shift, down);
 }
 
+std::size_t mesh_tiers(impl::App *a, const char *title, unsigned *triangles,
+                       std::size_t cap) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w)
+        return 0;
+    std::size_t n = 0;
+    for (const auto &m : w->meshes)
+        if (n < cap)
+            triangles[n++] = m.triangles;
+    return n;
+}
+
 bool camera_of(impl::App *a, const char *title, CameraState *out) {
     impl::WorldState *w = world_of(a, title);
     if (!w || !out)

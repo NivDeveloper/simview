@@ -10,6 +10,7 @@
 // the same machinery, because a world sits behind the same frame.
 
 #include "../scene/Target.h"
+#include "Geometry.h"
 #include "Items.h"
 
 #include <cstdint>
@@ -54,6 +55,29 @@ struct WorldState {
 
     // Rebuilt every frame, kept so the allocation is not.
     std::vector<DrawCmd> cmds;
+
+    // The built-in shapes, made once and shared by every item that
+    // asks for one. A tier is a triangle budget, not a look: the same
+    // sphere serves a dozen instances and fifty thousand only if
+    // nobody minds it being wrong for one of them.
+    struct Mesh {
+        int shape = 0;
+        int tier = 0;
+        nvrhi::BufferHandle vertices;
+        nvrhi::BufferHandle indices;
+        std::uint32_t index_count = 0;
+        std::uint32_t triangles = 0;
+    };
+    std::vector<Mesh> meshes;
+
+    // Where the world actually draws when the device can multisample:
+    // a colour and depth pair carrying several samples a pixel, which
+    // is RESOLVED into the caller's target at the end of the frame.
+    // A silhouette is a hard edge — the one thing no amount of
+    // shading fixes — and this is what softens it.
+    nvrhi::TextureHandle ms_color, ms_depth;
+    nvrhi::FramebufferHandle ms_fb;
+    std::uint32_t ms_w = 0, ms_h = 0, samples = 1;
 };
 
 } // namespace impl
@@ -80,5 +104,14 @@ void world_add_axes(impl::WorldState &);
 // A new item, wired to the world's device, counters and cache. The
 // kinds' own create functions call this and fill in the state.
 impl::WorldItem &world_item_add(impl::WorldState &, const WorldItemOps *);
+
+// A built-in shape, made on first ask and kept. `shape` is
+// CloudShape's Sphere or Cube; the tier is the item's choice of
+// triangle budget.
+// The list is the FRAME's, and the call belongs in an item's prepare:
+// a second immediate list open at the same time is refused, and by
+// draw time the frame's already has a pass on it.
+const impl::WorldState::Mesh *world_mesh(impl::WorldState &, int shape,
+                                         int tier, nvrhi::ICommandList *);
 
 } // namespace sv

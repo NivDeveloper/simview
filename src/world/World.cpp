@@ -146,13 +146,73 @@ void world_draw(impl::WorldState &w, nvrhi::ICommandList *cl,
         world_draw_into(w, cl, t.fb, t.w, t.h);
 }
 
+namespace {
+
+// The multisampled pair the world draws into, made to fit the target
+// it will be resolved onto. Recreated only when the size changes: it
+// is the largest allocation a world holds.
+bool ensure_msaa(impl::WorldState &w, nvrhi::IFramebuffer *fb, std::uint32_t tw,
+                 std::uint32_t th) {
+    if (w.samples <= 1)
+        return false;
+    if (w.ms_fb && w.ms_w == tw && w.ms_h == th)
+        return true;
+
+    w.ms_fb = nullptr;
+    w.ms_color = nullptr;
+    w.ms_depth = nullptr;
+    const auto &fbd = fb->getDesc();
+    const auto make = [&](nvrhi::Format f, bool color, const char *name) {
+        // A multisampled texture is its OWN dimension, not a 2D one
+        // that happens to carry samples — the renderer refuses the
+        // second spelling by name.
+        auto d = nvrhi::TextureDesc()
+                     .setWidth(tw)
+                     .setHeight(th)
+                     .setFormat(f)
+                     .setDimension(nvrhi::TextureDimension::Texture2DMS)
+                     .setSampleCount(w.samples)
+                     .setIsRenderTarget(true)
+                     .setKeepInitialState(true)
+                     .setDebugName(name);
+        d.initialState = color ? nvrhi::ResourceStates::RenderTarget
+                               : nvrhi::ResourceStates::DepthWrite;
+        return w.gpu.dev->createTexture(d);
+    };
+    w.ms_color = make(fbd.colorAttachments[0].texture->getDesc().format, true,
+                      "world colour (multisampled)");
+    w.ms_depth = make(fbd.depthAttachment.texture->getDesc().format, false,
+                      "world depth (multisampled)");
+    if (w.ms_color && w.ms_depth)
+        w.ms_fb =
+            w.gpu.dev->createFramebuffer(nvrhi::FramebufferDesc()
+                                             .addColorAttachment(w.ms_color)
+                                             .setDepthAttachment(w.ms_depth));
+    if (!w.ms_fb) {
+        // Not fatal: the world draws unsampled rather than not at all.
+        set_error("world: multisampled target creation failed — drawing "
+                  "without it");
+        w.samples = 1;
+        return false;
+    }
+    w.ms_w = tw;
+    w.ms_h = th;
+    return true;
+}
+
+} // namespace
+
 void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
-                     nvrhi::IFramebuffer *fb, std::uint32_t tw,
+                     nvrhi::IFramebuffer *out, std::uint32_t tw,
                      std::uint32_t th) {
-    nvrhi::ITexture *depth =
-        fb ? fb->getDesc().depthAttachment.texture : nullptr;
-    if (!fb || !depth || !tw || !th)
+    if (!out || !out->getDesc().depthAttachment.texture || !tw || !th)
         return;
+
+    // Everything below draws into `fb`, which is the multisampled pair
+    // when there is one and the caller's target when there is not.
+    const bool ms = ensure_msaa(w, out, tw, th);
+    nvrhi::IFramebuffer *fb = ms ? w.ms_fb.Get() : out;
+    nvrhi::ITexture *depth = fb->getDesc().depthAttachment.texture;
 
     for (impl::WorldItem &it : w.items)
         if (it.ops && it.ops->prepare)
@@ -208,6 +268,60 @@ void world_draw_into(impl::WorldState &w, nvrhi::ICommandList *cl,
         }
         i = j;
     }
+
+    // One picture out of several samples a pixel, into the target the
+    // caller asked for. Everything above drew at the higher rate and
+    // knew nothing about it.
+    if (ms)
+        cl->resolveTexture(out->getDesc().colorAttachments[0].texture,
+                           nvrhi::AllSubresources, w.ms_color,
+                           nvrhi::AllSubresources);
+}
+
+const impl::WorldState::Mesh *world_mesh(impl::WorldState &w, int shape,
+                                         int tier, nvrhi::ICommandList *cl) {
+    for (const auto &m : w.meshes)
+        if (m.shape == shape && m.tier == tier)
+            return &m;
+
+    // Sphere tiers are a triangle budget: 108 triangles for a crowd,
+    // 972 for a handful. A cube has one tier because twelve triangles
+    // is already the whole shape.
+    const impl::MeshData data =
+        shape == 2 ? impl::make_cube() : impl::make_sphere(tier == 0 ? 2u : 8u);
+
+    impl::WorldState::Mesh m;
+    m.shape = shape;
+    m.tier = tier;
+    m.triangles = data.triangle_count();
+    m.index_count = data.index_count();
+    m.vertices = w.gpu.dev->createBuffer(
+        nvrhi::BufferDesc()
+            .setByteSize(data.vertices.size() * sizeof(float))
+            .setStructStride(4)
+            .setInitialState(nvrhi::ResourceStates::ShaderResource)
+            .setKeepInitialState(true)
+            .setDebugName("mesh vertices"));
+    m.indices = w.gpu.dev->createBuffer(
+        nvrhi::BufferDesc()
+            .setByteSize(data.indices.size() * sizeof(std::uint32_t))
+            .setIsIndexBuffer(true)
+            .setInitialState(nvrhi::ResourceStates::IndexBuffer)
+            .setKeepInitialState(true)
+            .setDebugName("mesh indices"));
+    if (!m.vertices || !m.indices)
+        return set_error("world mesh: buffer creation failed"), nullptr;
+
+    // On the frame's own list, which is why this is asked for in
+    // prepare: it is open and has no pass yet, and a second immediate
+    // list open beside it is refused outright.
+    cl->writeBuffer(m.vertices, data.vertices.data(),
+                    data.vertices.size() * sizeof(float));
+    cl->writeBuffer(m.indices, data.indices.data(),
+                    data.indices.size() * sizeof(std::uint32_t));
+
+    w.meshes.push_back(m);
+    return &w.meshes.back();
 }
 
 void world_release(impl::WorldState &w) {
@@ -216,6 +330,10 @@ void world_release(impl::WorldState &w) {
             it.ops->release(it);
     w.items.clear();
     w.ops_seen.clear();
+    w.meshes.clear();
+    w.ms_fb = nullptr;
+    w.ms_color = nullptr;
+    w.ms_depth = nullptr;
     w.cmds.clear();
     w.view_cb = nullptr;
 }

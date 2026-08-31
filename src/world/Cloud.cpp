@@ -14,6 +14,8 @@
 #include "../core/Error.h"
 #include "bytecode/cloud_fsmain_spirv.h"
 #include "bytecode/cloud_vsmain_spirv.h"
+#include "bytecode/mesh_fsmain_spirv.h"
+#include "bytecode/mesh_vsmain_spirv.h"
 
 #include <gpud/Vulkan.h>
 
@@ -55,12 +57,19 @@ struct CloudState {
     std::uint32_t mode = 0;
     std::uint32_t map = 0;
     float map_scale = 1.0f;
+    int shape = 0; // CloudShape
+    // The shape this item needs, resolved in prepare; and the one the
+    // binding set was built against, so a tier changing under it
+    // rebuilds — the count decides the tier and the count moves.
+    const impl::WorldState::Mesh *mesh = nullptr;
+    const impl::WorldState::Mesh *bound_mesh = nullptr;
     // The centroid the sort keys on. One number for the whole cloud:
     // a cloud is one draw, so it takes one place in the order.
     impl::Vec3 centre{};
 };
 
-// Matches cloud.slang's CParams.
+// Matches cloud.slang's CParams, and mesh.slang's MParams less the
+// mode the mesh path has no use for.
 struct CloudParams {
     float color[4];
     float radius;
@@ -161,6 +170,9 @@ void recentre(CloudState &cs) {
     cs.centre = ch.count ? sum * (1.0f / float(ch.count)) : impl::Vec3{};
 }
 
+// Everything that touches memory happens here, with the frame's list
+// open and no pass on it: the host's uploads, the producer's current
+// buffer, and the shape this item will need. Draw only binds.
 void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
     CloudState &cs = state_of(it);
     const bool was_dirty = cs.pos.dirty;
@@ -168,6 +180,16 @@ void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
     channel_prepare(cs.val, it.gpu, cl, it.stats, "cloud values");
     if (cs.pos.dirty != was_dirty)
         recentre(cs);
+    channel_resolve(cs.pos, it.gpu, "cloud positions (external)");
+    channel_resolve(cs.val, it.gpu, "cloud values (external)");
+
+    // The tier is chosen from the crowd, not by the caller: a hundred
+    // spheres want to look round and fifty thousand want to be cheap,
+    // and nobody should have to know the number where that flips.
+    if (cs.shape != 0 && it.owner) {
+        const int tier = cs.pos.count > 4096 ? 0 : 1;
+        cs.mesh = world_mesh(*it.owner, cs.shape, cs.shape == 2 ? 0 : tier, cl);
+    }
 }
 
 void submit(impl::WorldItem &it, const WorldView &view,
@@ -192,8 +214,6 @@ void draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     if (!pe || !view.view_cb)
         return;
 
-    channel_resolve(cs.pos, it.gpu, "cloud positions (external)");
-    channel_resolve(cs.val, it.gpu, "cloud values (external)");
     nvrhi::IBuffer *pos = cs.pos.bound();
     if (!pos || !cs.pos.count)
         return;
@@ -243,6 +263,69 @@ void draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     // which point and which corner.
     cl->draw(
         nvrhi::DrawArguments().setVertexCount(std::uint32_t(cs.pos.count) * 6));
+    ++it.stats->draws;
+}
+
+// The same item, drawn as geometry: one instance of a built-in shape
+// per point, in one indexed draw. Everything before the draw call is
+// the billboard path's — the same channels, the same colours, the
+// same lights — which is why a shape is a field and not a kind.
+void draw_mesh(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
+               nvrhi::IFramebuffer *fb, const WorldView &view) {
+    CloudState &cs = state_of(it);
+    const WorldPipelineEntry *pe = world_pipeline_for(
+        it.gpu, *it.pipelines, it.stats, it.ops, it.ops->pass, fb);
+    if (!pe || !view.view_cb || !it.owner)
+        return;
+
+    nvrhi::IBuffer *pos = cs.pos.bound();
+    const impl::WorldState::Mesh *mesh = cs.mesh;
+    if (!pos || !cs.pos.count || !mesh)
+        return;
+
+    const bool mapped =
+        cs.map != 0 && cs.val.bound() && cs.val.count >= cs.pos.count;
+    nvrhi::IBuffer *val = mapped ? cs.val.bound() : pos;
+
+    if (!cs.bset || cs.bound_pos != pos || cs.bound_val != val ||
+        cs.bound_mesh != mesh) {
+        cs.bset = it.gpu.dev->createBindingSet(
+            nvrhi::BindingSetDesc()
+                .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, view.view_cb))
+                .addItem(nvrhi::BindingSetItem::PushConstants(
+                    1, sizeof(CloudParams)))
+                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, pos))
+                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, val))
+                .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(
+                    3, mesh->vertices)),
+            pe->layout);
+        cs.bound_pos = pos;
+        cs.bound_val = val;
+        cs.bound_mesh = mesh;
+    }
+    if (!cs.bset)
+        return;
+
+    CloudParams p{};
+    for (int c = 0; c < 4; ++c)
+        p.color[c] = cs.color[c];
+    p.radius = cs.radius;
+    p.count = std::uint32_t(cs.pos.count);
+    p.mode = cs.mode;
+    p.map = mapped ? cs.map : 0u;
+    p.map_scale = cs.map_scale;
+    cl->setGraphicsState(
+        nvrhi::GraphicsState()
+            .setPipeline(pe->pipeline)
+            .setFramebuffer(fb)
+            .addBindingSet(cs.bset)
+            .setIndexBuffer({mesh->indices, nvrhi::Format::R32_UINT, 0})
+            .setViewport(nvrhi::ViewportState().addViewportAndScissorRect(
+                nvrhi::Viewport(float(view.tw), float(view.th)))));
+    cl->setPushConstants(&p, sizeof p);
+    cl->drawIndexed(nvrhi::DrawArguments()
+                        .setVertexCount(mesh->index_count)
+                        .setInstanceCount(std::uint32_t(cs.pos.count)));
     ++it.stats->draws;
 }
 
@@ -321,15 +404,69 @@ const WorldItemOps kCloudAlphaOps{
 };
 // clang-format on
 
-const WorldItemOps *ops_for(CloudMode m) {
+// clang-format off: the tables read as tables
+const WorldItemOps kMeshSolidOps{
+    .name = "mesh (solid)",
+    .pass = PassId::Opaque,
+    .prepare = prepare,
+    .submit = submit,
+    .draw = draw_mesh,
+    .release = release,
+    .bounds = nullptr,
+    .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
+    .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
+    .blend = kOpaqueBlend,
+    .topology = nvrhi::PrimitiveType::TriangleList,
+    .storage_count = 3,
+    .push_bytes = sizeof(CloudParams),
+};
+
+const WorldItemOps kMeshAdditiveOps{
+    .name = "mesh (additive)",
+    .pass = PassId::Transparent,
+    .prepare = prepare,
+    .submit = submit,
+    .draw = draw_mesh,
+    .release = release,
+    .bounds = nullptr,
+    .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
+    .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
+    .blend = kAdditiveBlend,
+    .topology = nvrhi::PrimitiveType::TriangleList,
+    .storage_count = 3,
+    .push_bytes = sizeof(CloudParams),
+};
+
+const WorldItemOps kMeshAlphaOps{
+    .name = "mesh (alpha)",
+    .pass = PassId::Transparent,
+    .prepare = prepare,
+    .submit = submit,
+    .draw = draw_mesh,
+    .release = release,
+    .bounds = nullptr,
+    .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
+    .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
+    .blend = kAlphaBlend,
+    .topology = nvrhi::PrimitiveType::TriangleList,
+    .storage_count = 3,
+    .push_bytes = sizeof(CloudParams),
+};
+// clang-format on
+
+// Six rows: what it is drawn AS decides the shaders and the draw,
+// what it is drawn LIKE decides the pass and the blend. The pipeline
+// cache sees one entry per pair, which is what the sort key groups by.
+const WorldItemOps *ops_for(CloudMode m, CloudShape shape) {
+    const bool mesh = shape != CloudShape::Billboard;
     switch (m) {
     case CloudMode::Additive:
-        return &kCloudAdditiveOps;
+        return mesh ? &kMeshAdditiveOps : &kCloudAdditiveOps;
     case CloudMode::Alpha:
-        return &kCloudAlphaOps;
+        return mesh ? &kMeshAlphaOps : &kCloudAlphaOps;
     case CloudMode::Solid:
     default:
-        return &kCloudSolidOps;
+        return mesh ? &kMeshSolidOps : &kCloudSolidOps;
     }
 }
 
@@ -350,7 +487,7 @@ Cloud cloud_new(World w, const CloudDesc &d, HostSource host,
                          "pixels"),
                Cloud{};
 
-    WorldItem &it = world_item_add(*ws, ops_for(d.mode));
+    WorldItem &it = world_item_add(*ws, ops_for(d.mode, d.shape));
     CloudState *cs = new CloudState{};
     cs->pos.host = host;
     cs->pos.src = src;
@@ -359,6 +496,7 @@ Cloud cloud_new(World w, const CloudDesc &d, HostSource host,
         cs->color[c] = d.color[c];
     cs->radius = d.radius;
     cs->mode = d.mode == CloudMode::Solid ? 0u : 1u;
+    cs->shape = int(d.shape);
     cs->map = std::uint32_t(d.map);
     cs->map_scale = d.map_scale > 0.0f ? d.map_scale : 1.0f;
     it.state = cs;

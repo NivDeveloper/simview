@@ -8,7 +8,7 @@ PREFIX ?= $(HOME)/Projects/toolchains/sdl3
 build/CMakeCache.txt:
 	CMAKE_PREFIX_PATH=$(PREFIX) cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-.PHONY: all test lint install-check run debug san tsan flagship validate trace clean
+.PHONY: all test lint install-check run debug san tsan flagship validate trace bench clean
 all: build/CMakeCache.txt
 	cmake --build build -j $(JOBS)
 
@@ -82,6 +82,11 @@ ifeq ($(shell uname),Darwin)
 	    MTL_SHADER_VALIDATION=1 $(WAIT_MS) SIMVIEW_VVL=sync,abort \
 	    SIMVIEW_FRAMES=120 ./build/examples/$$x/$$x || exit 1; done
 endif
+
+# What a crowd of instanced geometry costs. A REPORT, not a gate: it
+# prints numbers and passes no judgement on them.
+bench: all
+	SIMVIEW_TIMINGS=1 $(WAIT_MS) ./build/bench/bench_instances
 
 # The tracing build, its own tree: Tracy's client linked, every zone
 # and both GPU contexts live. Run any example from it and connect

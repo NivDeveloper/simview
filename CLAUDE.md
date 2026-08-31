@@ -245,6 +245,7 @@ Next: 3-D scene kinds, and more than one window.
 | **sanitizers** | `make san` / `make tsan` — ASan+UBSan over the suite, TSan over sync_check. **Neither runs on macOS 26+**: the AppleClang sanitizer runtime spins in `get_dyld_hdr()` during its own startup, before `main` — a runtime-vs-OS break, nothing to do with this code. `.github/workflows/weekly.yml` runs both on Linux |
 | **the flagship** | `make flagship` — builds examples/xy-gpu and examples/ising (need g++-16); NO runner reaches them, so this is the local gate that keeps the door from rotting |
 | **validation** | `make validate` — the suite and the four windowed showcases under `SIMVIEW_VVL=sync,abort`, then (Darwin) under Metal's API + shader validation; an error is an exit code, never a grep. CI's Linux leg runs its gates the same way on every push |
+| **bench** | `make bench` — what a crowd of instanced geometry costs, per shape and per count. A REPORT: it prints numbers and judges none of them |
 | clean | `make clean` (build, build-san, build-tsan) |
 
 **Configure through `make`, never `cmake -B build` by hand.** SDL3 is

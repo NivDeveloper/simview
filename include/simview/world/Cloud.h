@@ -14,6 +14,12 @@ enum class CloudMode : int {
     Alpha = 2,
 };
 
+enum class CloudShape : int {
+    Billboard = 0,
+    Sphere = 1,
+    Cube = 2,
+};
+
 enum class CloudMap : int {
     Uniform = 0,
     Magnitude = 1,
@@ -25,6 +31,7 @@ struct CloudDesc {
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     float radius = 0.05f;
     CloudMode mode = CloudMode::Solid;
+    CloudShape shape = CloudShape::Billboard;
     CloudMap map = CloudMap::Uniform;
     float map_scale = 1.0f;
 };

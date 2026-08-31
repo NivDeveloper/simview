@@ -27,8 +27,14 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
     const nvrhi::Format df = fbd.depthAttachment.texture
                                  ? fbd.depthAttachment.texture->getDesc().format
                                  : nvrhi::Format::UNKNOWN;
+    // The sample count is part of the key: a pipeline is compiled
+    // against a framebuffer's sample count and cannot be used with
+    // another, and two targets can agree on every format and differ
+    // only here.
+    const std::uint32_t ms = fb->getFramebufferInfo().sampleCount;
     for (const auto &e : cache)
-        if (e.ops == ops && e.pass == pass && e.color == cf && e.depth == df)
+        if (e.ops == ops && e.pass == pass && e.color == cf && e.depth == df &&
+            e.samples == ms)
             return &e;
 
     auto vs =
@@ -95,6 +101,7 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
                      .pass = pass,
                      .color = cf,
                      .depth = df,
+                     .samples = ms,
                      .pipeline = pipeline,
                      .layout = layout});
     ++stats->pipelines;
