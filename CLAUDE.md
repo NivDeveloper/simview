@@ -77,7 +77,21 @@ Next: 3-D scene kinds, and more than one window.
 - **Headless is first-class.** Every view must render offscreen
   byte-identically to onscreen.
 - **A gate must be broken once when added** — watch it go red, then
-  restore. A check that never fired is a comment.
+  restore. A check that never fired is a comment. The same test
+  applies to CODE: a drill that cannot tell a branch apart has found
+  dead weight, not a passing gate (the camera's grab latch went that
+  way — ImGui already owns a drag from its press).
+- **An interaction is testable, and therefore tested.**
+  `tests/harness/Input.h` spells a gesture the way a person performs
+  it — `input::drag(app, x0, y0, x1, y1)`, `wheel`, `press`,
+  `release` — over `probe::mouse_*`, which puts synthetic events into
+  ImGui's own queue. A headless app runs no backend, so nothing
+  overwrites them. It covers hit-testing and everything above it:
+  which panel owns the pointer, whether a drag latched, what the
+  camera did. It does NOT cover the platform's translation of real
+  events into UI events — that is the backend's, and the windowed
+  showcases under `make validate` are where it is exercised for
+  real.
 - **The windowed path has no headless check — `make validate` is its
   gate.** The suite and the four windowed showcases run under the
   Khronos layer with synchronization validation, aborting on the

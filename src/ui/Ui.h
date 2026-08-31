@@ -62,8 +62,16 @@ void ui_views_resize(impl::App *);
 // will sample them.
 void ui_views_draw(impl::App *, nvrhi::ICommandList *);
 
-// The camera gesture, read off the panel the world is shown in.
-void world_camera_input(impl::WorldState &);
+// The camera gesture. `hovered` and `active` are the caller's to
+// establish: a world in a panel takes them from the image item ImGui
+// already latches, a world in the window from whether any panel
+// claimed the pointer.
+void world_camera_gesture(impl::WorldState &, bool hovered, bool active);
+
+// The window's world reads what the panels did not claim. Called once
+// a frame, after they are built, because that is when the answer is
+// true.
+void ui_world_input(impl::App *);
 
 // Is there a UI frame to build? A context exists AND somebody asked
 // for a panel. With nobody asking, no ImGui frame is built at all and

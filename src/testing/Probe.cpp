@@ -17,6 +17,7 @@
 #include "../../tests/probe/Probe.h"
 
 #include <gpud/Vulkan.h>
+#include <imgui.h>
 #include <nvrhi/vulkan.h>
 
 namespace sv {
@@ -71,6 +72,70 @@ std::size_t compute_batches(impl::App *a, ComputeBatch *out, std::size_t cap) {
             out[n++] = {b.first.value, b.last.value, b.dispatches,
                         b.gpu_begin_ns, b.gpu_end_ns};
     return n;
+}
+
+namespace {
+
+// Every entry point below writes into the App's OWN context: a check
+// may hold two apps, and ImGui's current-context is global state.
+ImGuiIO *io_of(impl::App *a) {
+    if (!a || !a->ui.ctx)
+        return nullptr;
+    ImGui::SetCurrentContext(a->ui.ctx);
+    return &ImGui::GetIO();
+}
+
+impl::WorldState *world_of(impl::App *a, const char *title) {
+    if (!a)
+        return nullptr;
+    if (!title || !*title)
+        return a->world.get();
+    for (impl::View &v : a->views)
+        if (v.world && v.title == title)
+            return v.world.get();
+    return nullptr;
+}
+
+} // namespace
+
+void mouse_move(impl::App *a, float x, float y) {
+    if (ImGuiIO *io = io_of(a))
+        io->AddMousePosEvent(x, y);
+}
+
+void mouse_button(impl::App *a, int button, bool down) {
+    if (ImGuiIO *io = io_of(a))
+        io->AddMouseButtonEvent(button, down);
+}
+
+void mouse_wheel(impl::App *a, float dy) {
+    if (ImGuiIO *io = io_of(a))
+        io->AddMouseWheelEvent(0.0f, dy);
+}
+
+void mouse_modifier_shift(impl::App *a, bool down) {
+    if (ImGuiIO *io = io_of(a))
+        io->AddKeyEvent(ImGuiMod_Shift, down);
+}
+
+bool camera_of(impl::App *a, const char *title, CameraState *out) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w || !out)
+        return false;
+    const impl::Vec3 f = impl::camera_forward(w->camera);
+    const impl::Vec3 u = impl::camera_up(w->camera);
+    out->focus[0] = w->camera.focus.x;
+    out->focus[1] = w->camera.focus.y;
+    out->focus[2] = w->camera.focus.z;
+    out->distance = w->camera.distance;
+    out->forward[0] = f.x;
+    out->forward[1] = f.y;
+    out->forward[2] = f.z;
+    out->up[0] = u.x;
+    out->up[1] = u.y;
+    out->up[2] = u.z;
+    out->orthographic = w->camera.projection == impl::Projection::Orthographic;
+    return true;
 }
 
 void stall_frame(impl::App *a) {

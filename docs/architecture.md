@@ -282,9 +282,12 @@ The rule:
   count, the renderer device, the shared-queue bracket, and the
   validation tally (`validation_on`, `validation_errors`),
   `stall_frame` (a frame made to wait on a value nothing signals, so
-  `hang_check` can prove the bounded wait reports it), and the timing
+  `hang_check` can prove the bounded wait reports it), the timing
   records (`timings_on`, `gpu_sections`, `compute_batches` — the last
-  frame's stamps, for `timing_check`) — what a check asks that a
+  frame's stamps, for `timing_check`), and synthetic pointer input
+  with the camera state to check it against (`mouse_move`,
+  `mouse_button`, `mouse_wheel`, `camera_of` — what
+  `tests/harness/Input.h` is built on) — what a check asks that a
   consumer never may.
 - Test-only exports live in `sv::probe`, never `sv::impl`. One grep
   answers "what exists only for tests?".

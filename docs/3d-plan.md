@@ -133,11 +133,32 @@ camera's own right. Pan moves the focus in the screen plane at a rate
 proportional to distance; dolly is multiplicative and clamped.
 
 The controller (`src/ui/World.cpp`) is the only mouse reader in the
-engine, and it reads ImGui's item state — `IsItemActive` on the
-panel's image — never SDL. A drag that began somewhere else cannot
-steer the camera, and because ImGui hands over per-frame deltas there
-is no remembered cursor of ours to seed, so the first-frame jump that
-a remembered position causes cannot happen.
+engine, and it reads ImGui's state, never SDL. One gesture function
+takes the two facts it needs — is the pointer over this world, is a
+drag on it under way — and the caller establishes them: a world in a
+panel from the item ImGui latches, a world in the window from whether
+any panel claimed the pointer. Because ImGui hands over per-frame
+deltas there is no remembered cursor of ours to seed, so the
+first-frame jump a remembered position causes cannot happen; and
+because whoever the press landed on owns the drag until the release,
+no latch of our own is needed (one was written and then removed, when
+a drill proved nothing could tell it apart).
+
+Three things about that path were wrong until a check could speak
+mouse, and none of them was visible in a picture:
+
+- **A world in the window read no pointer at all.** Its input hangs
+  off the UI frame, and the UI frame ran only when something had
+  registered a panel — a world registers none. `ui_on` now counts a
+  world in the window as a reason to build one.
+- **A world in a panel never latched a drag.** Its rect was an
+  `ImGui::Image`, which can be hovered and can never become ACTIVE,
+  because nothing about an image responds to a press. The rect is now
+  an `InvisibleButton` with the texture drawn under it — the idiom for
+  a viewport, and the thing that makes a drag a drag.
+- **Neither was true when W1 claimed both were.** The gap was named in
+  W1 as "the controller has no headless check"; this is what was
+  behind it.
 
 ## What W2 added
 
@@ -217,10 +238,8 @@ who never asked.
 - **A bounds-driven near plane.** `WorldItemOps::bounds` is declared
   and null: the near plane follows the orbit distance for now, and a
   world of very different scale would rather it followed the geometry.
-- **A headless check for the controller.** The gesture-to-math mapping
-  is covered by `world_math_check` and the `orbit` example under
-  `make validate`, but nothing drives a synthetic drag; ImGui's
-  `io.AddMouse*` from a check is the way in.
+- ~~A headless check for the controller~~ — **closed** by
+  `input_check` and `tests/harness/Input.h`.
 
 ## What the checks prove
 

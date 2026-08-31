@@ -68,6 +68,31 @@ bool timings_on(impl::App *);
 std::size_t gpu_sections(impl::App *, GpuSection *out, std::size_t cap);
 std::size_t compute_batches(impl::App *, ComputeBatch *out, std::size_t cap);
 
+// Synthetic pointer input, delivered where a backend delivers the
+// real thing: into the UI's own event queue, to be consumed by the
+// next frame the app builds. A headless app runs no backend, so
+// nothing overwrites these — which is what makes a gesture testable
+// without a window, a cursor or a person.
+//
+// One frame per call is the unit: press, then move, then release,
+// each with a Step between, is what a drag IS to the layer under test.
+void mouse_move(impl::App *, float x, float y);
+void mouse_button(impl::App *, int button, bool down);
+void mouse_wheel(impl::App *, float dy);
+void mouse_modifier_shift(impl::App *, bool down);
+
+// Where a world's camera is now — what an input check asserts against,
+// since a picture can only say something moved. `title` names a
+// world shown in a panel; null asks for the one in the window.
+struct CameraState {
+    float focus[3];
+    float distance;
+    float forward[3];
+    float up[3];
+    bool orthographic;
+};
+bool camera_of(impl::App *, const char *title, CameraState *out);
+
 // Make the next graphics submission wait GPU-side on a compute-timeline
 // value nothing will ever signal — the hang a deleted pump or a stamp
 // past what compute will reach would cause — so a check can prove the

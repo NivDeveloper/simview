@@ -71,7 +71,13 @@ VkFormat g_viewport_format = VK_FORMAT_B8G8R8A8_UNORM;
 
 namespace sv {
 
-bool ui_on(impl::App *a) { return a && a->ui.ctx && !a->ui.cbs.empty(); }
+// A UI frame runs when something needs one — and a world in the
+// window needs one even with no panels over it, because the pointer
+// it steers by is ImGui's to report. Without this a 3D program with
+// nothing but a scene never sees a mouse at all.
+bool ui_on(impl::App *a) {
+    return a && a->ui.ctx && (!a->ui.cbs.empty() || a->world);
+}
 
 void ui_init(impl::App *a, const Config &c) {
     IMGUI_CHECKVERSION();
@@ -365,13 +371,26 @@ void view_draw(impl::View &v) {
             v.bound_gen = v.target.gen;
         }
         if (v.imgui_tex) {
-            ImGui::Image(ImTextureRef(ImTextureID(
-                             reinterpret_cast<intptr_t>(v.imgui_tex))),
-                         avail);
-            // Right after the image, while it is the current item: the
-            // drag belongs to whatever it was started on.
-            if (v.world)
-                world_camera_input(*v.world);
+            const ImTextureRef tex(
+                ImTextureID(reinterpret_cast<intptr_t>(v.imgui_tex)));
+            if (v.world) {
+                // A world is DRAGGED, and an image cannot be: it is an
+                // item that can be hovered and never becomes active,
+                // because nothing about it responds. So the rect is an
+                // invisible button — which owns the pointer properly,
+                // press and all — and the texture is drawn under it.
+                const ImVec2 p0 = ImGui::GetCursorScreenPos();
+                ImGui::InvisibleButton("##world", avail,
+                                       ImGuiButtonFlags_MouseButtonLeft |
+                                           ImGuiButtonFlags_MouseButtonRight);
+                const bool hovered = ImGui::IsItemHovered();
+                const bool active = ImGui::IsItemActive();
+                ImGui::GetWindowDrawList()->AddImage(
+                    tex, p0, ImVec2(p0.x + avail.x, p0.y + avail.y));
+                world_camera_gesture(*v.world, hovered, active);
+            } else {
+                ImGui::Image(tex, avail);
+            }
         }
     }
     ImGui::End();
@@ -385,6 +404,9 @@ bool ui_event(impl::App *a, const SDL_Event &ev) {
 
 void ui_run_panels(impl::App *a) {
     impl::in_order(a->ui.cbs, [](const impl::Cb &c) { c.fn(c.user); });
+    // After them, never before: whether a panel claimed the pointer is
+    // only true once every panel has had its say.
+    ui_world_input(a);
 }
 
 void ui_views_resize(impl::App *a) {

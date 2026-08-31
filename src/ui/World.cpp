@@ -19,22 +19,27 @@
 
 namespace sv {
 
-// Called from view_draw, right after the image: ImGui has just told us
-// whether the cursor is over it and whether a drag started there. A
-// gesture that began elsewhere must not steer this camera, which is
-// what IsItemActive answers and a raw mouse position could not.
-void world_camera_input(impl::WorldState &w) {
+// The gesture itself, from two facts the caller establishes: whether
+// the pointer is over this world, and whether a drag on it is under
+// way. A world in a panel gets both from the image item ImGui already
+// latches; the window's world has no item, so the latch below is its.
+void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
     ImGuiIO &io = ImGui::GetIO();
-    const bool hovered = ImGui::IsItemHovered();
-    const bool active = ImGui::IsItemActive();
+    const bool left = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    const bool right = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
-    if (active) {
-        const ImVec2 d = io.MouseDelta;
+    // No latch of our own: whoever the press landed on OWNS the drag
+    // until the release, and both callers get that for free — an item
+    // stays active while it is dragged, and a press that began outside
+    // every panel keeps the pointer uncaptured however far it wanders.
+    // A latch here was written first and removed once a drill proved
+    // nothing could tell it apart.
+    if (active && (left || right)) {
         // Per-frame deltas, not a remembered cursor: there is no state
         // of ours to seed on the first frame of a drag, so the jump
         // that a remembered position causes cannot happen.
-        const bool pan =
-            io.KeyShift || ImGui::IsMouseDown(ImGuiMouseButton_Right);
+        const ImVec2 d = io.MouseDelta;
+        const bool pan = io.KeyShift || right;
         if (d.x != 0.0f || d.y != 0.0f) {
             if (pan)
                 impl::camera_pan(w.camera, d.x, d.y);
@@ -44,6 +49,16 @@ void world_camera_input(impl::WorldState &w) {
     }
     if (hovered && io.MouseWheel != 0.0f)
         impl::camera_dolly(w.camera, io.MouseWheel);
+}
+
+// The window's world steers on whatever the panels did not claim.
+// WantCaptureMouse is the whole test: it is true while a panel is
+// hovered or owns a drag, and false over the scene behind them.
+void ui_world_input(impl::App *a) {
+    if (!a || !a->world)
+        return;
+    const bool free = !ImGui::GetIO().WantCaptureMouse;
+    world_camera_gesture(*a->world, free, free);
 }
 
 namespace impl {
