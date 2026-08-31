@@ -12,10 +12,12 @@
 // carrying its functions, its shaders and its pipeline shape. Nothing
 // switches on a kind and nothing enumerates them.
 
-#include "../scene/Kinds.h"
-#include "../scene/Target.h"
+#include "../render/Shader.h"
+#include "../render/Target.h"
+
 #include "Math.h"
 #include "Passes.h"
+#include <simview/App.h>
 
 #include <cstdint>
 #include <vector>

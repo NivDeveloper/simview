@@ -292,12 +292,14 @@ boundary. `examples/orbit` is the same world in one panel-free window.
 
 ## Named follow-ups
 
-- **The `render/` hoist.** `Gpu`, `RenderTarget` and `Stats` are
-  shared by both strata today through `scene/Target.h`. When a second
-  consumer appears — the W5 shadow target is the likely one — hoist
-  them into their own layer, behaviour-preserving, under the pixel
-  checks. Doing it now would churn three 2D kinds, the lint DAG and
-  CMake for no behaviour.
+- ~~The `render/` hoist~~ — **done in W5**, on the trigger it was
+  deferred with: the shadow map is a target with no colour attachment,
+  which is a second consumer of the same resize-and-recreate
+  discipline. `Gpu`, `RenderTarget` and `Shader` moved to `src/render/`
+  and nothing else changed — the pixel checks were the proof. It also
+  cut the last `world/ -> scene/` edge, so the two strata now share
+  the bottom layer and nothing else, which is a stronger rule than the
+  one-way arrow it replaces.
 - ~~Per-pass GPU timestamps~~ — **closed in W4**. A world stamps a
   section per pass instead of drawing inside one called "scene"; the
   2D path keeps that name. Sections still do not nest, so a world's

@@ -10,7 +10,7 @@
 // the same machinery, because a world sits behind the same frame.
 
 #include "../platform/Timing.h"
-#include "../scene/Target.h"
+#include "../render/Target.h"
 #include "Geometry.h"
 #include "Items.h"
 

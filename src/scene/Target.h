@@ -1,47 +1,16 @@
 #pragma once
 
-// Internal to src/ — a texture that is resized to a requested size
-// and drawn into. It knows nothing about panels: the layer above asks
-// for a size (want_w, want_h), and the next resize honours it. That
-// one-way channel is what keeps the DAG exact — ui writes a scene
-// struct's field, scene never reads a ui type.
-//
-// The texture is recreated BEFORE the UI frame is built, because that
-// frame's draw list records the handle; a texture released after
-// being recorded is a use-after-free with a picture on the other side.
+// Internal to src/ — drawing a SCENE into a render target. The target
+// itself, and the two devices behind it, are render/'s: both strata
+// use them and neither owns them.
 
+#include "../render/Target.h"
 #include "Scene.h"
 
 namespace sv {
-namespace impl {
-
-struct RenderTarget {
-    nvrhi::TextureHandle tex;
-    // A depth attachment, only where something asked for one: a 2D
-    // scene never tests depth, and a framebuffer that carries an
-    // attachment nobody writes is a pipeline incompatibility waiting
-    // to be discovered. Set before the first resize; never after.
-    nvrhi::TextureHandle depth;
-    bool want_depth = false;
-    nvrhi::FramebufferHandle fb;
-    std::uint32_t w = 0, h = 0;
-    std::uint32_t want_w = 256, want_h = 256;
-    // Bumped by every (re)creation. What a sampler of this target keys
-    // its descriptor on — never the texture's address, which the
-    // allocator hands straight back to the next texture.
-    std::uint32_t gen = 0;
-};
-
-} // namespace impl
-
-// Match the texture to the size asked for. A failure leaves w = h = 0
-// and reports it.
-void target_resize(const impl::Gpu &, impl::RenderTarget &);
 
 // Draw a scene into the target, if it has one.
 void target_draw(impl::SceneState &, nvrhi::ICommandList *,
                  impl::RenderTarget &);
-
-void target_release(impl::RenderTarget &);
 
 } // namespace sv

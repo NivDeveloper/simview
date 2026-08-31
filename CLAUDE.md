@@ -400,23 +400,29 @@ third_party/       vendored deps, one dir each, PIN + LICENSE
                    required (README.md is the contract; exempt from
                    the format gate, never from the warning flags)
 src/               folded by LAYER, not by stratum (the namespace
-                   already carries that): core/ platform/ scene/
-                   world/ ui/ door/ sync/ testing/. A feature is one
-                   folder; its exported and internal halves are
+                   already carries that): core/ render/ platform/
+                   scene/ world/ ui/ door/ sync/ testing/. A feature
+                   is one folder; its exported and internal halves are
                    files in it
 src/core/App.h     the composed App: each member's type from its own
                    layer's header. Lint rule (j) is the DAG: scene/
                    and the platform state headers never name ui/
+src/render/        the bottom of the drawing stack, under BOTH
+                   strata and owned by neither: the two devices, a
+                   resizable target, how a shader is named. It
+                   reaches nothing but core (lint). It exists
+                   because a second consumer appeared — the world's
+                   shadow map, which is a target with no colour
 src/scene/         a kind is ONE file: state, uniform block, shaders,
                    KindOps, and its exported functions. Nothing else
                    names a kind
 src/world/         the 3D stratum BESIDE scene, not inside it: a pass
                    table, items that submit draws, one sort, reverse-Z
                    depth, the camera. An item is ONE file, the same
-                   shape as a kind. It borrows Gpu and RenderTarget
-                   from scene/ and the arrow points one way (lint). A
-                   pass is also a TIMING section, so a frame says
-                   where its milliseconds went.
+                   shape as a kind. It shares render/ with scene/
+                   and NOTHING else — neither stratum may name the
+                   other (lint). A pass is also a TIMING section, so
+                   a frame says where its milliseconds went.
                    docs/3d-plan.md is the decision record
 src/testing/       sv::probe — the ONLY test-only code, in its own
                    never-installed archive (lint rule (i))

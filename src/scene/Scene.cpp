@@ -34,71 +34,10 @@ bool scene_grid(const impl::SceneState &sc, Extent2 *out) {
     return false;
 }
 
-// The one format a target is asked for: a colour target that can
-// also be sampled, and universally supported as both.
-constexpr nvrhi::Format kTargetFormat = nvrhi::Format::RGBA8_UNORM;
-
-void target_resize(const impl::Gpu &gpu, impl::RenderTarget &t) {
-    if (t.tex && t.w == t.want_w && t.h == t.want_h)
-        return;
-    t.fb = nullptr;
-    t.tex = nullptr;
-    t.depth = nullptr;
-
-    t.tex = gpu.dev->createTexture(
-        nvrhi::TextureDesc()
-            .setWidth(t.want_w)
-            .setHeight(t.want_h)
-            .setFormat(kTargetFormat)
-            .setIsRenderTarget(true)
-            .setInitialState(nvrhi::ResourceStates::ShaderResource)
-            .setKeepInitialState(true)
-            .setDebugName("view target"));
-    if (!t.tex) {
-        set_error("view texture: creation failed");
-        t.w = t.h = 0;
-        return;
-    }
-    // Reverse-Z wants a FLOAT depth format: the precision it buys
-    // comes from the exponent, and a normalized one would throw it
-    // away. The world clears this to 0 and tests GreaterOrEqual.
-    if (t.want_depth) {
-        t.depth = gpu.dev->createTexture(
-            nvrhi::TextureDesc()
-                .setWidth(t.want_w)
-                .setHeight(t.want_h)
-                .setFormat(nvrhi::Format::D32)
-                .setIsRenderTarget(true)
-                .setInitialState(nvrhi::ResourceStates::DepthWrite)
-                .setKeepInitialState(true)
-                .setDebugName("view depth"));
-        if (!t.depth) {
-            set_error("view depth texture: creation failed");
-            t.tex = nullptr;
-            t.w = t.h = 0;
-            return;
-        }
-    }
-    auto fbd = nvrhi::FramebufferDesc().addColorAttachment(t.tex);
-    if (t.depth)
-        fbd.setDepthAttachment(t.depth);
-    t.fb = gpu.dev->createFramebuffer(fbd);
-    t.w = t.want_w;
-    t.h = t.want_h;
-    ++t.gen;
-}
-
 void target_draw(impl::SceneState &sc, nvrhi::ICommandList *cl,
                  impl::RenderTarget &t) {
     if (t.fb)
         scene_draw(sc, cl, t.fb, t.w, t.h, kTargetFormat);
-}
-
-void target_release(impl::RenderTarget &t) {
-    t.fb = nullptr;
-    t.tex = nullptr;
-    t.depth = nullptr;
-    t.w = t.h = 0;
 }
 
 void scene_release(impl::SceneState &sc) {

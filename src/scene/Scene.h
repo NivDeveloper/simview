@@ -10,6 +10,7 @@
 // whole of what a kind asks of the world outside its own state.
 
 #include "../core/Error.h"
+#include "../render/Gpu.h"
 #include "Kinds.h"
 
 #include <simview/App.h>
@@ -26,13 +27,6 @@ namespace sv {
 namespace impl {
 
 struct PipelineEntry;
-
-// The two devices a kind may speak to: NVRHI for its own resources,
-// gpud for resolving a pull source's native buffer.
-struct Gpu {
-    nvrhi::IDevice *dev = nullptr;
-    gpud::Device *gdev = nullptr;
-};
 
 struct SceneItem {
     Gpu gpu;                                         // the upload + resolve

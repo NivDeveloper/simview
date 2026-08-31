@@ -13,6 +13,7 @@
 // non-const, non-inline arrays, so two includers would be a multiple
 // definition.
 
+#include "../render/Shader.h"
 #include <nvrhi/nvrhi.h>
 #include <simview/Scene.h>
 #include <simview/Types.h>
@@ -24,15 +25,6 @@ namespace sv {
 namespace impl {
 struct SceneItem;
 } // namespace impl
-
-// One stage's program: committed SPIR-V plus the entry point slangc
-// kept (-fvk-use-entrypoint-name — NVRHI passes it to pipeline
-// creation, and a mismatch dies inside the driver's SPIRV consumer).
-struct Shader {
-    const unsigned char *code = nullptr;
-    unsigned len = 0;
-    const char *entry = nullptr;
-};
 
 // What every kind needs to place itself on the target: the range the
 // scene maps into, the ONE aspect-fit every kind shares (which is what

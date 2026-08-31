@@ -201,6 +201,7 @@ add_library(simview STATIC
     src/platform/Frame.cpp
     src/platform/Input.cpp
     src/platform/Timing.cpp
+    src/render/Target.cpp
     src/scene/Field.cpp
     src/scene/Lines.cpp
     src/scene/Particles.cpp

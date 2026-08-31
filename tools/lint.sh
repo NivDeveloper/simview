@@ -65,8 +65,8 @@ if [ -n "$stray" ]; then
     fail=1
 fi
 
-# (j): the include DAG inside src/, core -> platform -> scene -> world
-# -> ui.
+# (j): the include DAG inside src/,
+#   core -> render -> platform -> scene -> world -> ui
 # scene/ may name nothing from ui/ and never the composed App: a kind
 # sees a device and a counter block, not the world. And the layer
 # STATE headers (platform/Device.h, platform/Input.h) may not name ui/
@@ -78,18 +78,34 @@ dag=$( (grep -ln '"\.\./ui/\|core/App\.h' src/scene/*.cpp src/scene/*.h; \
         grep -ln '"\.\./ui/\|core/App\.h' src/platform/Device.h src/platform/Input.h) \
        2>/dev/null || true)
 if [ -n "$dag" ]; then
-    echo "LINT: a layer reaches UP the DAG (core -> platform -> scene ->"
-    echo "      world -> ui):"
+    echo "LINT: a layer reaches UP the DAG (core -> render -> platform ->"
+    echo "      scene -> world -> ui):"
     echo "$dag"
     fail=1
 fi
 
-# The 2D and 3D strata are SIBLINGS, and the arrow points one way: a
-# world may borrow the target and the device a scene defined, a scene
-# may not know a world exists.
-crossed=$(grep -ln '"\.\./world/' src/scene/*.cpp src/scene/*.h 2>/dev/null || true)
+# render/ is the BOTTOM of the drawing stack: the two devices, a
+# resizable target, and how a shader is named. It reaches nothing but
+# core, which is what lets both strata sit on it without either owning
+# it. A helper that wants a stratum's type does not belong here.
+low=$(grep -ln '"\.\./platform/\|"\.\./scene/\|"\.\./world/\|"\.\./ui/' \
+      src/render/*.cpp src/render/*.h 2>/dev/null || true)
+if [ -n "$low" ]; then
+    echo "LINT: render/ reaches up out of the bottom layer:"
+    echo "$low"
+    fail=1
+fi
+
+# The 2D and 3D strata are SIBLINGS and now share NOTHING but render/:
+# neither may name the other. The world borrowed the scene's target and
+# device until those moved down, and the day that edge comes back is
+# the day the two stop being independent.
+crossed=$( (grep -ln '"\.\./world/' src/scene/*.cpp src/scene/*.h; \
+            grep -ln '"\.\./scene/' src/world/*.cpp src/world/*.h) \
+          2>/dev/null || true)
 if [ -n "$crossed" ]; then
-    echo "LINT: scene/ reaches into world/ — the arrow points the other way:"
+    echo "LINT: the two strata name each other — they share render/ and"
+    echo "      nothing else:"
     echo "$crossed"
     fail=1
 fi
