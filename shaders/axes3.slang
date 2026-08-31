@@ -22,8 +22,7 @@ struct A2F {
     float4 color : TEXCOORD0;
 };
 
-[shader("vertex")]
-A2F vsmain(uint vI : SV_VertexID) {
+[shader("vertex")] A2F vsmain(uint vI : SV_VertexID) {
     const uint axis = vI / 2u;
     const bool tip = (vI % 2u) == 1u;
 
@@ -47,5 +46,7 @@ A2F vsmain(uint vI : SV_VertexID) {
     return o;
 }
 
-[shader("fragment")]
-float4 fsmain(A2F v) : SV_Target { return v.color; }
+    [shader("fragment")] float4 fsmain(A2F v)
+    : SV_Target {
+    return v.color;
+}

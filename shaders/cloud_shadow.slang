@@ -36,8 +36,7 @@ struct S2F {
     float2 local : TEXCOORD0;
 };
 
-[shader("vertex")]
-S2F vsmain(uint vI : SV_VertexID) {
+[shader("vertex")] S2F vsmain(uint vI : SV_VertexID) {
     const uint i = vI / 6u;
     const uint v = vI % 6u;
 
@@ -49,10 +48,10 @@ S2F vsmain(uint vI : SV_VertexID) {
     }
 
     const uint c = (v < 3u) ? v : (v == 3u ? 2u : (v == 4u ? 1u : 3u));
-    const float2 corner = float2(float(c & 1u), float((c >> 1u) & 1u)) * 2.0f - 1.0f;
+    const float2 corner =
+        float2(float(c & 1u), float((c >> 1u) & 1u)) * 2.0f - 1.0f;
 
-    const float3 centre = float3(positions[i * 3u + 0u],
-                                 positions[i * 3u + 1u],
+    const float3 centre = float3(positions[i * 3u + 0u], positions[i * 3u + 1u],
                                  positions[i * 3u + 2u]);
 
     // Rows 0 and 1 of the light's matrix are its right and up, scaled
@@ -67,8 +66,7 @@ S2F vsmain(uint vI : SV_VertexID) {
     return o;
 }
 
-[shader("fragment")]
-void fsmain(S2F v) {
+    [shader("fragment")] void fsmain(S2F v) {
     if (dot(v.local, v.local) > 1.0f)
         discard;
 }

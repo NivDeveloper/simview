@@ -16,6 +16,8 @@
 
 #include <simview/simview.h>
 
+#include <imgui.h>
+
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -23,6 +25,17 @@
 namespace {
 
 constexpr unsigned kW = 600, kH = 600;
+
+// Where the geometry-receiver world is pinned, and the image inside
+// it: the title bar's antialiased white text is bright and would
+// answer for the surface under it.
+struct Rect {
+    unsigned x0, y0, x1, y1;
+};
+constexpr Rect kGeomRect{20, 20, 340, 330};
+constexpr Rect content_of(const Rect &r) {
+    return {r.x0 + 4, r.y0 + 26, r.x1 - 4, r.y1 - 4};
+}
 
 // TWO casters, at different heights and off the axis in both
 // directions. One sphere would not do: the map is fitted around what
@@ -219,6 +232,74 @@ int main() {
                 shade.y);
     REQUIRE(shade.found());
     CHECK_LT(shade.n, total / 8);
+
+    // ── geometry receives too, and must not shadow ITSELF ────────────
+    // The ground is not the only receiver: a sphere takes the shadow
+    // of whatever is above it, in a world with no ground at all.
+    //
+    // The second half is the one that bit. A curved receiver at the
+    // light's grazing angle crosses a texel's worth of depth INSIDE
+    // that texel, so it shadows itself in bands whatever the depth
+    // bias is — visible, ugly, and invisible to any check that only
+    // asks whether a shadow appeared. So what is asserted is the same
+    // shape as the culling claim: turning the lookup on must not
+    // change a surface the caster cannot reach.
+    sv::World g = app.World({.title = "geom", .grid = false, .axes = false});
+    REQUIRE(bool(g));
+    g.Camera({.focus = {0.0f, 0.0f, 0.0f},
+              .distance = 9.0f,
+              .azimuth_deg = 0.0f,
+              .elevation_deg = 35.0f});
+    g.Ambient(0.25f, 0.25f, 0.3f);
+    sv::Cloud receiver = g.Cloud({.color = {0.85f, 0.85f, 0.88f, 1.0f},
+                                  .radius = 1.8f,
+                                  .shape = CloudShape::Sphere});
+    sv::Cloud above = g.Cloud({.color = {1.0f, 0.4f, 0.2f, 1.0f},
+                               .radius = 0.5f,
+                               .shape = CloudShape::Sphere});
+    REQUIRE(bool(receiver));
+    REQUIRE(bool(above));
+    CHECK(receiver.Update(std::vector<float>{0.0f, 0.0f, 0.0f}));
+    CHECK(above.Update(std::vector<float>{0.0f, 0.0f, 3.2f}));
+    CHECK(impl::world_light(
+        g.Raw(),
+        {.direction = {0.0f, 0.0f, 1.0f}, .intensity = 0.9f, .shadow = true}));
+    app.OnUi([] {
+        ImGui::SetWindowPos("geom",
+                            ImVec2(float(kGeomRect.x0), float(kGeomRect.y0)));
+        ImGui::SetWindowSize("geom",
+                             ImVec2(float(kGeomRect.x1 - kGeomRect.x0),
+                                    float(kGeomRect.y1 - kGeomRect.y0)));
+    });
+    app.Step();
+    app.Step();
+
+    probe::shadows(app.Raw(), false);
+    Bmp geom_off;
+    REQUIRE(harness::shot(app, "shadow_geom_off", geom_off));
+    probe::shadows(app.Raw(), true);
+    Bmp geom_on;
+    REQUIRE(harness::shot(app, "shadow_geom_on", geom_on));
+
+    constexpr Rect kIn = content_of(kGeomRect);
+    std::size_t cast = 0, seen = 0;
+    for (unsigned y = kIn.y0; y < kIn.y1; ++y)
+        for (unsigned x = kIn.x0; x < kIn.x1; ++x) {
+            ++seen;
+            if (darker(geom_off, geom_on, x, y, 24))
+                ++cast;
+        }
+    std::printf("  a sphere shadowed by a sphere, no ground: %zu of %zu px "
+                "darkened (%.1f%%)\n",
+                cast, seen, 100.0 * double(cast) / double(seen));
+    // It arrives at all...
+    CHECK_GT(cast, std::size_t(150));
+    // ...and it is a SHADOW, not the receiver breaking out in bands.
+    // Measured on this scene: 0.6% of the panel with the normal
+    // offset, 2.0% without it, and the cast shadow itself is the
+    // 0.6%. The bound sits between them — a factor of three from each
+    // side, which is what makes it a measurement and not a guess.
+    CHECK_LT(cast * 90, seen);
 
     // ── a second caster is refused, by name ──────────────────────────
     const bool second = impl::world_light(

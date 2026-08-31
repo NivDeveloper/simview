@@ -27,8 +27,8 @@ struct MParams {
     float4 color;
     float radius; // world units
     uint count;
-    uint mode;  // cloud.slang's; unused here
-    uint map;   // 0 uniform, 1 magnitude, 2 direction, 3 components
+    uint mode; // cloud.slang's; unused here
+    uint map;  // 0 uniform, 1 magnitude, 2 direction, 3 components
     float map_scale;
     float pad0, pad1, pad2;
 };
@@ -53,8 +53,8 @@ float3 turbo(float t) {
 float4 mapped_color(uint i) {
     if (mp.map == 0u)
         return mp.color;
-    const float3 v = float3(values[i * 3u + 0u], values[i * 3u + 1u],
-                            values[i * 3u + 2u]);
+    const float3 v =
+        float3(values[i * 3u + 0u], values[i * 3u + 1u], values[i * 3u + 2u]);
     const float s = max(mp.map_scale, 1e-6f);
     if (mp.map == 1u)
         return float4(turbo(length(v) / s), mp.color.a);
@@ -68,13 +68,13 @@ float4 mapped_color(uint i) {
 
 struct M2F {
     float3 wpos : TEXCOORD2; // where the shadow is asked about
+    float3 wnrm : TEXCOORD3; // and along what, to step off the surface
     float4 pos : SV_Position;
     float3 normal : TEXCOORD0; // view space, where the lights are
     float4 color : TEXCOORD1;
 };
 
-[shader("vertex")]
-M2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
+[shader("vertex")] M2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
     M2F o;
     if (iI >= mp.count) {
         o.pos = float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -83,24 +83,26 @@ M2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
         return o;
     }
 
-    const float3 v = float3(mesh[vI * 6u + 0u], mesh[vI * 6u + 1u],
-                            mesh[vI * 6u + 2u]);
-    const float3 n = float3(mesh[vI * 6u + 3u], mesh[vI * 6u + 4u],
-                            mesh[vI * 6u + 5u]);
+    const float3 v =
+        float3(mesh[vI * 6u + 0u], mesh[vI * 6u + 1u], mesh[vI * 6u + 2u]);
+    const float3 n =
+        float3(mesh[vI * 6u + 3u], mesh[vI * 6u + 4u], mesh[vI * 6u + 5u]);
     const float3 centre =
         float3(positions[iI * 3u + 0u], positions[iI * 3u + 1u],
                positions[iI * 3u + 2u]);
 
     const float3 world = centre + v * (mp.radius * 2.0f);
     o.wpos = world;
+    o.wnrm = n;
     o.pos = mul(vp.world_to_clip, float4(world, 1.0f));
     o.normal = mul(vp.world_to_view, float4(n, 0.0f)).xyz;
     o.color = mapped_color(iI);
     return o;
 }
 
-[shader("fragment")]
-float4 fsmain(M2F v) : SV_Target {
-    return float4(v.color.rgb * lit_by(normalize(v.normal), shadow_at(v.wpos)),
+    [shader("fragment")] float4 fsmain(M2F v)
+    : SV_Target {
+    return float4(v.color.rgb * lit_by(normalize(v.normal),
+                                       shadow_at(v.wpos, normalize(v.wnrm))),
                   v.color.a);
 }

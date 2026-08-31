@@ -28,14 +28,14 @@ struct GParams {
 
 struct G2F {
     float4 pos : SV_Position;
-    float2 uv : TEXCOORD0;      // world xy, for the line math
-    float2 cam : TEXCOORD1;     // camera xy, for the falloff
+    float2 uv : TEXCOORD0;  // world xy, for the line math
+    float2 cam : TEXCOORD1; // camera xy, for the falloff
 };
 
-[shader("vertex")]
-G2F vsmain(uint vI : SV_VertexID) {
+[shader("vertex")] G2F vsmain(uint vI : SV_VertexID) {
     const uint c = (vI < 3u) ? vI : (vI == 3u ? 2u : (vI == 4u ? 1u : 3u));
-    const float2 corner = float2(float(c & 1u), float((c >> 1u) & 1u)) * 2.0f - 1.0f;
+    const float2 corner =
+        float2(float(c & 1u), float((c >> 1u) & 1u)) * 2.0f - 1.0f;
 
     // Z-up: the ground is the XY plane, and the quad follows the
     // camera so its edge is never reached.
@@ -48,8 +48,8 @@ G2F vsmain(uint vI : SV_VertexID) {
     return o;
 }
 
-[shader("fragment")]
-float4 fsmain(G2F v) : SV_Target {
+    [shader("fragment")] float4 fsmain(G2F v)
+    : SV_Target {
     // How much world one pixel covers, from the screen-space
     // derivatives — this is what makes the line width independent of
     // the distance and the angle.
@@ -57,8 +57,7 @@ float4 fsmain(G2F v) : SV_Target {
                          length(float2(ddx(v.uv.y), ddy(v.uv.y))));
 
     const float min_px = 11.0f; // >= 4x the line width, or it moires
-    const float lod = max(0.0f,
-                          log10(length(dudv) * min_px / gp.cell) + 1.0f);
+    const float lod = max(0.0f, log10(length(dudv) * min_px / gp.cell) + 1.0f);
     const float fade = frac(lod);
 
     const float lod0 = gp.cell * pow(10.0f, floor(lod));
@@ -80,21 +79,23 @@ float4 fsmain(G2F v) : SV_Target {
 
     // Coverage of each tier's nearest line, anti-aliased by the same
     // derivative that set the width.
-    const float2 a0 =
-        float2(1.0f, 1.0f) - abs(saturate(m0 / dudv) * 2.0f - float2(1.0f, 1.0f));
-    const float2 a1 =
-        float2(1.0f, 1.0f) - abs(saturate(m1 / dudv) * 2.0f - float2(1.0f, 1.0f));
-    const float2 a2 =
-        float2(1.0f, 1.0f) - abs(saturate(m2 / dudv) * 2.0f - float2(1.0f, 1.0f));
+    const float2 a0 = float2(1.0f, 1.0f) -
+                      abs(saturate(m0 / dudv) * 2.0f - float2(1.0f, 1.0f));
+    const float2 a1 = float2(1.0f, 1.0f) -
+                      abs(saturate(m1 / dudv) * 2.0f - float2(1.0f, 1.0f));
+    const float2 a2 = float2(1.0f, 1.0f) -
+                      abs(saturate(m2 / dudv) * 2.0f - float2(1.0f, 1.0f));
     const float c0 = max(a0.x, a0.y);
     const float c1 = max(a1.x, a1.y);
     const float c2 = max(a2.x, a2.y);
 
     const float blend = smoothstep(0.45f, 1.0f, fade);
-    float alpha = (c2 > 0.0f) ? gp.thick_alpha
-                              : ((c1 > 0.0f) ? lerp(gp.thick_alpha, gp.color.a, blend)
-                                             : gp.color.a);
-    const float cover = (c2 > 0.0f) ? c2 : ((c1 > 0.0f) ? c1 : c0 * (1.0f - blend));
+    float alpha = (c2 > 0.0f)
+                      ? gp.thick_alpha
+                      : ((c1 > 0.0f) ? lerp(gp.thick_alpha, gp.color.a, blend)
+                                     : gp.color.a);
+    const float cover =
+        (c2 > 0.0f) ? c2 : ((c1 > 0.0f) ? c1 : c0 * (1.0f - blend));
 
     // Fade out well before the quad's edge, so the grid ends in
     // nothing rather than in a rim — and so the grazing far field,

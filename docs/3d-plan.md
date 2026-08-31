@@ -456,6 +456,24 @@ sampled a garbage map and turned black. Nothing failed, nothing
 logged — the sphere was simply dark. The set now fills every slot the
 layout names, including the value buffer this pass never reads.
 
+**A curved receiver shadows itself in bands.** Near the light's
+grazing angle a sphere crosses a texel's worth of depth WITHIN that
+texel, so no constant depth bias can separate it from itself — and one
+large enough to try detaches the shadow from what casts it. The
+lookup therefore steps along the receiver's own normal by about a
+texel of world before projecting, which moves the sample to where the
+map is unambiguous. Measured on a sphere lit from directly overhead:
+2.0% of the panel darkened without the offset against 0.6% with it,
+where the cast shadow itself is that 0.6%.
+
+**Every receiver samples**, not just the ground: the grid, the
+instanced meshes and the billboard impostors all call `shadow_at`, so
+a sphere takes the shadow of whatever is above it in a world with no
+ground at all. The impostor rebuilds its world-space normal from the
+view matrix's rows, which are orthonormal, so that is three
+multiply-adds rather than a matrix. The axes receive nothing — they
+are an overlay.
+
 Scope, stated rather than implied: **one light casts.** A second map
 is a second pass, a second fit and a second sampler for a picture that
 reads almost the same, so a second casting light is refused by name.
@@ -505,6 +523,14 @@ The control is the SAME light with the lookup switched off
 headlight at the camera, so turning one on changes the shading
 everywhere and the difference measured would be the lighting.
 
-Four drills, each watched red then restored: the map sampled with v
+A second scene in the same check has a sphere shadowed by a sphere
+with no ground in the world, and asserts the shape the culling claim
+has: turning the lookup on must not change a surface the caster
+cannot reach. Its bound sits between the two measured numbers above,
+a factor of three from each side.
+
+Five drills, each watched red then restored: the map sampled with v
 flipped; the map back to reverse-Z; the box fitted to casters only;
-and the pass disabled again.
+the pass disabled again; and the normal offset removed, which is the
+one the acne bound was tightened to catch — at its first setting it
+passed.

@@ -20,8 +20,8 @@ struct CParams {
     float4 color;
     float radius; // world units
     uint count;
-    uint mode;  // 0 = solid impostor, 1 = flat disc
-    uint map;   // 0 uniform, 1 magnitude, 2 direction, 3 components
+    uint mode; // 0 = solid impostor, 1 = flat disc
+    uint map;  // 0 uniform, 1 magnitude, 2 direction, 3 components
     float map_scale;
     float pad0, pad1, pad2;
 };
@@ -51,8 +51,8 @@ float3 turbo(float t) {
 float4 mapped_color(uint i) {
     if (cp.map == 0u)
         return cp.color;
-    const float3 v = float3(values[i * 3u + 0u], values[i * 3u + 1u],
-                            values[i * 3u + 2u]);
+    const float3 v =
+        float3(values[i * 3u + 0u], values[i * 3u + 1u], values[i * 3u + 2u]);
     const float s = max(cp.map_scale, 1e-6f);
     if (cp.map == 1u)
         return float4(turbo(length(v) / s), cp.color.a);
@@ -72,8 +72,7 @@ struct C2F {
     float mode : TEXCOORD2;
 };
 
-[shader("vertex")]
-C2F vsmain(uint vI : SV_VertexID) {
+[shader("vertex")] C2F vsmain(uint vI : SV_VertexID) {
     const uint i = vI / 6u;
     const uint v = vI % 6u;
 
@@ -90,13 +89,13 @@ C2F vsmain(uint vI : SV_VertexID) {
 
     // Two triangles: 0,1,2, 2,1,3 over the unit square's corners.
     const uint c = (v < 3u) ? v : (v == 3u ? 2u : (v == 4u ? 1u : 3u));
-    const float2 corner = float2(float(c & 1u), float((c >> 1u) & 1u)) * 2.0f - 1.0f;
+    const float2 corner =
+        float2(float(c & 1u), float((c >> 1u) & 1u)) * 2.0f - 1.0f;
 
     // Scalar indexing, not StructuredBuffer<float3>: a three-float
     // element in a storage buffer is padded to four by the layout
     // rules, and a packed xyz array would then read every point wrong.
-    const float3 centre = float3(positions[i * 3u + 0u],
-                                 positions[i * 3u + 1u],
+    const float3 centre = float3(positions[i * 3u + 0u], positions[i * 3u + 1u],
                                  positions[i * 3u + 2u]);
 
     float4 pv = mul(vp.world_to_view, float4(centre, 1.0f));
@@ -115,8 +114,8 @@ C2F vsmain(uint vI : SV_VertexID) {
     return o;
 }
 
-[shader("fragment")]
-float4 fsmain(C2F v) : SV_Target {
+    [shader("fragment")] float4 fsmain(C2F v)
+    : SV_Target {
     const float d2 = dot(v.local, v.local);
     if (d2 > 1.0f)
         discard;
@@ -134,5 +133,12 @@ float4 fsmain(C2F v) : SV_Target {
     // the scene the difference never shows. It is a VIEW-space normal,
     // which is the space the lights arrive in.
     const float3 n = float3(v.local, sqrt(saturate(1.0f - d2)));
-    return float4(v.color.rgb * lit_by(n, shadow_at(v.world)), 1.0f);
+
+    // Back to world for the shadow lookup. The view matrix's rows are
+    // the camera's axes and are orthonormal, so its transpose is its
+    // inverse and this is three multiply-adds rather than a matrix.
+    const float3 wn = n.x * vp.world_to_view[0].xyz +
+                      n.y * vp.world_to_view[1].xyz +
+                      n.z * vp.world_to_view[2].xyz;
+    return float4(v.color.rgb * lit_by(n, shadow_at(v.world, wn)), 1.0f);
 }

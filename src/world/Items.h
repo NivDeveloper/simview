@@ -63,6 +63,10 @@ struct WorldView {
     // from the first and a shadow from the second.
     bool lit_ground = false;
     float shadow_bias = 0.0f; // in light-space depth units
+    // How much world one texel of the map covers. What a normal
+    // offset is measured in: the acne it cures is the receiver's own
+    // surface crossing a texel's worth of depth inside that texel.
+    float shadow_texel_world = 0.0f;
     // The world's constant buffer, holding exactly these numbers. An
     // item binds it beside its own storage, which is why the binding
     // set is the item's to make and not the world's.

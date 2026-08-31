@@ -12,14 +12,15 @@ struct ViewParams {
     column_major float4x4 world_to_view;
     column_major float4x4 view_to_clip;
     column_major float4x4 clip_to_world;
-    float4 camera_pos;    // xyz, w unused
-    float4 viewport;      // w, h, 1/w, 1/h
-    float4 depth;         // znear, zfar, 1 if orthographic, unused
-    float4 light_dir[4];  // xyz toward the light IN VIEW SPACE, w intensity
-    float4 light_rgb[4];  // rgb, w unused
-    float4 ambient;       // rgb, w = how many lights are set
+    float4 camera_pos;   // xyz, w unused
+    float4 viewport;     // w, h, 1/w, 1/h
+    float4 depth;        // znear, zfar, 1 if orthographic, unused
+    float4 light_dir[4]; // xyz toward the light IN VIEW SPACE, w intensity
+    float4 light_rgb[4]; // rgb, w unused
+    float4 ambient;      // rgb, w = how many lights are set
     column_major float4x4 light_to_clip; // world -> the caster's clip
-    float4 shadow;        // sample the map, 1/map px, bias, ground is lit
+    float4 shadow;  // sample the map, 1/map px, bias, ground is lit
+    float4 shadow2; // world units per map texel, unused
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<ViewParams> vp;
@@ -46,11 +47,22 @@ struct ViewParams {
 // comparison sampler's test is hardcoded to LESS. Nearer the light is
 // therefore SMALLER, and a fragment is lit when its own depth is
 // under what the map holds.
-float shadow_at(float3 world_pos) {
+// `world_normal` is what makes this usable on a CURVED receiver. A
+// constant depth bias cannot be: near the light's grazing angle the
+// surface crosses a texel's worth of depth WITHIN that texel, so it
+// shadows itself in bands whatever the bias, and a bias big enough to
+// stop it detaches the shadow from the thing casting it.
+//
+// Stepping the lookup along the surface's own normal by about a texel
+// of world moves the sample to where the map is unambiguous instead.
+// The offset is in world units for the same reason the banding is:
+// both are one texel of the map.
+float shadow_at(float3 world_pos, float3 world_normal) {
     if (vp.shadow.x < 0.5f)
         return 1.0f;
 
-    const float4 lc = mul(vp.light_to_clip, float4(world_pos, 1.0f));
+    const float3 p = world_pos + world_normal * (vp.shadow2.x * 1.75f);
+    const float4 lc = mul(vp.light_to_clip, float4(p, 1.0f));
     if (lc.w <= 0.0f)
         return 1.0f;
     const float3 ndc = lc.xyz / lc.w;
@@ -79,6 +91,11 @@ float shadow_at(float3 world_pos) {
     sum += shadow_map.SampleCmpLevelZero(shadow_sampler,
                                          uv + float2(0.5f, 0.5f) * t, d);
     return sum * 0.25f;
+}
+
+// A flat receiver, or one whose normal nothing tracks.
+float shadow_at(float3 world_pos) {
+    return shadow_at(world_pos, float3(0.0f, 0.0f, 0.0f));
 }
 
 // Directions arrive already in view space, which is where an impostor

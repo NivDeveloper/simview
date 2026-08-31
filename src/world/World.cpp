@@ -34,7 +34,8 @@ struct ViewConstants {
     float light_rgb[4][4];
     float ambient[4];
     float light_to_clip[16];
-    float shadow[4]; // on, 1/map px, depth bias, unused
+    float shadow[4];  // sample the map, 1/map px, depth bias, ground is lit
+    float shadow2[4]; // world per texel, unused
 };
 
 void copy_mat(float (&dst)[16], const impl::Mat4 &m) {
@@ -150,6 +151,8 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
     // Keeping the two apart is also what lets a check render the same
     // scene with the lookup off and subtract.
     c.shadow[3] = view.lit_ground ? 1.0f : 0.0f;
+    c.shadow2[0] = view.shadow_texel_world;
+    c.shadow2[1] = c.shadow2[2] = c.shadow2[3] = 0.0f;
 
     cl->writeBuffer(w.view_cb, &c, sizeof c);
     return true;
@@ -324,6 +327,7 @@ void world_draw_into(impl::WorldState &w, impl::Platform &pl,
     view.shadow_px = shadows ? kShadowPx : 0;
     view.shadow_bias = w.shadow_bias;
     view.lit_ground = any_caster != nullptr;
+    view.shadow_texel_world = fit.world_per_texel;
     if (!write_view_cb(w, cl, view))
         return;
     view.view_cb = w.view_cb;

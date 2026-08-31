@@ -30,24 +30,22 @@ struct S2F {
     float4 pos : SV_Position;
 };
 
-[shader("vertex")]
-S2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
+[shader("vertex")] S2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
     S2F o;
     if (iI >= mp.count) {
         o.pos = float4(0.0f, 0.0f, 0.0f, 0.0f);
         return o;
     }
 
-    const float3 v = float3(mesh[vI * 6u + 0u], mesh[vI * 6u + 1u],
-                            mesh[vI * 6u + 2u]);
+    const float3 v =
+        float3(mesh[vI * 6u + 0u], mesh[vI * 6u + 1u], mesh[vI * 6u + 2u]);
     const float3 centre =
         float3(positions[iI * 3u + 0u], positions[iI * 3u + 1u],
                positions[iI * 3u + 2u]);
 
-    o.pos = mul(vp.light_to_clip,
-                float4(centre + v * (mp.radius * 2.0f), 1.0f));
+    o.pos =
+        mul(vp.light_to_clip, float4(centre + v * (mp.radius * 2.0f), 1.0f));
     return o;
 }
 
-[shader("fragment")]
-void fsmain(S2F v) {}
+    [shader("fragment")] void fsmain(S2F v) {}
