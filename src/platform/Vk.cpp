@@ -37,8 +37,19 @@ vvl_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     if (data->pMessageIdName &&
         std::strstr(data->pMessageIdName, "Loader Message"))
         return VK_FALSE;
-    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+    // What the layer says about ITSELF is logged, never counted — the
+    // same one id the layer-settings filter names (Vk.cpp below), kept
+    // here too because 1.3.275 (Ubuntu 24.04) ignores that filter and
+    // aborted CI on its own "most likely a validation bug".
+    const bool self_diagnosed =
+        data->pMessageIdName &&
+        std::strcmp(data->pMessageIdName,
+                    "UNASSIGNED-VkSemaphore-state-timeout") == 0;
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) &&
+        !self_diagnosed)
         vk_validation_error("vulkan", data->pMessage);
+    else if (self_diagnosed)
+        SDL_Log("validation[layer-self] vulkan: %s", data->pMessage);
     else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
         SDL_Log("validation[warning] vulkan: %s", data->pMessage);
     else if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
