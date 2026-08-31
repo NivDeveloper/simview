@@ -5,16 +5,25 @@
 //   middle  spheres    — real geometry, coloured by direction
 //   right   billboards — a disc facing you, shaded as a sphere
 //
-// The slider changes how many spheres there are. Somewhere above four
-// thousand the sphere quietly drops from 972 triangles to 108: the
+// The slider changes how many spheres there are. As they shrink on
+// screen the sphere quietly drops from 972 triangles to 108: the
 // picture barely changes and the cost does, which is the whole reason
-// the tier exists. Drag to orbit, shift-drag to pan, wheel to zoom.
+// the tier exists. Zoom in and it comes back.
+//
+// They float over the ground so the light casts their shadows onto
+// it. Drag to orbit, shift-drag to pan, wheel to zoom.
 #include <simview/simview.h>
 
 #include <cmath>
 #include <vector>
 
 namespace {
+
+// The three groups float ABOVE the ground rather than sitting on it,
+// so the light throws their shadows somewhere you can see. Centred on
+// the origin, a shadow lands underneath its own group and behind the
+// half of it that is below the plane.
+constexpr float kLift = 2.6f;
 
 // Points on a sphere, spread by the golden angle so they do not band,
 // with the outward normal beside each for the colormap to read.
@@ -30,7 +39,7 @@ void shell(std::vector<float> &pos, std::vector<float> &dir, std::size_t n,
         const float x = r * std::cos(a), y = r * std::sin(a);
         pos[i * 3 + 0] = cx + radius * x;
         pos[i * 3 + 1] = radius * y;
-        pos[i * 3 + 2] = radius * z;
+        pos[i * 3 + 2] = radius * z + kLift;
         dir[i * 3 + 0] = x;
         dir[i * 3 + 1] = y;
         dir[i * 3 + 2] = z;
@@ -45,7 +54,7 @@ std::vector<float> lattice(int side, float spacing, float cx) {
             for (int i = 0; i < side; ++i) {
                 p.push_back(cx + spacing * float(i) - half);
                 p.push_back(spacing * float(j) - half);
-                p.push_back(spacing * float(k) - half);
+                p.push_back(spacing * float(k) - half + kLift);
             }
     return p;
 }
@@ -58,8 +67,10 @@ int main() {
         return 1;
 
     auto world = app.World();
-    world.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 13.0f})
-        .Light({.direction = {0.4f, 0.5f, 0.9f}, .intensity = 0.9f})
+    world.Camera({.focus = {0.0f, 0.0f, 1.6f}, .distance = 13.0f})
+        .Light({.direction = {0.4f, 0.5f, 0.9f},
+                .intensity = 0.9f,
+                .shadow = true})
         .Ambient(0.16f, 0.17f, 0.21f);
 
     auto cubes = world.Cloud({.color = {0.95f, 0.72f, 0.32f, 1.0f},
@@ -99,7 +110,7 @@ int main() {
         .Slider("spheres", wanted, 100.0f, 40000.0f)
         .Value(
             "drawn", [&] { return float(built); }, "%.0f")
-        .Text("972 triangles each below 4096, 108 above")
+        .Text("972 triangles each, or 108 when they are small on screen")
         .Separator()
         .Checkbox("orthographic", ortho);
 
@@ -107,7 +118,7 @@ int main() {
         rebuild();
         if (ortho != was_ortho) {
             was_ortho = ortho;
-            world.Camera({.focus = {0.0f, 0.0f, 0.0f},
+            world.Camera({.focus = {0.0f, 0.0f, 1.6f},
                           .distance = 13.0f,
                           .projection = ortho ? sv::Projection::Orthographic
                                               : sv::Projection::Perspective});
