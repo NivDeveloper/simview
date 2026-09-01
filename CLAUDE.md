@@ -248,6 +248,24 @@ Next: 3-D scene kinds, and more than one window.
   same spot, so an app opening nine plots opened one with eight
   underneath, and the cascade wraps every sixth with a column step that
   follows the window's own width.
+- **A plot carries its own controls, and knows what it can BECOME.**
+  `Plot::Controls` takes the same widget vocabulary a panel does and
+  draws it above the canvas, because a control belongs where the data
+  it changes is. Beside it, every plot holding POINTS offers its
+  reductions — histogram, density, profile — and one click opens each
+  as a live plot that follows the source, recomputed every frame from
+  whatever the series currently holds. The caller writes nothing: a
+  scatter already hands the engine its points, so the engine can answer
+  "where are they concentrated" without being told how, which is the
+  difference between a question you ask and one you do not bother to.
+  **A new reduction costs four sites**: an enum value, an arm in
+  `derive_update`, the series it needs in `plot_derive`, and a line in
+  `derive_options`. A derived plot cannot itself be derived from, and
+  asking the same question twice brings back the window already made.
+  Every reduction is O(n) over the source, because it runs inside the
+  frame that draws it. `derive_check` asks the PICTURE which quadrant
+  the density lit, because an orientation bug in a 2-D histogram passes
+  every arithmetic assertion there is.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
   ImGui composites over it in a second LOAD pass — ui_draw is the
   app's ONE raw-Vulkan seam (dynamic rendering around the backend's

@@ -295,6 +295,33 @@ void place_window(int slot, float width, float height) {
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
 }
 
+// The strip above the canvas: what this plot can BECOME, then whatever
+// controls the caller put on it. A reduction offered where the data is
+// costs one click; the same reduction written out costs an afternoon,
+// which is the difference between a question you ask and one you do
+// not bother to.
+void plot_toolbar(impl::PlotState &p) {
+    const std::vector<DeriveOption> options = derive_options(p);
+    const bool has_controls = p.controls && !p.controls->widgets.empty();
+    if (options.empty() && !has_controls)
+        return;
+
+    if (!options.empty()) {
+        if (ImGui::SmallButton("views"))
+            ImGui::OpenPopup("##views");
+        if (ImGui::BeginPopup("##views")) {
+            for (const DeriveOption &o : options)
+                if (ImGui::Selectable(o.label.c_str()))
+                    impl::plot_derive(impl::Plot{&p}, o.kind,
+                                      o.series->name.c_str());
+            ImGui::EndPopup();
+        }
+    }
+    if (has_controls)
+        panel_body(*p.controls);
+    ImGui::Separator();
+}
+
 } // namespace
 
 void plot_draw(impl::PlotState &p) {
@@ -304,6 +331,10 @@ void plot_draw(impl::PlotState &p) {
         ImGui::End();
         return;
     }
+    if (p.derivation)
+        derive_update(p);
+    plot_toolbar(p);
+
     // PushColormap wraps the whole bracket — and the colourbar beside
     // it, which is why a heatmap's bar reserves its width up front.
     const ImPlotColormap map = colormap_of(p);
@@ -617,16 +648,7 @@ void group_end(const impl::WidgetState &w) {
 // is not in front — must not draw its children AND must not emit its
 // own End, which is why `on` is remembered per frame rather than asked
 // again.
-void panel_draw(impl::PanelState &p) {
-    // Width only: a label sits to the RIGHT of its control, so an
-    // auto-fitted panel sizes itself to the widest CONTROL and clips
-    // every name. The height stays auto.
-    place_window(p.slot, 400.0f, 0.0f);
-    if (!ImGui::Begin(p.title.c_str())) {
-        ImGui::End();
-        return;
-    }
-
+void panel_body(impl::PanelState &p) {
     struct Frame {
         impl::Group group;
         bool on;
@@ -663,6 +685,18 @@ void panel_draw(impl::PanelState &p) {
         }
         widget_draw(w, p.mono);
     }
+}
+
+void panel_draw(impl::PanelState &p) {
+    // Width only: a label sits to the RIGHT of its control, so an
+    // auto-fitted panel sizes itself to the widest CONTROL and clips
+    // every name. The height stays auto.
+    place_window(p.slot, 400.0f, 0.0f);
+    if (!ImGui::Begin(p.title.c_str())) {
+        ImGui::End();
+        return;
+    }
+    panel_body(p);
     ImGui::End();
 }
 

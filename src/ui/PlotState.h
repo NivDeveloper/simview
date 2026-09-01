@@ -11,6 +11,7 @@ struct ImFont;
 #include <simview/Plots.h>
 
 #include <list>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -49,13 +50,38 @@ struct AxisState {
     AxisDesc desc{};
 };
 
+struct PanelState;
+struct PlotState;
+struct App;
+
+// A plot computed FROM another plot's series, recomputed every frame
+// from whatever that series currently holds — so a derived view follows
+// a live source without the caller wiring anything.
+//
+// The parent is held by pointer because plots live in a std::list and
+// are never removed: the address is stable for the App's life.
+struct Derivation {
+    const PlotState *from = nullptr;
+    const SeriesState *series = nullptr;
+    Derived kind = Derived::Histogram;
+    int bins = 32;
+    // The reduction's own storage; the derived series borrows it.
+    std::vector<double> a, b, c;
+};
+
 struct PlotState {
     Family family = Family::Plot2D;
     std::string title;
     int slot = 0;
     Palette palette = Palette::Auto;
+    bool derive = true;
     AxisState x, y, z;
     std::list<SeriesState> series;
+    // The plot's own strip of controls, above the canvas. Empty for a
+    // plot that asked for none.
+    std::unique_ptr<PanelState> controls;
+    std::unique_ptr<Derivation> derivation;
+    App *app = nullptr;
 };
 
 struct WidgetState {
@@ -102,5 +128,22 @@ struct PanelState {
 // One panel each, drawn from the ui callbacks they register.
 void plot_draw(impl::PlotState &);
 void panel_draw(impl::PanelState &);
+
+// The widget walk, without a window around it: a plot's control strip
+// is the same list drawn in the plot's own window.
+void panel_body(impl::PanelState &);
+
+// Recompute a derived plot from its source. Called at the top of the
+// derived plot's draw, before its series are read.
+void derive_update(impl::PlotState &);
+
+// Which reductions this plot's series admit, and what they are called.
+// Empty when the plot offers none.
+struct DeriveOption {
+    const impl::SeriesState *series;
+    Derived kind;
+    std::string label;
+};
+std::vector<DeriveOption> derive_options(const impl::PlotState &);
 
 } // namespace sv

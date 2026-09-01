@@ -3,6 +3,12 @@
 // analytic signals — the point is to see each kind, not to model
 // anything. Every panel docks, tabs and tears out; the 3D ones rotate
 // on drag and zoom on scroll.
+//
+// The first plot also carries CONTROLS of its own, which is the same
+// widget vocabulary a panel uses, drawn above the canvas. And every
+// plot holding points offers a "views" button: one click turns a
+// scatter into the density, the distribution or the profile of itself,
+// each a live view that follows the source.
 #include <simview/simview.h>
 
 #include <cmath>
@@ -33,12 +39,24 @@ int main() {
                                       2.0f * std::numbers::pi_v<float>,
                                       3.0f * std::numbers::pi_v<float>};
 
+    // Controls live on the plot they belong to, not in a panel across
+    // the window. These two do nothing here — the gallery's data is
+    // fixed — and are present so the strip can be seen.
+    float phase = 0.0f;
+    bool show_noise = true;
+
     // --- the 2D kinds, one panel each ---------------------------------
     app.Plot({.title = "line + scatter",
               .x = {.label = "t"},
               .y = {.label = "sin"}})
         .Line("sin", x, s)
-        .Scatter("samples", x, noisy, {.marker_size = 3.0f, .marker = 0});
+        .Scatter("samples", x, noisy, {.marker_size = 3.0f, .marker = 0})
+        .Controls([&](sv::Panel &p) {
+            p.Row([&](sv::Panel &q) {
+                q.Slider("phase", phase, 0.0f, 6.283f)
+                    .Checkbox("noise", show_noise);
+            });
+        });
 
     app.Plot({.title = "stairs", .x = {.label = "t"}}).Stairs("steps", x, s);
 

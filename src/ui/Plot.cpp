@@ -69,8 +69,10 @@ Plot plot_create(App *a, const PlotDesc &d) {
 
     PlotState &st = a->plots.emplace_back();
     st.slot = a->windows++;
+    st.app = a;
     st.title = d.title;
     st.palette = d.palette;
+    st.derive = d.derive;
     copy_axis(st.x, d.x);
     copy_axis(st.y, d.y);
 
@@ -96,6 +98,7 @@ Plot plot3d_create(App *a, const Plot3DDesc &d) {
 
     PlotState &st = a->plots.emplace_back();
     st.slot = a->windows++;
+    st.app = a;
     st.family = Family::Plot3D;
     st.title = d.title;
     st.palette = d.palette;
@@ -309,6 +312,128 @@ bool panel_widget(Panel p, const WidgetDesc &d) {
     if (d.kind == WidgetKind::GroupBegin && d.group == Group::Tabs)
         w.id = "##tabs" + std::to_string(st->bars++);
     return true;
+}
+
+namespace {
+
+const char *derived_word(Derived k) {
+    switch (k) {
+    case Derived::Histogram:
+        return "histogram";
+    case Derived::Density:
+        return "density";
+    case Derived::Profile:
+        return "profile";
+    }
+    return "view";
+}
+
+// One series, borrowed storage filled by derive_update every frame.
+SeriesState &derived_series(PlotState &st, SeriesKind k, std::string name) {
+    SeriesState &s = st.series.emplace_back();
+    s.name = std::move(name);
+    s.kind = k;
+    s.dtype = DType::f64;
+    return s;
+}
+
+// The same window for the same question: clicking a reduction twice
+// should bring back the plot it already made, not a second copy of it.
+PlotState *already_derived(App *a, const SeriesState *from, Derived k) {
+    for (PlotState &p : a->plots)
+        if (p.derivation && p.derivation->series == from &&
+            p.derivation->kind == k)
+            return &p;
+    return nullptr;
+}
+
+} // namespace
+
+Panel plot_controls(Plot p) {
+    PlotState *st = static_cast<PlotState *>(p.p);
+    if (!st)
+        return set_error("controls need a plot to sit on"), Panel{};
+    if (!st->controls)
+        st->controls = std::make_unique<PanelState>();
+    return Panel{st->controls.get()};
+}
+
+Plot plot_derive(Plot p, Derived kind, const char *series) {
+    PlotState *st = static_cast<PlotState *>(p.p);
+    if (!st || !st->app)
+        return set_error("a derived view needs a plot to derive from"), Plot{};
+    if (st->derivation)
+        return set_error("a derived view cannot itself be derived from — "
+                         "derive from the plot that holds the data"),
+               Plot{};
+
+    const SeriesState *from = nullptr;
+    for (const DeriveOption &o : derive_options(*st))
+        if (o.kind == kind && (!series || o.series->name == series)) {
+            from = o.series;
+            break;
+        }
+    if (!from) {
+        const std::string why =
+            series ? std::string("this plot has no series \"") + series +
+                         "\" that a " + derived_word(kind) + " can be taken of"
+                   : std::string("this plot has no series a ") +
+                         derived_word(kind) +
+                         " can be taken of — a reduction needs points, and "
+                         "a heatmap or a histogram is already one";
+        return set_error(why), Plot{};
+    }
+
+    App *a = st->app;
+    if (PlotState *seen = already_derived(a, from, kind))
+        return Plot{seen};
+
+    PlotState &d = a->plots.emplace_back();
+    d.slot = a->windows++;
+    d.app = a;
+    d.title = std::string(derived_word(kind)) + " of " + from->name + " (" +
+              st->title + ")";
+    d.derive = false;
+    d.derivation = std::make_unique<Derivation>();
+    d.derivation->from = st;
+    d.derivation->series = from;
+    d.derivation->kind = kind;
+
+    switch (kind) {
+    case Derived::Histogram:
+        // The parent's own name for the quantity, when it has one: a
+        // histogram is of a QUANTITY, and the series name is what the
+        // legend already said.
+        d.x.label = st->y.label.empty() ? from->name : st->y.label;
+        d.y.label = "count";
+        derived_series(d, SeriesKind::Histogram, from->name);
+        break;
+    case Derived::Density:
+        d.x.label = st->x.label;
+        d.y.label = st->y.label;
+        derived_series(d, SeriesKind::Heatmap, from->name);
+        break;
+    case Derived::Profile:
+        d.x.label = st->x.label;
+        d.y.label = "mean " + (st->y.label.empty() ? from->name : st->y.label);
+        derived_series(d, SeriesKind::Line, "mean");
+        derived_series(d, SeriesKind::ErrorBars, "standard error");
+        break;
+    }
+
+    // Its own control: the bin count is the one number a reduction has,
+    // and it belongs on the plot that shows the answer.
+    d.controls = std::make_unique<PanelState>();
+    panel_widget(Panel{d.controls.get()},
+                 WidgetDesc{.label = "bins",
+                            .kind = WidgetKind::SliderInt,
+                            .target = &d.derivation->bins,
+                            .min = 4.0f,
+                            .max = 128.0f});
+
+    a->ui.cbs.push_front(
+        {[](void *u) { plot_draw(*static_cast<PlotState *>(u)); }, &d});
+    return Plot{&d};
 }
 
 } // namespace impl

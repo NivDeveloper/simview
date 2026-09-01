@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Panel.h"
 #include "Scene.h"
 #include "Types.h"
 
@@ -46,11 +47,14 @@ enum class Palette : std::int8_t {
     Greys
 };
 
+enum class Derived : std::uint8_t { Histogram, Density, Profile };
+
 struct PlotDesc {
     const char *title = "plot";
     AxisDesc x{};
     AxisDesc y{};
     Palette palette = Palette::Auto;
+    bool derive = true;
 };
 
 struct GridDesc {
@@ -142,6 +146,8 @@ struct SeriesDesc {
 Plot plot_create(App *, const PlotDesc &);
 Plot plot3d_create(App *, const Plot3DDesc &);
 bool plot_series(Plot, const SeriesDesc &);
+Panel plot_controls(Plot);
+Plot plot_derive(Plot, Derived, const char *series);
 
 }
 
@@ -158,6 +164,17 @@ class Plot {
 
     explicit operator bool() const { return bool(p_); }
     impl::Plot Raw() const { return p_; }
+
+    template <class F> Plot &Controls(F body) {
+        sv::Panel bar{impl::plot_controls(p_)};
+        if (bar)
+            body(bar);
+        return *this;
+    }
+
+    Plot Derive(Derived kind, const char *series = nullptr) {
+        return Plot{impl::plot_derive(p_, kind, series)};
+    }
 
     template <std::ranges::contiguous_range R>
     Plot &Line(const char *name, const R &y, const SeriesStyle &s = {}) {
