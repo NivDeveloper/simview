@@ -25,28 +25,13 @@ using f32 = float;
 using idx = size_t;
 
 constexpr idx N = 100000;     // particles
-constexpr idx C = 32;         // cells per axis
+constexpr idx C = 64;         // cells per axis
 constexpr idx CC = C * C * C; // cells in the grid
 constexpr idx B = 24;         // momentum bins per cell, per component
 constexpr f32 vmax = 2.5f;
 constexpr f32 dv = 2.0f * vmax / f32(B);
 constexpr f32 tpi = 6.283185307179586f;
 
-// Every per-cell deposit below lands in a FIXED-POINT carrier rather
-// than a float, and it is the difference between this scaling and not.
-// A float scatter cannot be an atomic — Slang emits one but it lowers
-// under a capability the device does not enable — so every accumulator
-// is owned privately by a thread and replayed. An integer carrier can
-// be, which is what the hand-written versions of this method use.
-//
-// It is also exact: every merge is an integer add, so the answer does
-// not depend on the order deposits land in.
-//
-// The bound is the largest magnitude ONE CELL's total may reach —
-// every particle in the box landing in it, each contributing at most
-// |mom|^2 — and past it the carrier WRAPS rather than saturating. So
-// it is derived from the sizes here, not guessed: raise N and it
-// follows.
 constexpr idx round_up_pow2(idx v) {
     idx p = 1;
     while (p < v)
@@ -257,7 +242,7 @@ int main() {
 
     // The domain is the unit box, so the grid's decade of cells IS the
     // simulation's own scale.
-    auto gas = world.Cloud(pos, {.radius = 0.003f,
+    auto gas = world.Cloud(pos, {.radius = 0.001f,
                                  .shape = sv::CloudShape::Sphere,
                                  .map = sv::CloudMap::Magnitude,
                                  .map_scale = 1.1f});
@@ -265,15 +250,6 @@ int main() {
         return 1;
     gas.Colors(mom);
 
-    // The spread of the momenta along each axis. It is the whole
-    // question the picture cannot answer: two beams start at 0.8 along
-    // x and 0.15 across it, and a gas that has thermalized has the
-    // same number on all three. Watching it converge is watching the
-    // collision do its job — and watching it NOT converge is the
-    // honest way to see the relaxation time being too long.
-    //
-    // A host read syncs the device, so it happens every twentieth
-    // step rather than every step.
     std::atomic<float> sig_x{0.0f}, sig_y{0.0f}, sig_z{0.0f};
     std::uint64_t since = 0;
 
@@ -300,15 +276,7 @@ int main() {
         publish(pos, Pos);
         publish(mom, Mom);
     });
-    // Paced, and this is the difference between watching a collision
-    // and watching its aftermath. Uncapped, this sim runs about two
-    // thousand steps a second and the discs are gone into a
-    // thermalized gas before the window has settled — which reads as
-    // "the colours are random", and they are, because a thermalized
-    // gas HAS uncorrelated speeds. Two hundred a second puts the
-    // collision over several seconds, where the two beams are two
-    // colours and the mixing is the thing to look at. The transport
-    // panel's rate box overrides this.
+
     sim.SetDt(double(dt_now.load()));
     sim.SetDelayNs(5'000'000);
     sim.Play();
@@ -321,9 +289,6 @@ int main() {
                   "%zu bins/axis",
                   size_t(N), size_t(C), size_t(N / CC), size_t(B));
 
-    // The physics, in a panel of its own. Which knobs act NOW and
-    // which wait for a restart is the distinction a caller has to
-    // make, so the panel makes it rather than leaving it to be found.
     float relax = 0.01f, h = 0.004f;
     float speed = 0.80f, radius = 0.15f, offset = 0.05f, spread = 0.15f;
     app.Panel("bgk")
@@ -346,11 +311,6 @@ int main() {
             "across it (z)", [&] { return sig_z.load(); }, "%.3f")
         .Text("equal on all three = thermalized")
         .Separator()
-        // Extents of a tensor type, so these are the one kind of knob
-        // this panel cannot carry: changing them is a recompile. Built
-        // FROM the constants — a hand-written line here said 4^3 while
-        // the build said 8^3, which is the one thing a panel must
-        // never do.
         .Text(fixed_line);
 
     app.OnFrame([&] {
