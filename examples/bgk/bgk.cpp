@@ -32,6 +32,30 @@ constexpr f32 vmax = 2.5f;
 constexpr f32 dv = 2.0f * vmax / f32(B);
 constexpr f32 tpi = 6.283185307179586f;
 
+// Every per-cell deposit below lands in a FIXED-POINT carrier rather
+// than a float, and it is the difference between this scaling and not.
+// A float scatter cannot be an atomic — Slang emits one but it lowers
+// under a capability the device does not enable — so every accumulator
+// is owned privately by a thread and replayed. An integer carrier can
+// be, which is what the hand-written versions of this method use.
+//
+// It is also exact: every merge is an integer add, so the answer does
+// not depend on the order deposits land in.
+//
+// The bound is the largest magnitude ONE CELL's total may reach —
+// every particle in the box landing in it, each contributing at most
+// |mom|^2 — and past it the carrier WRAPS rather than saturating. So
+// it is derived from the sizes here, not guessed: raise N and it
+// follows.
+constexpr idx round_up_pow2(idx v) {
+    idx p = 1;
+    while (p < v)
+        p <<= 1;
+    return p;
+}
+constexpr idx kDeposit = round_up_pow2(N * (idx(3.0f * vmax * vmax) + 1));
+using Sum = ops::Fixed<kDeposit>;
+
 using Vecs = Tensor<f32, N, 3>;
 using Cells = Tensor<f32, N>; // each particle's cell, as one number
 using Grid = Tensor<f32, CC>;
@@ -58,10 +82,10 @@ Cells cells(const Vecs &pos) {
 
 Cell measure(const auto &at, const Vecs &mom) {
     auto sq = go(fold<1>(mom * mom));
-    auto count = go(scatter<i>(at, 1.0f));
+    auto count = go(scatter<Sum, i>(at, 1.0f));
     auto inv = go(1.0f / Fmax(count, 1.0f));
-    auto p = go(scatter<i>(at, mom[i, n]));
-    auto E = go(scatter<i>(at, sq[i]));
+    auto p = go(scatter<Sum, i>(at, mom[i, n]));
+    auto E = go(scatter<Sum, i>(at, sq[i]));
     auto p2 = go(fold<1>(p * p));
 
     auto T = go(Fmax((E - p2 * inv) * inv * (1.0f / 3.0f), 1e-9f));
@@ -111,8 +135,8 @@ void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
     // Shift and scale q -> b·q + a, fixed by the cell's own totals:
     // a = (p - b·Q)/n, b = sqrt((E - |p|²/n) / (Q2 - |Q|²/n)).
     auto qsq = go(fold<1>(q * q));
-    auto Q = go(scatter<i>(at, q[i, n]));
-    auto Q2 = go(scatter<i>(at, qsq[i]));
+    auto Q = go(scatter<Sum, i>(at, q[i, n]));
+    auto Q2 = go(scatter<Sum, i>(at, qsq[i]));
     auto p2 = go(fold<1>(c.p * c.p));
     auto q2 = go(fold<1>(Q * Q));
     auto b =

@@ -54,6 +54,36 @@ changing them is a recompile. The panel prints them FROM the
 constants, because a hand-written line there said 4^3 while the build
 said 8^3.
 
+### What the deposits cost
+
+The five per-cell deposits go into `ops::Fixed`, an integer carrier,
+and not a float. A float scatter cannot be an atomic — Slang emits one
+but it lowers under a capability the device does not enable — so every
+accumulator is owned privately by a thread and the contributions are
+scanned redundantly. An integer one can be, which is how the
+hand-written versions of this method reach a million particles.
+
+Measured here, ms per step, best of three runs of 300, with the viewer
+attached and the spread diagnostic running (so these are the whole
+frame's cost, not the sim's alone):
+
+| deposit | 4^3 cells | 8^3 cells |
+| --- | ---: | ---: |
+| float | 31.24 | 3.99 |
+| `ops::Fixed` | **1.38** | **0.83** |
+
+Two things fall out of that table, and the second is the surprise.
+Fixed is worth 22.6x at 4^3 and 4.8x at 8^3. And the float path is
+nearly EIGHT TIMES FASTER with more cells, which is the opposite of
+what a cost model would say: the float scatter slices its output
+across workgroups, so 64 cells is one group doing all the work and 512
+cells is eight. Few cells at many particles is the shape it handles
+worst. With Fixed the cell count barely matters, which is the point.
+
+The bound on the carrier is the largest magnitude one cell's total may
+reach, derived from N and vmax rather than guessed — past it the
+carrier wraps rather than saturating.
+
 **The 4^3 grid is coarse, and it shows.** The collision operator acts
 per cell, so with cells a quarter of the box wide the outgoing gas
 carries their shape — it comes apart into lobes on the cell
