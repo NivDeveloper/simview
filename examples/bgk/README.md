@@ -38,6 +38,33 @@ that only make sense over there: the CPU/GPU switch (this build is
 always on a device), the benchmark's size and fixed-point knobs, and
 the reporting `main`.
 
+## The knobs, and what they cost
+
+The `bgk` panel carries the physics, split by when it takes effect:
+relaxation time and time step act on the next step; beam speed, disc
+radius, impact offset and thermal spread are what a restart is built
+from, so they wait for R. Beside them is the momentum spread along
+each axis, which is the one number that says whether the gas has
+thermalized — the beams start at 0.8 along x and 0.15 across it, and
+equal on all three is done.
+
+The particle count, the cell count and the bin count are extents of a
+tensor type, so they are the one kind of knob a panel cannot carry:
+changing them is a recompile. The panel prints them FROM the
+constants, because a hand-written line there said 4^3 while the build
+said 8^3.
+
+**The 4^3 grid is coarse, and it shows.** The collision operator acts
+per cell, so with cells a quarter of the box wide the outgoing gas
+carries their shape — it comes apart into lobes on the cell
+boundaries. It also thermalizes too FAST, because a coarse cell mixes
+particles that are nowhere near each other: at step 260 the spreads
+read 0.489 / 0.481 / 0.486 at 4^3 and 0.575 / 0.440 / 0.428 at 8^3,
+and the second is the more honest number. Raising C fixes both, and
+costs a proportional rise in N to keep the per-cell statistics — 8^3
+at 8192 particles is sixteen a cell, which is thin for a 24-bin
+histogram per axis.
+
 ## It is paced on purpose
 
 Uncapped, this sim runs about two thousand steps a second and the two

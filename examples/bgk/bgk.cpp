@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <utility>
 
 using namespace tensor;
@@ -24,12 +25,11 @@ using f32 = float;
 using idx = size_t;
 
 constexpr idx N = 100000;     // particles
-constexpr idx C = 4;          // cells per axis
+constexpr idx C = 32;         // cells per axis
 constexpr idx CC = C * C * C; // cells in the grid
 constexpr idx B = 24;         // momentum bins per cell, per component
 constexpr f32 vmax = 2.5f;
 constexpr f32 dv = 2.0f * vmax / f32(B);
-constexpr f32 dt = 0.004f;
 constexpr f32 tpi = 6.283185307179586f;
 
 using Vecs = Tensor<f32, N, 3>;
@@ -94,7 +94,8 @@ Vecs resample(const auto &at, const Cell &c, const Vecs &mom,
     return go(-vmax + (hit + rng::Uniform<f32, N, 3>()) * dv);
 }
 
-void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 alpha) {
+void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
+          f32 alpha) {
     auto moved = go(Pos + Mom * dt);
     // periodic boundary conditions
     Pos = go(moved - Floor(moved + 0.5f));
@@ -131,21 +132,30 @@ struct State {
     Vecs Pos, Mom;
 };
 
+// What a restart is built from. `offset` is how far off-axis the
+// second disc sits — head-on at zero, a glancing blow as it grows.
+struct Setup {
+    f32 speed = 0.80f;  // the beam's drift along x
+    f32 radius = 0.15f; // each disc's radius
+    f32 offset = 0.05f; // the second disc's displacement in y
+    f32 spread = 0.15f; // the thermal spread each particle starts with
+};
+
 // Two discs of particles flying at each other, off-axis. Draws, so
 // the caller seeds first if it wants a particular run.
-State initial_state() {
+State initial_state(const Setup &su) {
     constexpr size_t half = N / 2;
     auto beam = eval(1.0f * (gen::Iota<N>(0.0f) < f32(half)));
     auto sign = eval(2.0f * beam - 1.0f);
-    auto rad = eval(0.15f * Sqrt(rng::Uniform<f32, N>())); // uniform by area
+    auto rad = eval(su.radius * Sqrt(rng::Uniform<f32, N>())); // by area
     auto ang = eval(tpi * rng::Uniform<f32, N>());
 
     auto x = eval(-0.25f * sign + 0.002f * rng::Normal<f32, N>());
-    auto y = eval(0.05f * (1.0f - beam) + rad * Cos(ang));
+    auto y = eval(su.offset * (1.0f - beam) + rad * Cos(ang));
     auto z = eval(rad * Sin(ang));
-    auto vx = eval(0.80f * sign + 0.15f * rng::Normal<f32, N>());
-    auto vy = eval(0.15f * rng::Normal<f32, N>());
-    auto vz = eval(0.15f * rng::Normal<f32, N>());
+    auto vx = eval(su.speed * sign + su.spread * rng::Normal<f32, N>());
+    auto vy = eval(su.spread * rng::Normal<f32, N>());
+    auto vz = eval(su.spread * rng::Normal<f32, N>());
 
     return {.Pos = Vecs([&](idx q, idx d) {
                 switch (d) {
@@ -186,7 +196,21 @@ int main() {
 
     rng::Seed(20260814);
     auto centre = bin_centres();
-    auto start = initial_state();
+
+    // The two the sim reads EVERY step, and the four a restart is
+    // built from. All atomics: the worker reads them on its own
+    // thread, the panel writes them on the frame's.
+    std::atomic<float> tau_now{0.01f}, dt_now{0.004f};
+    std::atomic<float> speed_now{0.80f}, radius_now{0.15f};
+    std::atomic<float> offset_now{0.05f}, spread_now{0.15f};
+    const auto setup_now = [&] {
+        return Setup{.speed = speed_now.load(std::memory_order_relaxed),
+                     .radius = radius_now.load(std::memory_order_relaxed),
+                     .offset = offset_now.load(std::memory_order_relaxed),
+                     .spread = spread_now.load(std::memory_order_relaxed)};
+    };
+
+    auto start = initial_state(setup_now());
     Vecs Pos = std::move(start.Pos), Mom = std::move(start.Mom);
 
     // Positions place the particles; momenta colour them, so the gas
@@ -217,18 +241,36 @@ int main() {
         return 1;
     gas.Colors(mom);
 
-    float relax = 0.01f;
-    std::atomic<float> tau_now{relax};
+    // The spread of the momenta along each axis. It is the whole
+    // question the picture cannot answer: two beams start at 0.8 along
+    // x and 0.15 across it, and a gas that has thermalized has the
+    // same number on all three. Watching it converge is watching the
+    // collision do its job — and watching it NOT converge is the
+    // honest way to see the relaxation time being too long.
+    //
+    // A host read syncs the device, so it happens every twentieth
+    // step rather than every step.
+    std::atomic<float> sig_x{0.0f}, sig_y{0.0f}, sig_z{0.0f};
+    std::uint64_t since = 0;
 
     sv::Executor sim([&](const sv::Tick &) {
-        const f32 t = tau_now.load(std::memory_order_relaxed);
-        step(Pos, Mom, centre, std::exp(-dt / t));
+        const f32 tau = tau_now.load(std::memory_order_relaxed);
+        const f32 h = dt_now.load(std::memory_order_relaxed);
+        step(Pos, Mom, centre, h, std::exp(-h / tau));
         publish(pos, Pos);
         publish(mom, Mom);
+
+        if (++since >= 20) {
+            since = 0;
+            auto sp = go(fold<ops::Welford, 0>(Mom));
+            sig_x.store(std::sqrt(sp[0].var), std::memory_order_relaxed);
+            sig_y.store(std::sqrt(sp[1].var), std::memory_order_relaxed);
+            sig_z.store(std::sqrt(sp[2].var), std::memory_order_relaxed);
+        }
     });
 
     sim.OnRestart([&] {
-        auto s = initial_state();
+        auto s = initial_state(setup_now());
         Pos = std::move(s.Pos);
         Mom = std::move(s.Mom);
         publish(pos, Pos);
@@ -243,12 +285,59 @@ int main() {
     // collision over several seconds, where the two beams are two
     // colours and the mixing is the thing to look at. The transport
     // panel's rate box overrides this.
-    sim.SetDt(double(dt));
+    sim.SetDt(double(dt_now.load()));
     sim.SetDelayNs(5'000'000);
     sim.Play();
 
-    app.Controls(sim).Slider("relaxation time", relax, 0.002f, 0.5f);
-    app.OnFrame([&] { tau_now.store(relax, std::memory_order_relaxed); });
+    app.Controls(sim);
+
+    static char fixed_line[96];
+    std::snprintf(fixed_line, sizeof fixed_line,
+                  "fixed: %zu particles, %zu^3 cells (%zu per cell), "
+                  "%zu bins/axis",
+                  size_t(N), size_t(C), size_t(N / CC), size_t(B));
+
+    // The physics, in a panel of its own. Which knobs act NOW and
+    // which wait for a restart is the distinction a caller has to
+    // make, so the panel makes it rather than leaving it to be found.
+    float relax = 0.01f, h = 0.004f;
+    float speed = 0.80f, radius = 0.15f, offset = 0.05f, spread = 0.15f;
+    app.Panel("bgk")
+        .Text("live")
+        .Slider("relaxation time", relax, 0.002f, 0.5f)
+        .Slider("time step", h, 0.0005f, 0.02f)
+        .Separator()
+        .Text("initial condition - press R")
+        .Slider("beam speed", speed, 0.1f, 2.0f)
+        .Slider("disc radius", radius, 0.02f, 0.35f)
+        .Slider("impact offset", offset, 0.0f, 0.30f)
+        .Slider("thermal spread", spread, 0.0f, 0.6f)
+        .Separator()
+        .Text("momentum spread per axis")
+        .Value(
+            "along the beam", [&] { return sig_x.load(); }, "%.3f")
+        .Value(
+            "across it (y)", [&] { return sig_y.load(); }, "%.3f")
+        .Value(
+            "across it (z)", [&] { return sig_z.load(); }, "%.3f")
+        .Text("equal on all three = thermalized")
+        .Separator()
+        // Extents of a tensor type, so these are the one kind of knob
+        // this panel cannot carry: changing them is a recompile. Built
+        // FROM the constants — a hand-written line here said 4^3 while
+        // the build said 8^3, which is the one thing a panel must
+        // never do.
+        .Text(fixed_line);
+
+    app.OnFrame([&] {
+        tau_now.store(relax, std::memory_order_relaxed);
+        dt_now.store(h, std::memory_order_relaxed);
+        speed_now.store(speed, std::memory_order_relaxed);
+        radius_now.store(radius, std::memory_order_relaxed);
+        offset_now.store(offset, std::memory_order_relaxed);
+        spread_now.store(spread, std::memory_order_relaxed);
+        sim.SetDt(double(h));
+    });
 
     app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
         .OnKey(sv::Key::Up, [&] { relax = std::min(0.5f, relax * 1.3f); })
