@@ -102,6 +102,7 @@ trace:
 # and no in-tree build reaches it — this is the local gate that keeps
 # it from rotting when the door changes.
 flagship: all
+	$(MAKE) -C examples/water
 	$(MAKE) -C examples/flow
 	$(MAKE) -C examples/bgk
 	$(MAKE) -C examples/xy-gpu
