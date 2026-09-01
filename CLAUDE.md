@@ -236,7 +236,18 @@ Next: 3-D scene kinds, and more than one window.
   SHAPE: a rounded panel leaves its extreme corner unpainted, so that
   corner must be indistinguishable from the background. Shades were
   tried first and are not a test — a bitmap face resampled to 16 px is
-  filtered, so it holds a ramp too, and the drill passed.
+  filtered, so it holds a ramp too, and the drill passed. The DATA
+  wears the same palette: eight hues opening on the UI accent, added to
+  ImPlot's registry AND ImPlot3D's (they keep separate ones, and an
+  unregistered 3D plot falls back to its own defaults while every value
+  in Theme.cpp still looks right). **`Palette::Auto` means the RIGHT
+  map, not the qualitative default** — a plot holding a heatmap or a
+  surface takes a perceptually uniform one, because a continuous field
+  read through a qualitative set is a picture with no order in it. And
+  a window is PLACED as well as sized: ImGui puts every new one in the
+  same spot, so an app opening nine plots opened one with eight
+  underneath, and the cascade wraps every sixth with a column step that
+  follows the window's own width.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
   ImGui composites over it in a second LOAD pass — ui_draw is the
   app's ONE raw-Vulkan seam (dynamic rendering around the backend's

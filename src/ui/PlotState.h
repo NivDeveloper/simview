@@ -52,6 +52,7 @@ struct AxisState {
 struct PlotState {
     Family family = Family::Plot2D;
     std::string title;
+    int slot = 0;
     Palette palette = Palette::Auto;
     AxisState x, y, z;
     std::list<SeriesState> series;
@@ -87,6 +88,7 @@ struct WidgetState {
 // ImGui assertion inside a draw the user cannot see.
 struct PanelState {
     std::string title;
+    int slot = 0;
     // The numeric face, taken at creation because the draw callback is
     // handed a panel and not the App that owns the font.
     ::ImFont *mono = nullptr;

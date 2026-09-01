@@ -68,6 +68,7 @@ Plot plot_create(App *a, const PlotDesc &d) {
         return Plot{};
 
     PlotState &st = a->plots.emplace_back();
+    st.slot = a->windows++;
     st.title = d.title;
     st.palette = d.palette;
     copy_axis(st.x, d.x);
@@ -94,6 +95,7 @@ Plot plot3d_create(App *a, const Plot3DDesc &d) {
         return Plot{};
 
     PlotState &st = a->plots.emplace_back();
+    st.slot = a->windows++;
     st.family = Family::Plot3D;
     st.title = d.title;
     st.palette = d.palette;
@@ -196,6 +198,7 @@ Panel panel_create(App *a, const char *title) {
     PanelState &st = a->panels.emplace_back();
     st.title = title;
     st.mono = a->ui.mono;
+    st.slot = a->windows++;
     a->ui.cbs.push_front(
         {[](void *u) { panel_draw(*static_cast<PanelState *>(u)); }, &st});
     return Panel{&st};

@@ -9,8 +9,12 @@
 
 #include "probe/Probe.h"
 
+#include <cmath>
+
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <implot.h>
+#include <implot3d.h>
 
 int main() {
     harness::begin();
@@ -88,6 +92,24 @@ int main() {
     CHECK_GT(inset - outside, 60);
     std::printf("(background %d, corner %d, eight pixels in %d)\n", outside,
                 corner, inset);
+
+    // One palette for the data too, in BOTH registries — ImPlot and
+    // ImPlot3D keep separate ones, and a 3D plot that was never
+    // registered falls back to its own defaults while every value in
+    // Theme.cpp still looks right.
+    const ImPlotColormap map = ImPlot::GetColormapIndex("simview");
+    CHECK(map != -1);
+    CHECK_EQ(ImPlot::GetStyle().Colormap, map);
+    CHECK(ImPlot3D::GetColormapIndex("simview") != -1);
+    CHECK_EQ(ImPlot3D::GetStyle().Colormap,
+             ImPlot3D::GetColormapIndex("simview"));
+
+    // The first series colour IS the UI accent, so a one-series plot
+    // and the chrome around it are the same blue.
+    const ImVec4 first = ImPlot::GetColormapColor(0, map);
+    CHECK_LT(std::abs(first.x - 0.310f), 0.01f);
+    CHECK_LT(std::abs(first.y - 0.573f), 0.01f);
+    CHECK_LT(std::abs(first.z - 0.855f), 0.01f);
 
     return check::summary("theme");
 }

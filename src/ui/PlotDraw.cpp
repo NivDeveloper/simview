@@ -263,9 +263,42 @@ const impl::SeriesState *colourbar_of(const impl::PlotState &p) {
     return nullptr;
 }
 
+// Which colormap a plot draws with. `Auto` is the caller delegating the
+// decision, not asking for the default: a CONTINUOUS field read through
+// a qualitative set is a picture with no order in it, so a plot holding
+// a heatmap or a surface takes a perceptually uniform map instead. An
+// explicit palette always wins.
+ImPlotColormap colormap_of(const impl::PlotState &p) {
+    if (p.palette != Palette::Auto)
+        return ImPlotColormap(int(p.palette));
+    for (const impl::SeriesState &s : p.series)
+        if (s.kind == impl::SeriesKind::Heatmap ||
+            s.kind == impl::SeriesKind::Surface)
+            return ImPlotColormap_Viridis;
+    return -1;
+}
+
+// Where a window lands before the layout file has an opinion. ImGui
+// puts every new window in the same place, so an app that opens nine
+// plots opens one plot with eight underneath it. A cascade that wraps
+// every eighth window leaves every title bar reachable, which is all a
+// default has to do — the layout the user drags into place is saved and
+// wins from then on.
+void place_window(int slot, float width, float height) {
+    const int col = slot / 6, row = slot % 6;
+    // The column step follows the window's own width, or the second
+    // column lands on the first and the cascade has bought nothing.
+    ImGui::SetNextWindowPos(
+        ImVec2(26.0f + float(col) * (width + 60.0f) + float(row) * 22.0f,
+               26.0f + float(row) * 30.0f),
+        ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
+}
+
 } // namespace
 
 void plot_draw(impl::PlotState &p) {
+    place_window(p.slot, 520.0f, 360.0f);
     // A collapsed panel asks its sources nothing.
     if (!ImGui::Begin(p.title.c_str())) {
         ImGui::End();
@@ -273,9 +306,10 @@ void plot_draw(impl::PlotState &p) {
     }
     // PushColormap wraps the whole bracket — and the colourbar beside
     // it, which is why a heatmap's bar reserves its width up front.
-    const bool mapped = p.palette != Palette::Auto;
+    const ImPlotColormap map = colormap_of(p);
+    const bool mapped = map != -1;
     if (mapped)
-        ImPlot::PushColormap(int(p.palette));
+        ImPlot::PushColormap(map);
     const impl::SeriesState *bar = colourbar_of(p);
     const float bar_w = bar ? 60.0f + ImGui::GetStyle().ItemSpacing.x : 0.0f;
 
@@ -284,12 +318,16 @@ void plot_draw(impl::PlotState &p) {
     // erasure and the list addressing are shared; only the library
     // that opens the plot and draws the items differs.
     if (p.family == impl::Family::Plot3D) {
-        if (p.palette != Palette::Auto)
-            ImPlot3D::PushColormap(int(p.palette));
+        if (mapped)
+            ImPlot3D::PushColormap(map);
         if (ImPlot3D::BeginPlot("##canvas", ImVec2(-1, -1))) {
             setup_axis3(ImAxis3D_X, p.x);
             setup_axis3(ImAxis3D_Y, p.y);
             setup_axis3(ImAxis3D_Z, p.z);
+            // ImPlot3D has no Outside flag, so the key sits inside at
+            // the top — where a 3-D box has its most empty corner.
+            ImPlot3D::SetupLegend(ImPlot3DLocation_NorthEast,
+                                  ImPlot3DLegendFlags_Horizontal);
             for (impl::SeriesState &s : p.series) {
                 const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
                 if (!d.c || !d.count)
@@ -313,6 +351,12 @@ void plot_draw(impl::PlotState &p) {
     if (ImPlot::BeginPlot("##canvas", ImVec2(-1 - bar_w, -1))) {
         setup_axis(ImAxis_X1, p.x);
         setup_axis(ImAxis_Y1, p.y);
+        // A key ABOVE the axes, not floating on the data: an inside
+        // legend covers whatever it lands on, and the one place it can
+        // never be in the way is outside the frame.
+        ImPlot::SetupLegend(ImPlotLocation_North,
+                            ImPlotLegendFlags_Outside |
+                                ImPlotLegendFlags_Horizontal);
         ImPlot::SetupFinish();
 
         for (impl::SeriesState &s : p.series) {
@@ -574,10 +618,10 @@ void group_end(const impl::WidgetState &w) {
 // own End, which is why `on` is remembered per frame rather than asked
 // again.
 void panel_draw(impl::PanelState &p) {
-    // Width only, and only before the layout file has an opinion: a
-    // label sits to the RIGHT of its control, so an auto-fitted panel
-    // sizes itself to the widest CONTROL and clips every name.
-    ImGui::SetNextWindowSize(ImVec2(400.0f, 0.0f), ImGuiCond_FirstUseEver);
+    // Width only: a label sits to the RIGHT of its control, so an
+    // auto-fitted panel sizes itself to the widest CONTROL and clips
+    // every name. The height stays auto.
+    place_window(p.slot, 400.0f, 0.0f);
     if (!ImGui::Begin(p.title.c_str())) {
         ImGui::End();
         return;

@@ -44,6 +44,9 @@ struct App {
     std::list<View> views;
     std::list<PlotState> plots;
     std::list<PanelState> panels;
+    // Creation order across BOTH: it is what staggers the windows of an
+    // app that opens several, so none is hidden under another.
+    int windows = 0;
 };
 
 } // namespace impl

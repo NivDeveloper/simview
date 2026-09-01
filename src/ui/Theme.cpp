@@ -169,19 +169,54 @@ void metrics(ImGuiStyle &s) {
     s.AntiAliasedFill = true;
 }
 
+// The series palette, and the one place a data colour is chosen. It
+// OPENS on the UI accent, so the first series and the chrome are the
+// same blue and a one-series plot needs no legend to be read; the rest
+// hold a similar lightness so no series shouts louder than another on
+// a dark ground, which is what a qualitative set is for.
+//
+// A CONTINUOUS field is a different question and gets a different
+// answer — see plot_colormap.
+constexpr ImVec4 kSeries[] = {
+    {0.310f, 0.573f, 0.855f, 1.0f}, // azure, the UI accent
+    {0.878f, 0.659f, 0.235f, 1.0f}, // amber
+    {0.247f, 0.749f, 0.659f, 1.0f}, // teal
+    {0.910f, 0.412f, 0.490f, 1.0f}, // rose
+    {0.608f, 0.494f, 0.871f, 1.0f}, // violet
+    {0.624f, 0.788f, 0.290f, 1.0f}, // lime
+    {0.322f, 0.780f, 0.910f, 1.0f}, // cyan
+    {0.851f, 0.502f, 0.353f, 1.0f}, // clay
+};
+
+// ImPlot and ImPlot3D keep SEPARATE registries, so the same eight
+// colours are added to each — an unregistered 3D plot silently falls
+// back to its own defaults, which is how the two libraries drift apart
+// while every value in this file looks right.
+ImPlotColormap series_colormap() {
+    const ImPlotColormap found = ImPlot::GetColormapIndex("simview");
+    return found != -1 ? found : ImPlot::AddColormap("simview", kSeries, 8);
+}
+
+ImPlot3DColormap series_colormap3() {
+    const ImPlot3DColormap found = ImPlot3D::GetColormapIndex("simview");
+    return found != -1 ? found : ImPlot3D::AddColormap("simview", kSeries, 8);
+}
+
 void plot_theme() {
     ImPlotStyle &p = ImPlot::GetStyle();
     ImVec4 *c = p.Colors;
     c[ImPlotCol_FrameBg] = fade(kInk, 0.0f);
     c[ImPlotCol_PlotBg] = fade(kSunken, 0.65f);
     c[ImPlotCol_PlotBorder] = kEdge;
-    c[ImPlotCol_LegendBg] = fade(kInk, 0.92f);
+    // The legend sits ON the data by default, so it is translucent:
+    // a reader should be able to see what it covers.
+    c[ImPlotCol_LegendBg] = fade(kInk, 0.72f);
     c[ImPlotCol_LegendBorder] = kEdge;
     c[ImPlotCol_LegendText] = kText;
     c[ImPlotCol_TitleText] = kText;
     c[ImPlotCol_InlayText] = kTextDim;
     c[ImPlotCol_AxisText] = kTextDim;
-    c[ImPlotCol_AxisGrid] = fade(kEdge, 0.70f);
+    c[ImPlotCol_AxisGrid] = fade(kEdge, 0.55f);
     c[ImPlotCol_AxisTick] = kEdge;
     c[ImPlotCol_AxisBg] = fade(kInk, 0.0f);
     c[ImPlotCol_AxisBgHovered] = fade(kAccent, 0.20f);
@@ -189,25 +224,44 @@ void plot_theme() {
     c[ImPlotCol_Selection] = kAccentHot;
     c[ImPlotCol_Crosshairs] = fade(kText, 0.55f);
 
-    p.PlotPadding = ImVec2(11.0f, 9.0f);
-    p.LabelPadding = ImVec2(5.0f, 4.0f);
+    // The axis furniture. ImPlot's ticks are 10px long and its labels
+    // sit 5px off the frame, which reads as a ruler pressed against the
+    // data; short ticks with room around the numbers read as a scale.
+    // Tick DENSITY is not ours — ImPlot's locator targets a fixed
+    // pixels-per-tick and exposes no knob for it.
+    p.PlotPadding = ImVec2(12.0f, 10.0f);
+    p.LabelPadding = ImVec2(7.0f, 6.0f);
+    p.MajorTickLen = ImVec2(6.0f, 6.0f);
+    p.MinorTickLen = ImVec2(3.0f, 3.0f);
+    p.MajorTickSize = ImVec2(1.0f, 1.0f);
+    p.MinorTickSize = ImVec2(1.0f, 1.0f);
+    // A curve that touches the frame reads as clipped. A fitted axis
+    // leaves a little room, more above and below than left and right,
+    // because that is where a peak lands.
+    p.FitPadding = ImVec2(0.02f, 0.07f);
     p.LegendPadding = ImVec2(9.0f, 9.0f);
     p.LegendInnerPadding = ImVec2(6.0f, 4.0f);
     p.PlotBorderSize = 0.0f;
-    p.MinorAlpha = 0.22f;
+    p.MinorAlpha = 0.18f;
+    p.Colormap = series_colormap();
 
     ImPlot3DStyle &q = ImPlot3D::GetStyle();
+    q.LineWeight = 1.75f;
+    q.MarkerSize = 3.0f;
+    q.FillAlpha = 0.60f;
+    q.PlotPadding = ImVec2(11.0f, 9.0f);
+    q.Colormap = series_colormap3();
     ImVec4 *d = q.Colors;
     d[ImPlot3DCol_FrameBg] = fade(kInk, 0.0f);
     d[ImPlot3DCol_PlotBg] = fade(kSunken, 0.65f);
     d[ImPlot3DCol_PlotBorder] = kEdge;
-    d[ImPlot3DCol_LegendBg] = fade(kInk, 0.92f);
+    d[ImPlot3DCol_LegendBg] = fade(kInk, 0.72f);
     d[ImPlot3DCol_LegendBorder] = kEdge;
     d[ImPlot3DCol_LegendText] = kText;
     d[ImPlot3DCol_TitleText] = kText;
     d[ImPlot3DCol_InlayText] = kTextDim;
     d[ImPlot3DCol_AxisText] = kTextDim;
-    d[ImPlot3DCol_AxisGrid] = fade(kEdge, 0.70f);
+    d[ImPlot3DCol_AxisGrid] = fade(kEdge, 0.55f);
     d[ImPlot3DCol_AxisTick] = kEdge;
 }
 
