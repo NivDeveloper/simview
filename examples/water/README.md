@@ -1,8 +1,9 @@
 # water — a dam break, and the sloshing after it
 
 A column of water is released into a closed tank. The surge runs the
-length of the floor, climbs the far wall, falls back and sloshes; a
-slider drives the tank sideways to keep it going.
+length of the floor, climbs the far wall, falls back, sloshes, and
+settles into a flat pool. A slider drives the tank sideways if you want
+to keep it going.
 
 ```sh
 make          # configures and builds; needs g++-16 for -freflection
@@ -86,6 +87,43 @@ sweeps, warm cache, Apple GPU via gpud), so the default two substeps cost
 4.5 ms of a frame. The pressure sweeps are 80 of the ~100 dispatches a
 step; halving them roughly halves the step. A 32³ grid with 63232
 particles runs at 1.09 ms, a 64³ grid with 327680 at 5.04 ms.
+
+## Where the energy goes
+
+Undriven, the water settles. Kinetic energy per particle, forcing off:
+
+| time | 0.9 s | 1.8 s | 3.0 s | 4.5 s | 6.0 s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| KE/particle | 0.89 | 0.70 | 0.18 | 0.10 | 0.05 |
+
+**The FLIP blend is the dissipation dial**, and it is the only one here:
+at blend 1 the particles keep everything the grid does not take back and
+the water never calms; at blend 0 (pure PIC) the grid re-averages every
+particle every step and the water is treacle. 0.90 is the default. There
+is no physical viscosity term — at this scale real water dissipates
+through turbulence a 48³ grid cannot resolve, so a viscosity here would
+be a second numerical dial wearing a physical name.
+
+**The `sway` slider drives the tank at 0.44 Hz, which is its resonant
+sloshing frequency** — `2L/√(gd)` for the settled depth. Turn it up and
+the wave grows every cycle until it hits the top of the domain. That is
+the tank resonating, not the solver failing to dissipate.
+
+## What it does not do
+
+The particles are drawn as particles. Production fluid renders
+reconstruct a SURFACE from them — particle depth, bilaterally blurred,
+normals from the blurred depth, then refraction and depth-based
+absorption — and that, not the solver, is most of what makes rendered
+water look like water. A pile of shaded beads has the right shape and
+the wrong material.
+
+The transfer kernel is trilinear and the particles carry velocity only.
+Production FLIP carries an affine velocity matrix as well (APIC, Jiang
+et al. 2015) over a quadratic B-spline kernel, which is the standard fix
+for the grainy surface and the stray fast particles visible here: FLIP's
+noise lives in exactly the velocity modes the grid cannot see, and the
+affine term is what gives the grid a way to see them.
 
 ## Two things worth knowing
 

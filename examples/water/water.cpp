@@ -348,7 +348,7 @@ int main() {
     auto world = app.World({});
     world
         .Camera({.focus = {0.0f, 0.0f, 0.34f},
-                 .distance = 4.1f,
+                 .distance = 4.5f,
                  .azimuth_deg = -58.0f,
                  .elevation_deg = 21.0f})
         .Light({.direction = {0.35f, 0.45f, 0.82f}, .intensity = 0.8f})
@@ -356,12 +356,12 @@ int main() {
 
     auto drops = world.Cloud(
         pos,
-        {.radius = 0.011f, .map = sv::CloudMap::Magnitude, .map_scale = 1.0f});
+        {.radius = 0.0135f, .map = sv::CloudMap::Magnitude, .map_scale = 1.0f});
     if (!drops)
         return 1;
     drops.Colors(tone);
 
-    float gravity = 9.81f, sway = 0.6f, sway_hz = 0.44f, flip = 0.95f,
+    float gravity = 9.81f, sway = 0.0f, sway_hz = 0.44f, flip = 0.90f,
           drift = 0.04f, omega = 1.85f, sweeps = 40.0f, substeps = 2.0f;
     constexpr f32 dt = 0.005f;
     std::atomic<float> g_now{gravity}, s_now{sway}, hz_now{sway_hz},
