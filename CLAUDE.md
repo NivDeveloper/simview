@@ -203,6 +203,21 @@ Next: 3-D scene kinds, and more than one window.
   no descriptor field. A new plot FAMILY is one bracket arm in the
   one `plot_draw`, never a second draw path. If a kind ever costs
   more, say so in the commit rather than quietly paying it.
+- **A widget kind costs the same three sites**, plus one: an enum
+  value, a `case` in `widget_draw`, a builder method — and its refusal
+  sentence in `widget_needs`, because a control bound to nothing is a
+  control that silently does nothing, which is worse than one that is
+  missing. Two shapes cost more and say so here rather than quietly.
+  A SCOPED construct (section, tabs, tab, row, enabled) is a Begin/End
+  PAIR sharing one `Group` discriminator: the builder takes a lambda,
+  so an unbalanced nesting is unspellable, and the flat list is drawn
+  by ONE stack walk in which a group whose body is not showing draws
+  none of it AND emits no End of its own. Nesting that ImGui would
+  only assert about mid-draw — a tab outside a bar, a control loose in
+  one — is refused at REGISTRATION, where the call that made it is
+  still on the stack. And the vocabulary is simview's own: a slider
+  takes `Scale::Log`, never an ImGui flag, because no public header
+  may name ImGui.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
   ImGui composites over it in a second LOAD pass — ui_draw is the
   app's ONE raw-Vulkan seam (dynamic rendering around the backend's
@@ -213,7 +228,10 @@ Next: 3-D scene kinds, and more than one window.
   capability flags — never by us. No panel sets `NoDocking`. Capture
   gates OS events, never `PostEvent`. The layout lives per-app under
   `SDL_GetPrefPath`, saved on `WantSaveIniSettings` and again at quit
-  BUT only when a frame was built (else a good layout is truncated).
+  BUT only when a frame was built (else a good layout is truncated). A
+  panel opens 360 wide on FIRST use and auto-fits its height: a label
+  sits to the RIGHT of its control, so an auto-fitted panel sizes
+  itself to the widest CONTROL and clips every name.
 - **A test is assertions and nothing else.** `tests/harness/` gives
   every check a `Harness.h` (device-or-SKIP, temp paths, shot-read-back),
   a `Check.h` (CHECK/CHECK_EQ/CHECK_GT keep going and print BOTH

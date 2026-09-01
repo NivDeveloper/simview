@@ -11,6 +11,8 @@ struct Extent2 {
 
 enum class DType : std::uint8_t { f32, f64, i32, u32, u8 };
 
+enum class Scale : std::uint8_t { Linear, Log };
+
 struct Config {
     const char *title = "simview";
     Extent2 size = {1200, 800};

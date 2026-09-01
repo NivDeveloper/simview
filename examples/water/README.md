@@ -12,6 +12,29 @@ make          # configures and builds; needs g++-16 for -freflection
 
 Space toggles, R restarts, Esc quits. Drag to orbit, wheel to zoom.
 
+## The controls
+
+The panel is the point of this example as much as the solver is. It
+uses the whole widget vocabulary, and each control is the shape the
+quantity actually has:
+
+| control | what it is on | why that control |
+| --- | --- | --- |
+| choice | start state | four scenarios, all the same volume of water — an index cast out of a slider could name a fifth |
+| vector slider | gravity | one vector, not three numbers; tilt it and the surface tilts |
+| int sliders | sweeps, substeps | counts are counts, and a float slider reading "31.7" rounds where you cannot see |
+| log slider | drift fix, colour ramp | useful across three decades, and a linear slider spends 90% of its travel in the top one |
+| typed input | dt | a slider cannot say exactly 0.005, and a run you want to repeat needs it to |
+| drag | poke impulse | unbounded on purpose: there is no principled largest poke |
+| enabled group | the sway pair | greyed, not hidden — a control that vanishes never explains why |
+| help markers | every parameter | a sentence each, on hover, because a panel that spells them out in full is a panel nobody reads |
+| tabs and sections | the three groups | twelve controls in a flat list is a list nobody reads either |
+| progress | kinetic energy | a fraction against its whole reads at a glance where a number does not |
+
+Two buttons poke the water directly: **jet** adds an upward impulse
+under the middle of the tank, **swirl** adds a rotation about its axis.
+Both fall off over a disc, so they are a nudge rather than a teleport.
+
 ## The method
 
 FLIP/PIC (Brackbill & Ruppel; Zhu & Bridson), the standard hybrid for

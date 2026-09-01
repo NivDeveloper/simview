@@ -10,6 +10,7 @@
 
 #include <list>
 #include <string>
+#include <vector>
 
 namespace sv {
 namespace impl {
@@ -57,9 +58,14 @@ struct PlotState {
 struct WidgetState {
     std::string label;
     std::string fmt;
+    std::string id;
+    std::vector<std::string> options;
     WidgetKind kind = WidgetKind::Text;
+    Group group = Group::Section;
     void *target = nullptr;
     float min = 0.0f, max = 1.0f;
+    float speed = 0.0f;
+    Scale scale = Scale::Linear;
     double (*value)(void *) = nullptr;
     void (*on_click)(void *) = nullptr;
     void *user = nullptr;
@@ -74,9 +80,14 @@ struct WidgetState {
     }
 };
 
+// `open` is registration-time only: it is what lets a malformed
+// nesting be refused at the call that made it, rather than becoming an
+// ImGui assertion inside a draw the user cannot see.
 struct PanelState {
     std::string title;
     std::list<WidgetState> widgets;
+    std::vector<Group> open;
+    int bars = 0;
 };
 
 } // namespace impl

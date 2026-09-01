@@ -239,7 +239,9 @@ Faces projected(const Tank &t, const Faces &U, const Grid &p, f32 dt) {
 }
 
 struct Params {
-    f32 dt, gravity, sway, phase, flip, drift, omega;
+    f32 dt;
+    f32 gravity[3];
+    f32 sway, phase, flip, drift, omega;
     int sweeps;
 };
 
@@ -252,7 +254,8 @@ struct State {
 // gathered, not after: v = flip*(v + dU) + (1-flip)*U1 is the same as
 // flip*v + interp(U1 - flip*U0), which is one fold instead of two.
 void advance(State &s, const Tank &tank, const Params &prm) {
-    const Tensor<f32, 3> accel{prm.sway * Sin(prm.phase), 0.0f, -prm.gravity};
+    const Tensor<f32, 3> accel{prm.gravity[0] + prm.sway * Sin(prm.phase),
+                               prm.gravity[1], prm.gravity[2]};
     const Stencil st = stencil_of(tank, s.X);
     const Weights w = go(weight_of(tank, st));
 
@@ -288,31 +291,79 @@ void advance(State &s, const Tank &tank, const Params &prm) {
                           1.0f * (moved[i, n] > L - margin)));
 }
 
-// What the cloud is coloured by. The turbo ramp starts near black, and
-// still water rendered black is water you cannot see, so speed is mapped
-// onto [0.17, 1] instead: a resting pool sits at the blue end and a
-// breaking crest at the red one. Magnitude is all the cloud reads, so
-// any vector of the right length will do.
-Vecs speed_tone(const Vecs &V) {
-    const Tensor<f32, 3> unit{1.0f, 0.0f, 0.0f};
-    const Tensor<f32, N> speed = go(Sqrt(fold<1>(V * V)));
-    return go((0.17f + 0.14f * speed[i]) * unit[n]);
-}
+// A start state is one or two boxes of water, each an exact number of
+// CELLS so that eight particles a cell comes out even — a fractional
+// last layer would start the run with a density the solver has to
+// expel before anything physical happens.
+struct Box {
+    idx nx, ny, nz, ox, oy, oz;
+};
+
+// Every entry holds the same 17280 cells, which is what lets one fixed
+// particle count serve all four.
+constexpr Box kStarts[8] = {
+    {24, 48, 15, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0}, // a dam against one wall
+    {12, 48, 15, 0, 0, 0},
+    {12, 48, 15, 36, 0, 0}, // two, meeting in the middle
+    {24, 24, 30, 12, 12, 14},
+    {0, 0, 0, 0, 0, 0}, // a block dropped from height
+    {45, 48, 8, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0}, // a pool already at rest
+};
 
 // Eight particles per cell on a half-cell lattice, then jittered — a
 // uniform random fill would start with 35% density noise per cell, and
 // the first steps would be spent expelling it instead of collapsing.
-Vecs dam() {
-    const Vecs lattice([](idx p, idx d) {
-        const idx c = p / PPC, s = p % PPC;
-        const idx cell[3] = {c / (CY * CZ), (c / CZ) % CY, c % CZ};
-        return h * (f32(cell[d]) + 0.25f + 0.5f * f32((s >> d) & 1u));
+Vecs seed(int start) {
+    const Box a = kStarts[2 * start], b = kStarts[2 * start + 1];
+    const bool split = b.nx != 0;
+    const Vecs lattice([a, b, split](idx p, idx d) {
+        const idx half = N / 2;
+        const Box &box = (split && p >= half) ? b : a;
+        const idx q = (split && p >= half) ? p - half : p;
+        const idx c = q / PPC, s = q % PPC;
+        const idx cell[3] = {c / (box.ny * box.nz), (c / box.nz) % box.ny,
+                             c % box.nz};
+        const idx origin[3] = {box.ox, box.oy, box.oz};
+        return h *
+               (f32(origin[d] + cell[d]) + 0.25f + 0.5f * f32((s >> d) & 1u));
     });
     return eval(
         Fmin(Fmax(lattice[i, n] +
                       (0.15f * h) * (rng::Uniform<f32, N, 3>()[i, n] - 0.5f),
                   margin),
              L - margin));
+}
+
+// A poke: an upward jet under the middle of the tank, or a swirl about
+// its axis. Both fall off over a disc about a third of the tank wide,
+// so what they do is visible without being a teleport.
+Vecs poked(const Vecs &V, const Vecs &X, f32 kick, bool swirl) {
+    const Tensor<f32, 3> ex{1.0f, 0.0f, 0.0f}, ey{0.0f, 1.0f, 0.0f},
+        ez{0.0f, 0.0f, 1.0f};
+    auto dx = X[i, 0_c] - 0.5f * L;
+    auto dy = X[i, 1_c] - 0.5f * L;
+    auto fall = Exp(-8.0f * (dx * dx + dy * dy) / (L * L));
+    if (swirl)
+        return go(V[i, n] + (kick * fall) * (ey[n] * dx - ex[n] * dy));
+    return go(V[i, n] + (kick * fall) * ez[n]);
+}
+
+// What the cloud is coloured by. The turbo ramp starts near black, and
+// still water rendered black is water you cannot see, so every source
+// is mapped onto [0.17, 1] instead: the low end is a water blue and the
+// high end red. Magnitude is all the cloud reads, so any vector of the
+// right length will do.
+Vecs tone_of(const Vecs &X, const Vecs &V, const Vecs &start, int source,
+             f32 top) {
+    const Tensor<f32, 3> unit{1.0f, 0.0f, 0.0f};
+    if (source == 1)
+        return go((0.17f + (0.83f / L) * X[i, 2_c]) * unit[n]);
+    if (source == 2)
+        return go((0.17f + (0.83f / L) * start[i, 0_c]) * unit[n]);
+    const Tensor<f32, N> speed = go(Sqrt(fold<1>(V * V)));
+    return go((0.17f + 0.83f * Fmin(speed[i] * (1.0f / top), 1.0f)) * unit[n]);
 }
 
 } // namespace
@@ -326,16 +377,25 @@ int main() {
     rng::Seed(20260901);
 
     const Tank tank = tank_of();
-    State state{dam(), Vecs(gen::Fill(0.0f)), Grid(gen::Fill(0.0f))};
+    int start = 0;
+    State state{seed(start), Vecs(gen::Fill(0.0f)), Grid(gen::Fill(0.0f))};
+    Vecs origin = go(state.X[i, n]);
 
     // The tank is modelled in [0, L]^3 and drawn centred on the grid
     // origin, so the floor of the tank is the floor of the world.
     const Tensor<f32, 3> centre{-0.5f * L, -0.5f * L, 0.0f};
+    int colour_by = 0;
+    std::atomic<int> colour_now{colour_by};
+    std::atomic<float> top_now{6.0f};
+    std::atomic<float> energy{0.0f};
+
     sv::Sync<Vecs> pos, tone;
     const auto publish = [&] {
         pos.Next() = go(state.X[i, n] + centre[n]);
         pos.Publish();
-        tone.Next() = speed_tone(state.V);
+        tone.Next() = tone_of(state.X, state.V, origin,
+                              colour_now.load(std::memory_order_relaxed),
+                              top_now.load(std::memory_order_relaxed));
         tone.Publish();
     };
     publish();
@@ -361,22 +421,38 @@ int main() {
         return 1;
     drops.Colors(tone);
 
-    float gravity = 9.81f, sway = 0.0f, sway_hz = 0.44f, flip = 0.90f,
-          drift = 0.04f, omega = 1.85f, sweeps = 40.0f, substeps = 2.0f;
-    constexpr f32 dt = 0.005f;
-    std::atomic<float> g_now{gravity}, s_now{sway}, hz_now{sway_hz},
-        f_now{flip}, d_now{drift}, o_now{omega};
-    std::atomic<int> sw_now{int(sweeps)}, sub_now{int(substeps)};
+    float gravity[3] = {0.0f, 0.0f, -9.81f};
+    float sway = 0.6f, sway_hz = 0.44f, flip = 0.90f, drift = 0.04f,
+          omega = 1.85f, dt = 0.005f, kick = 6.0f, top = 6.0f;
+    float ambient[3] = {0.40f, 0.44f, 0.52f};
+    int sweeps = 40, substeps = 2;
+    bool driven = false;
+
+    std::atomic<float> gx_now{0.0f}, gy_now{0.0f}, gz_now{-9.81f}, s_now{0.0f},
+        hz_now{sway_hz}, f_now{flip}, d_now{drift}, o_now{omega}, dt_now{dt},
+        kick_now{kick};
+    std::atomic<int> sw_now{sweeps}, sub_now{substeps};
+    std::atomic<bool> want_jet{false}, want_swirl{false};
     float clock = 0.0f;
 
     sv::Executor sim([&](const sv::Tick &) {
+        const f32 step = dt_now.load(std::memory_order_relaxed);
+        if (want_jet.exchange(false, std::memory_order_relaxed))
+            state.V = poked(state.V, state.X,
+                            kick_now.load(std::memory_order_relaxed), false);
+        if (want_swirl.exchange(false, std::memory_order_relaxed))
+            state.V = poked(state.V, state.X,
+                            kick_now.load(std::memory_order_relaxed), true);
+
         const int sub =
             std::clamp(sub_now.load(std::memory_order_relaxed), 1, 4);
         for (int t = 0; t < sub; ++t) {
-            clock += dt;
+            clock += step;
             advance(state, tank,
-                    {.dt = dt,
-                     .gravity = g_now.load(std::memory_order_relaxed),
+                    {.dt = step,
+                     .gravity = {gx_now.load(std::memory_order_relaxed),
+                                 gy_now.load(std::memory_order_relaxed),
+                                 gz_now.load(std::memory_order_relaxed)},
                      .sway = s_now.load(std::memory_order_relaxed),
                      .phase = 6.2831853f *
                               hz_now.load(std::memory_order_relaxed) * clock,
@@ -385,42 +461,150 @@ int main() {
                      .omega = o_now.load(std::memory_order_relaxed),
                      .sweeps = sw_now.load(std::memory_order_relaxed)});
         }
+        const Tensor<f32, 3> ke = go(fold<0>(state.V * state.V));
+        energy.store((float(ke[0]) + float(ke[1]) + float(ke[2])) / float(N),
+                     std::memory_order_relaxed);
         publish();
     });
     sim.OnRestart([&] {
         clock = 0.0f;
-        state = {dam(), Vecs(gen::Fill(0.0f)), Grid(gen::Fill(0.0f))};
+        state = {seed(start), Vecs(gen::Fill(0.0f)), Grid(gen::Fill(0.0f))};
+        origin = go(state.X[i, n]);
         publish();
     });
     sim.SetDt(double(dt * substeps));
     sim.Play();
 
-    app.Controls(sim);
     app.Panel("water")
-        .Text("FLIP/PIC, 48^3 staggered grid")
+        .Transport(sim)
+        .Tabs([&](sv::Panel &p) {
+            p.Tab(
+                 "scene",
+                 [&](sv::Panel &q) {
+                     q.Choice("start from", start,
+                              {"dam break", "two dams", "dropped block",
+                               "pool at rest"})
+                         .Help(
+                             "Each holds the same volume of water, so the same "
+                             "particles serve all four. Changing it restarts.")
+                         .Row([&](sv::Panel &r) {
+                             r.Button("jet", [&] {
+                                  want_jet.store(true,
+                                                 std::memory_order_relaxed);
+                              }).Button("swirl", [&] {
+                                 want_swirl.store(true,
+                                                  std::memory_order_relaxed);
+                             });
+                         })
+                         .Drag("poke m/s", kick, 0.2f, 0.0f, 0.0f)
+                         .Help(
+                             "The impulse the two buttons add, under a disc at "
+                             "the middle of the tank. Unbounded on purpose: "
+                             "there is no principled largest poke.")
+                         .Separator("forces")
+                         .Slider("gravity m/s2", gravity, -20.0f, 20.0f)
+                         .Help(
+                             "Tilt it and the free surface tilts with it. All "
+                             "three axes, because gravity is one vector and "
+                             "not "
+                             "three numbers.")
+                         .Checkbox("drive the tank", driven)
+                         .Help(
+                             "A horizontal acceleration, oscillating. This is "
+                             "what makes the water keep sloshing.")
+                         .Enabled(driven, [&](sv::Panel &r) {
+                             r.Slider("sway m/s2", sway, 0.0f, 4.0f)
+                                 .Slider("sway Hz", sway_hz, 0.15f, 1.5f)
+                                 .Help(
+                                     "0.44 Hz is this tank's own sloshing "
+                                     "mode, "
+                                     "2L/sqrt(g*depth). Drive it there and the "
+                                     "wave grows every cycle until it reaches "
+                                     "the top of the domain.");
+                         });
+                 })
+                .Tab(
+                    "solver",
+                    [&](sv::Panel &q) {
+                        q.Slider("pressure sweeps", sweeps, 4, 80)
+                            .Help(
+                                "Red-black SOR sweeps per step. The converged "
+                                "answer needs about 40 here; below 20 the "
+                                "pressure lags gravity and the water floats.")
+                            .Slider("over-relax", omega, 1.0f, 1.97f)
+                            .Help("1 is plain Gauss-Seidel. Past it each sweep "
+                                  "overshoots on purpose, which is what turns "
+                                  "the "
+                                  "sweep count from O(cells^2) into O(cells).")
+                            .Separator("transfer")
+                            .Slider("FLIP blend", flip, 0.0f, 1.0f)
+                            .Help(
+                                "1 keeps everything the grid does not take "
+                                "back "
+                                "— lively and noisy. 0 re-averages every "
+                                "particle from the grid every step — treacle. "
+                                "This is the only dissipation dial here.")
+                            .Slider("drift fix", drift, 0.001f, 1.0f,
+                                    sv::Scale::Log)
+                            .Help(
+                                "How hard an over-full cell is pushed back "
+                                "towards eight particles. Logarithmic because "
+                                "it is useful across three decades.")
+                            .Separator("stepping")
+                            .Slider("substeps", substeps, 1, 4)
+                            .Input("dt (s)", dt)
+                            .Help("Typed, not dragged: a slider cannot say "
+                                  "exactly 0.005, and a run you want to repeat "
+                                  "needs it to.");
+                    })
+                .Tab("view", [&](sv::Panel &q) {
+                    q.Choice("colour by", colour_by,
+                             {"speed", "height", "where it started"})
+                        .Help("Speed reads the flow; where it started reads "
+                              "the mixing, because a particle keeps its tag.")
+                        .Slider("ramp tops out at m/s", top, 0.3f, 20.0f,
+                                sv::Scale::Log)
+                        .Help("Where the colour ramp saturates. Logarithmic, "
+                              "because a settled pool and a breaking crest "
+                              "are two decades apart.")
+                        .Color("ambient light", ambient)
+                        .Help("The world's fill light. Everything else about "
+                              "the shading is fixed.");
+                });
+        })
         .Separator()
-        .Slider("gravity m/s2", gravity, 0.0f, 20.0f)
-        .Slider("sway m/s2", sway, 0.0f, 4.0f)
-        .Slider("sway Hz", sway_hz, 0.15f, 1.5f)
-        .Separator()
-        .Slider("FLIP blend", flip, 0.0f, 1.0f)
-        .Slider("drift fix", drift, 0.0f, 0.2f)
-        .Slider("over-relax", omega, 1.0f, 1.97f)
-        .Slider("pressure sweeps", sweeps, 4.0f, 80.0f)
-        .Slider("substeps", substeps, 1.0f, 4.0f)
-        .Separator()
-        .Text("138240 particles, 8 per cell");
+        .Progress(
+            "kinetic energy / particle",
+            [&] { return energy.load(std::memory_order_relaxed); }, 0.0f, 1.5f)
+        .Value(
+            "particles", [] { return float(N); }, "%.0f")
+        .Value("grid", [] { return float(G); }, "%.0f cells/axis");
 
     app.OnFrame([&] {
-        g_now.store(gravity, std::memory_order_relaxed);
-        s_now.store(sway, std::memory_order_relaxed);
+        gx_now.store(gravity[0], std::memory_order_relaxed);
+        gy_now.store(gravity[1], std::memory_order_relaxed);
+        gz_now.store(gravity[2], std::memory_order_relaxed);
+        s_now.store(driven ? sway : 0.0f, std::memory_order_relaxed);
         hz_now.store(sway_hz, std::memory_order_relaxed);
         f_now.store(flip, std::memory_order_relaxed);
         d_now.store(drift, std::memory_order_relaxed);
         o_now.store(omega, std::memory_order_relaxed);
-        sw_now.store(int(sweeps), std::memory_order_relaxed);
-        sub_now.store(int(substeps), std::memory_order_relaxed);
+        dt_now.store(dt, std::memory_order_relaxed);
+        kick_now.store(kick, std::memory_order_relaxed);
+        sw_now.store(sweeps, std::memory_order_relaxed);
+        sub_now.store(substeps, std::memory_order_relaxed);
+        colour_now.store(colour_by, std::memory_order_relaxed);
         sim.SetDt(double(dt * substeps));
+
+        top_now.store(top, std::memory_order_relaxed);
+        world.Ambient(ambient[0], ambient[1], ambient[2]);
+
+        // The start state is a restart, not a live parameter: changing
+        // it here is the only place that knows it changed.
+        static int shown = -1;
+        if (shown != start && shown >= 0)
+            sim.Restart();
+        shown = start;
     });
 
     app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })

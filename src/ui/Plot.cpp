@@ -200,47 +200,110 @@ Panel panel_create(App *a, const char *title) {
     return Panel{&st};
 }
 
+namespace {
+
+// What a widget must be given to mean anything. A refusal names the
+// widget and what it wanted, because the alternative is a control that
+// silently does nothing.
+const char *widget_needs(const WidgetDesc &d) {
+    switch (d.kind) {
+    case WidgetKind::Slider:
+    case WidgetKind::SliderInt:
+    case WidgetKind::SliderVec3:
+        return d.target ? nullptr : "a slider needs a value to move";
+    case WidgetKind::Drag:
+        return d.target ? nullptr : "a drag needs a value to move";
+    case WidgetKind::InputFloat:
+    case WidgetKind::InputInt:
+        return d.target ? nullptr : "an input needs a value to write into";
+    case WidgetKind::Choice:
+        if (!d.target)
+            return "a choice needs an index to select into";
+        return d.option_count > 0
+                   ? nullptr
+                   : "a choice with no options can select nothing";
+    case WidgetKind::Color:
+        return d.target ? nullptr : "a colour needs three floats to edit";
+    case WidgetKind::Checkbox:
+        return d.target ? nullptr : "a checkbox needs a value to toggle";
+    case WidgetKind::Transport:
+        return d.target ? nullptr : "a transport needs an Executor to drive";
+    case WidgetKind::Progress:
+        return d.value ? nullptr : "a progress bar needs a callable to read";
+    case WidgetKind::Value:
+        return (d.target || d.value)
+                   ? nullptr
+                   : "a value needs something to read — bind a float or "
+                     "give a callable";
+    default:
+        return nullptr;
+    }
+}
+
+// Where a widget is allowed to sit. A tab bar draws only tabs, and a
+// tab only exists inside one; both are ImGui assertions in a draw
+// nobody is watching, so they are refused at registration instead.
+const char *widget_place(const PanelState &st, const WidgetDesc &d) {
+    const bool in_bar = !st.open.empty() && st.open.back() == Group::Tabs;
+    if (d.kind == WidgetKind::GroupBegin && d.group == Group::Tab)
+        return in_bar ? nullptr
+                      : "a tab only exists inside Tabs — wrap the tabs in "
+                        "one bar";
+    if (d.kind == WidgetKind::GroupEnd) {
+        if (st.open.empty())
+            return "this group was never opened";
+        return st.open.back() == d.group
+                   ? nullptr
+                   : "groups closed out of order — an inner group is still "
+                     "open";
+    }
+    if (in_bar && d.kind != WidgetKind::GroupBegin)
+        return "a tab bar holds tabs and nothing else — put this inside a "
+               "tab";
+    return nullptr;
+}
+
+} // namespace
+
 bool panel_widget(Panel p, const WidgetDesc &d) {
     PanelState *st = static_cast<PanelState *>(p.p);
-    if (!st) {
+    const auto refuse = [&](const char *why) {
         if (d.free)
             d.free(d.user);
-        return set_error("a widget needs a panel"), false;
-    }
-    if (d.kind == WidgetKind::Slider && !d.target) {
-        if (d.free)
-            d.free(d.user);
-        return set_error("a slider needs a value to move"), false;
-    }
-    if (d.kind == WidgetKind::Checkbox && !d.target) {
-        if (d.free)
-            d.free(d.user);
-        return set_error("a checkbox needs a value to toggle"), false;
-    }
-    if (d.kind == WidgetKind::Transport && !d.target) {
-        if (d.free)
-            d.free(d.user);
-        return set_error("a transport needs an Executor to drive"), false;
-    }
-    if (d.kind == WidgetKind::Value && !d.target && !d.value) {
-        if (d.free)
-            d.free(d.user);
-        return set_error("a value needs something to read — bind a float or "
-                         "give a callable"),
-               false;
-    }
+        return set_error(why), false;
+    };
+    if (!st)
+        return refuse("a widget needs a panel");
+    if (const char *why = widget_needs(d))
+        return refuse(why);
+    if (const char *why = widget_place(*st, d))
+        return refuse(why);
+
+    if (d.kind == WidgetKind::GroupBegin)
+        st->open.push_back(d.group);
+    else if (d.kind == WidgetKind::GroupEnd)
+        st->open.pop_back();
 
     WidgetState &w = st->widgets.emplace_back();
     w.label = d.label ? d.label : "";
     w.fmt = d.fmt ? d.fmt : "%.3g";
+    // Copied, like every label: an option list is usually a braced
+    // temporary, and the array it lives in dies with the call.
+    for (int i = 0; i < d.option_count; ++i)
+        w.options.emplace_back(d.options[i] ? d.options[i] : "");
     w.kind = d.kind;
+    w.group = d.group;
     w.target = d.target;
     w.min = d.min;
     w.max = d.max;
+    w.speed = d.speed;
+    w.scale = d.scale;
     w.value = d.value;
     w.on_click = d.on_click;
     w.user = d.user;
     w.free = d.free;
+    if (d.kind == WidgetKind::GroupBegin && d.group == Group::Tabs)
+        w.id = "##tabs" + std::to_string(st->bars++);
     return true;
 }
 
