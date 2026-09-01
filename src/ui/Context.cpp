@@ -96,6 +96,7 @@ void ui_init(impl::App *a, const Config &c) {
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = nullptr; // the layout file is ours to place
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    ui_theme(a->ui);
 
     // No Vulkan loader is linked anywhere in this build: the backend
     // resolves every entry point through the app's own

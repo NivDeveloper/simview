@@ -218,6 +218,25 @@ Next: 3-D scene kinds, and more than one window.
   still on the stack. And the vocabulary is simview's own: a slider
   takes `Scale::Log`, never an ImGui flag, because no public header
   may name ImGui.
+- **One look, and it is not a setting.** `ui_theme` runs once at
+  bring-up and is the only place a colour, a radius or a spacing is
+  chosen: a palette of eleven values, every widget colour one of them
+  or one of them with an alpha, and the accent COOL because the data
+  owns warm — a turbo ramp's high end is red, and chrome that also
+  shouts in red makes the reader work out which red is the
+  measurement. Nothing is user-controllable, on purpose: a theme that
+  can be edited is a theme every screenshot disagrees about. Two
+  typefaces, embedded as bytes from the PINNED imgui checkout by CMake
+  (`generated/Fonts.h`) so nothing new is vendored and an installed
+  binary reads no font from disk — a reading face, and a MONOSPACED
+  one that numeric readouts push, because digits of unequal width make
+  a column jump as its last figure changes. `theme_check` asks the
+  fonts what they ARE (the numeric face's `i` and `W` advance
+  equally, the reading face's do not) and asks the picture for the
+  SHAPE: a rounded panel leaves its extreme corner unpainted, so that
+  corner must be indistinguishable from the background. Shades were
+  tried first and are not a test — a bitmap face resampled to 16 px is
+  filtered, so it holds a ramp too, and the drill passed.
 - **The UI layer is ImGui, and the scene stays on the swapchain.**
   ImGui composites over it in a second LOAD pass — ui_draw is the
   app's ONE raw-Vulkan seam (dynamic rendering around the backend's

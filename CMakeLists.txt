@@ -92,6 +92,29 @@ FetchContent_Declare(imgui
     GIT_TAG        7d2273672596f2a2fc4d5f20c52ec1d3cb6cd2c3)
 FetchContent_MakeAvailable(imgui) # upstream ships no CMakeLists: populate only
 
+# The UI's two typefaces, embedded as bytes from the PINNED imgui
+# checkout. Nothing new is vendored (imgui's own docs/FONTS.md carries
+# the credits: Roboto-Medium is Apache-2.0, Cousine-Regular is OFL-1.1)
+# and nothing is read from disk at run time, so an installed binary
+# carries its own text.
+function(sv_font_bytes out name path)
+    file(READ ${path} hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," bytes "${hex}")
+    set(${out} "inline constexpr unsigned char ${name}[] = {${bytes}};\n"
+        PARENT_SCOPE)
+endfunction()
+sv_font_bytes(sv_sans_bytes sv_font_sans
+    ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf)
+sv_font_bytes(sv_mono_bytes sv_font_mono
+    ${imgui_SOURCE_DIR}/misc/fonts/Cousine-Regular.ttf)
+# Written aside and copied only when it differs, so a re-configure does
+# not touch the header and rebuild the world.
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/generated/Fonts.h.in
+    "#pragma once\n// Generated from the pinned imgui checkout by CMake.\n"
+    "namespace sv {\n${sv_sans_bytes}${sv_mono_bytes}}\n")
+configure_file(${CMAKE_CURRENT_BINARY_DIR}/generated/Fonts.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/generated/Fonts.h COPYONLY)
+
 # Its own target so the warning flags are silenced HERE, deliberately
 # and visibly, rather than by editing upstream's sources. imgui_demo is
 # built on purpose: ShowDemoWindow is the rig that makes docking and
@@ -208,6 +231,7 @@ add_library(simview STATIC
     src/scene/Pipelines.cpp
     src/scene/Scene.cpp
     src/ui/Context.cpp
+    src/ui/Theme.cpp
     src/ui/Plot.cpp
     src/ui/PlotDraw.cpp
     src/ui/View.cpp
@@ -239,7 +263,7 @@ if(WIN32)
 endif()
 target_include_directories(simview PRIVATE
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}
-    ${implot3d_SOURCE_DIR})
+    ${implot3d_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_compile_definitions(simview PRIVATE
     SIMVIEW_VERSION="${PROJECT_VERSION}")
 if(SIMVIEW_TRACE)

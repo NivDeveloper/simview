@@ -195,6 +195,7 @@ Panel panel_create(App *a, const char *title) {
 
     PanelState &st = a->panels.emplace_back();
     st.title = title;
+    st.mono = a->ui.mono;
     a->ui.cbs.push_front(
         {[](void *u) { panel_draw(*static_cast<PanelState *>(u)); }, &st});
     return Panel{&st};

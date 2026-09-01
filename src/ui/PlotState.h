@@ -5,6 +5,8 @@
 // PlotDraw.cpp (drawing), and nothing below this layer knows they
 // exist.
 
+struct ImFont;
+
 #include <simview/Panel.h>
 #include <simview/Plots.h>
 
@@ -85,6 +87,9 @@ struct WidgetState {
 // ImGui assertion inside a draw the user cannot see.
 struct PanelState {
     std::string title;
+    // The numeric face, taken at creation because the draw callback is
+    // handed a panel and not the App that owns the font.
+    ::ImFont *mono = nullptr;
     std::list<WidgetState> widgets;
     std::vector<Group> open;
     int bars = 0;

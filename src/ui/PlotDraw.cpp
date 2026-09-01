@@ -340,11 +340,21 @@ void plot_draw(impl::PlotState &p) {
 
 namespace {
 
+// Numbers wear the monospaced face. Digits that do not share a width
+// make a column of readouts jump as the last figure changes, which is
+// the one thing a reader is watching.
+struct Numerals {
+    explicit Numerals(::ImFont *f) {
+        ImGui::PushFont(f, ImGui::GetStyle().FontSizeBase * 0.94f);
+    }
+    ~Numerals() { ImGui::PopFont(); }
+};
+
 // The transport is the one widget with state of its own to show. Every
 // control READS the Executor and WRITES it back through the any-thread
 // impl functions, so the panel, the keys and the code cannot disagree
 // about what the sim is doing.
-void transport_draw(void *target) {
+void transport_draw(void *target, ::ImFont *mono) {
     const impl::Executor ex{target};
     const bool playing = impl::executor_playing(ex);
     if (ImGui::Button(playing ? "||" : ">"))
@@ -366,10 +376,13 @@ void transport_draw(void *target) {
     if (ImGui::Button("restart"))
         impl::executor_restart(ex);
 
-    const Tick t = impl::executor_tick(ex);
-    ImGui::Text("n = %llu   t = %.4g   %.1f /s",
-                static_cast<unsigned long long>(t.n), t.time,
-                impl::executor_rate(ex));
+    {
+        const Tick t = impl::executor_tick(ex);
+        const Numerals face(mono);
+        ImGui::Text("n = %llu   t = %.4g   %.1f /s",
+                    static_cast<unsigned long long>(t.n), t.time,
+                    impl::executor_rate(ex));
+    }
 
     // Speed: vklib's four presets, PLUS the slider it never exposed —
     // a preset list was the thing users could not get past.
@@ -416,27 +429,29 @@ void choice_draw(impl::WidgetState &w) {
     ImGui::EndCombo();
 }
 
-void value_draw(impl::WidgetState &w) {
+void value_draw(impl::WidgetState &w, ::ImFont *mono) {
     // Bound or pulled, the same duality a series has.
     const double v =
         w.value ? w.value(w.user) : double(*static_cast<float *>(w.target));
     char buf[64];
     std::snprintf(buf, sizeof buf, w.fmt.c_str(), v);
+    const Numerals face(mono);
     ImGui::LabelText(w.label.c_str(), "%s", buf);
 }
 
-void progress_draw(impl::WidgetState &w) {
+void progress_draw(impl::WidgetState &w, ::ImFont *mono) {
     const double v = w.value(w.user);
     const float span = w.max - w.min;
     char buf[64];
     std::snprintf(buf, sizeof buf, "%.3g", v);
+    const Numerals face(mono);
     ImGui::ProgressBar(span != 0.0f ? float((v - w.min) / span) : 0.0f,
                        ImVec2(0.0f, 0.0f), buf);
     ImGui::SameLine();
     ImGui::TextUnformatted(w.label.c_str());
 }
 
-void widget_draw(impl::WidgetState &w) {
+void widget_draw(impl::WidgetState &w, ::ImFont *mono) {
     switch (w.kind) {
     case impl::WidgetKind::Text:
         ImGui::TextUnformatted(w.label.c_str());
@@ -494,13 +509,13 @@ void widget_draw(impl::WidgetState &w) {
         ImGui::Checkbox(w.label.c_str(), static_cast<bool *>(w.target));
         break;
     case impl::WidgetKind::Value:
-        value_draw(w);
+        value_draw(w, mono);
         break;
     case impl::WidgetKind::Progress:
-        progress_draw(w);
+        progress_draw(w, mono);
         break;
     case impl::WidgetKind::Transport:
-        transport_draw(w.target);
+        transport_draw(w.target, mono);
         break;
     case impl::WidgetKind::GroupBegin:
     case impl::WidgetKind::GroupEnd:
@@ -562,7 +577,7 @@ void panel_draw(impl::PanelState &p) {
     // Width only, and only before the layout file has an opinion: a
     // label sits to the RIGHT of its control, so an auto-fitted panel
     // sizes itself to the widest CONTROL and clips every name.
-    ImGui::SetNextWindowSize(ImVec2(360.0f, 0.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400.0f, 0.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin(p.title.c_str())) {
         ImGui::End();
         return;
@@ -602,7 +617,7 @@ void panel_draw(impl::PanelState &p) {
                 ImGui::SameLine();
             stack.back().first = false;
         }
-        widget_draw(w);
+        widget_draw(w, p.mono);
     }
     ImGui::End();
 }
