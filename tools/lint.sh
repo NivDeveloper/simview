@@ -18,6 +18,8 @@
 #       every update a conflict
 #   (h) every vendored dependency records its upstream PIN and copies
 #       its LICENSE (third_party/README.md is the contract)
+#   (i) an example's controls all DO something: a value bound to a
+#       slider and read nowhere is a control that decorates
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
@@ -142,6 +144,17 @@ if grep -n 'printf\|std::cout\|std::cerr\|std::print\|puts(\|SDL_Log' \
         examples/*/*.cpp examples/*/*.h 2>/dev/null; then
     echo "LINT: an example prints — showcases draw, the library reports"
     fail=1
+fi
+
+# (i)
+if command -v python3 >/dev/null 2>&1; then
+    if ! python3 tools/dead_controls.py examples; then
+        echo "LINT: a control in an example reads nowhere - a slider that\
+ moves while the picture does not is worse than no slider"
+        fail=1
+    fi
+else
+    echo "SKIP: python3 not found - dead-control gate not run"
 fi
 
 # (e)

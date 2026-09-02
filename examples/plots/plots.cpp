@@ -40,8 +40,10 @@ int main() {
                                       3.0f * std::numbers::pi_v<float>};
 
     // Controls live on the plot they belong to, not in a panel across
-    // the window. These two do nothing here — the gallery's data is
-    // fixed — and are present so the strip can be seen.
+    // the window. The phase runs the wave through every 2D kind at
+    // once, since they all read the same arrays; the eye drops the
+    // noisy copy by handing back no points, which takes its legend
+    // entry with it.
     float phase = 0.0f;
     bool show_noise = true;
 
@@ -50,7 +52,12 @@ int main() {
               .x = {.label = "t"},
               .y = {.label = "sin"}})
         .Line("sin", x, s)
-        .Scatter("samples", x, noisy, {.marker_size = 3.0f, .marker = 0})
+        .Scatter("samples",
+                 [&] {
+                     return show_noise ? sv::Points<float>{x, noisy}
+                                       : sv::Points<float>{};
+                 },
+                 {.marker_size = 3.0f, .marker = 0})
         .Controls([&](sv::Panel &p) {
             p.Row([&](sv::Panel &q) {
                 q.IconToggle(sv::Icon::Eye, "show the noisy copy", show_noise)
@@ -182,6 +189,17 @@ int main() {
                              {"midnight", "paper", "contrast", "terminal"});
 
     app.OnFrame([&] {
+        // Everything derived from t, once per frame: the sine, its
+        // envelope and the noisy copy are borrowed by six plots, so
+        // moving the phase moves all of them.
+        for (std::size_t i = 0; i < N; ++i) {
+            const float t = x[i] + phase;
+            s[i] = std::sin(t);
+            lo[i] = s[i] - 0.25f;
+            hi[i] = s[i] + 0.25f;
+            noisy[i] = s[i] + 0.15f * std::sin(t * 7.3f);
+        }
+
         if (look != shown) {
             shown = look;
             app.Theme(all[look]);
