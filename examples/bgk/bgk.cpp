@@ -8,11 +8,15 @@
 #include <Tensor/Tensor.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 using namespace tensor;
 using namespace tensor::math;
@@ -28,6 +32,7 @@ constexpr idx N = 100000;     // particles
 constexpr idx C = 64;         // cells per axis
 constexpr idx CC = C * C * C; // cells in the grid
 constexpr idx B = 24;         // momentum bins per cell, per component
+constexpr idx PB = 32;        // bins per axis of the momentum-plane plot
 constexpr f32 vmax = 2.5f;
 constexpr f32 dv = 2.0f * vmax / f32(B);
 constexpr f32 tpi = 6.283185307179586f;
@@ -188,6 +193,30 @@ State initial_state(const Setup &su) {
             })};
 }
 
+// What the plots are drawn from. The device belongs to the sim's
+// thread, so the distribution is binned THERE and handed over as plain
+// floats under a lock; the frame only ever reads this array. A lock
+// and not an atomic because it is an array — the three scalars beside
+// it are atomics for the same reason, each mechanism sized to what it
+// carries.
+struct Plane {
+    std::mutex m;
+    std::array<f32, PB * PB> f{};
+};
+
+// The gas seen in momentum space, marginalized over p_z: two lumps
+// while the beams are still beams, one Maxwellian once they are not.
+void measure_plane(Plane &plane, const Vecs &mom) {
+    auto bx = clamp(bins<PB>(mom[i, 0_c], -vmax, vmax));
+    auto by = clamp(bins<PB>(mom[i, 1_c], -vmax, vmax));
+    const auto counted = go(scatter<Sum, i>(bx, by, 1.0f));
+
+    std::lock_guard lk(plane.m);
+    for (idx py = 0; py < PB; ++py)
+        for (idx px = 0; px < PB; ++px)
+            plane.f[py * PB + px] = counted[px, py] * (1.0f / f32(N));
+}
+
 void publish(sv::Sync<Vecs> &s, const Vecs &v) {
     s.Next() = go(v[i, n]);
     s.Publish();
@@ -250,10 +279,16 @@ int main() {
         return 1;
     gas.Colors(mom);
 
+    // Measured every 20 steps, on the sim's own thread. `measured`
+    // carries the step the spreads and the plane were taken at, stored
+    // with release AFTER them, so a frame that sees a new step number
+    // sees the measurements that go with it.
     std::atomic<float> sig_x{0.0f}, sig_y{0.0f}, sig_z{0.0f};
+    std::atomic<std::uint64_t> measured{0};
+    Plane plane;
     std::uint64_t since = 0;
 
-    sv::Executor sim([&](const sv::Tick &) {
+    sv::Executor sim([&](const sv::Tick &t) {
         const f32 tau = tau_now.load(std::memory_order_relaxed);
         const f32 h = dt_now.load(std::memory_order_relaxed);
         step(Pos, Mom, centre, h, std::exp(-h / tau));
@@ -266,6 +301,8 @@ int main() {
             sig_x.store(std::sqrt(sp[0].var), std::memory_order_relaxed);
             sig_y.store(std::sqrt(sp[1].var), std::memory_order_relaxed);
             sig_z.store(std::sqrt(sp[2].var), std::memory_order_relaxed);
+            measure_plane(plane, Mom);
+            measured.store(t.n, std::memory_order_release);
         }
     });
 
@@ -313,6 +350,58 @@ int main() {
         .Separator()
         .Text(fixed_line);
 
+    // Everything below is frame-owned: the plots read the atomics
+    // above and one copy of the plane per frame, and nothing else
+    // crosses the thread boundary.
+    constexpr std::size_t TRAIL = 1200;
+    int window = 400;
+    std::uint64_t sampled = 0;
+    std::vector<float> at_step, along, across_y, across_z, thermal;
+    std::vector<float> plane_x(PB * PB), plane_y(PB * PB);
+    std::vector<float> plane_z(PB * PB, 0.0f);
+
+    const auto edge = eval(stats::Centres<PB>(-vmax, vmax));
+    for (idx py = 0; py < PB; ++py)
+        for (idx px = 0; px < PB; ++px) {
+            plane_x[py * PB + px] = edge[px];
+            plane_y[py * PB + px] = edge[py];
+        }
+
+    // Time. The three numbers the panel prints, as a history: they
+    // start at the beam speed along x and the thermal spread across
+    // it, and thermalization IS the three curves meeting.
+    app.Plot({.title = "thermalization",
+              .x = {.label = "step", .fit = sv::Fit::Stream},
+              .y = {.label = "momentum spread", .fit = sv::Fit::Stream}})
+        .Line("along the beam",
+              [&] { return sv::Points<float>{at_step, along}; })
+        .Line("across it (y)",
+              [&] { return sv::Points<float>{at_step, across_y}; })
+        .Line("across it (z)",
+              [&] { return sv::Points<float>{at_step, across_z}; })
+        .Line("equipartition",
+              [&] { return sv::Points<float>{at_step, thermal}; },
+              {.color = {0.60f, 0.63f, 0.70f, 0.90f}, .weight = 1.25f})
+        .Controls([&](sv::Panel &p) {
+            p.Slider("steps shown", window, 100, int(TRAIL));
+        });
+
+    // State. The same gas in momentum space rather than real space:
+    // two lumps at plus and minus the beam speed melt into one bell,
+    // which is the relaxation the scene can only show as colour.
+    app.Plot3D({.title = "momentum distribution",
+                .x = {.label = "p_x",
+                      .min = -double(vmax),
+                      .max = double(vmax),
+                      .fit = sv::Fit::Fixed},
+                .y = {.label = "p_y",
+                      .min = -double(vmax),
+                      .max = double(vmax),
+                      .fit = sv::Fit::Fixed},
+                .z = {.label = "fraction", .fit = sv::Fit::Stream},
+                .palette = sv::Palette::Plasma})
+        .Surface("f(p_x, p_y)", plane_x, plane_y, plane_z, PB, PB);
+
     app.OnFrame([&] {
         tau_now.store(relax, std::memory_order_relaxed);
         dt_now.store(h, std::memory_order_relaxed);
@@ -321,6 +410,43 @@ int main() {
         offset_now.store(offset, std::memory_order_relaxed);
         spread_now.store(spread, std::memory_order_relaxed);
         sim.SetDt(double(h));
+
+        // One point per measurement, and only when the step moved: a
+        // paused sim adds nothing, and a restart takes the counter back
+        // to zero, which is the signal to start the trail over. The
+        // comparison is on the counter, not on the plotted float, which
+        // stops counting exactly at 2^24.
+        const std::uint64_t n = measured.load(std::memory_order_acquire);
+        if (n < sampled)
+            for (auto *v : {&at_step, &along, &across_y, &across_z, &thermal})
+                v->clear();
+
+        if (n && n != sampled) {
+            const float sx = sig_x.load(std::memory_order_relaxed);
+            const float sy = sig_y.load(std::memory_order_relaxed);
+            const float sz = sig_z.load(std::memory_order_relaxed);
+            at_step.push_back(float(n));
+            along.push_back(sx);
+            across_y.push_back(sy);
+            across_z.push_back(sz);
+            // Where the three are heading: the rescale conserves each
+            // cell's energy, so the spread they must share is the rms
+            // of the three they currently have.
+            thermal.push_back(std::sqrt((sx * sx + sy * sy + sz * sz) / 3.0f));
+        }
+        sampled = n;
+
+        if (at_step.size() > std::size_t(window)) {
+            const auto drop =
+                std::ptrdiff_t(at_step.size() - std::size_t(window));
+            for (auto *v : {&at_step, &along, &across_y, &across_z, &thermal})
+                v->erase(v->begin(), v->begin() + drop);
+        }
+
+        {
+            std::lock_guard lk(plane.m);
+            std::copy(plane.f.begin(), plane.f.end(), plane_z.begin());
+        }
     });
 
     app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })

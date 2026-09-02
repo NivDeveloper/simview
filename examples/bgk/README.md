@@ -1,9 +1,9 @@
 # bgk — a tensor sim, drawn from the buffers it evaluated into
 
 Two discs of test particles collide off-axis in a periodic box and
-thermalize. 8192 particles, thirty-odd fused expressions a step, every
-one of them evaluated on the GPU, and the positions the vertex shader
-reads ARE the tensors tensor wrote.
+thermalize. 100,000 particles over a 64^3 grid, thirty-odd fused
+expressions a step, every one of them evaluated on the GPU, and the
+positions the vertex shader reads ARE the tensors tensor wrote.
 
 ```sh
 make          # configures and builds; needs g++-16 for -freflection
@@ -54,6 +54,33 @@ changing them is a recompile. The panel prints them FROM the
 constants, because a hand-written line there said 4^3 while the build
 said 8^3.
 
+## The two plots
+
+The scene answers where the particles are. It cannot answer *when*,
+and it cannot show momentum space — so those are the two plots, one
+each.
+
+**thermalization** is the three spread readouts as a history rather
+than as numbers: 0.8 along the beam and 0.15 across it at the start,
+and one grey line for the spread the three must share, which is the
+rms of the three they currently have. The rescale conserves each
+cell's energy, so that line is where equipartition puts them — the
+plot is answered when the three coloured curves reach the grey one.
+Its own slider sets how much history is kept, and lives ON the plot
+because that is what it belongs to.
+
+**momentum distribution** is the same gas in the space the collision
+operator actually works in: p_z summed out, p_x and p_y binned 32 each
+into a surface. Two lumps at plus and minus the beam speed while the
+beams are still beams, one Maxwellian bell once they are not. Watch it
+beside the relaxation-time slider — large and the two lumps pass
+through each other intact, small and they merge on contact.
+
+Both are fed from the sim's thread, where the device is: the
+distribution is binned by the same `scatter` the physics uses, read
+back on that thread and handed over as plain floats. The frame binds
+only what it is given.
+
 ### What the deposits cost
 
 The five per-cell deposits go into `ops::Fixed`, an integer carrier,
@@ -65,7 +92,9 @@ hand-written versions of this method reach a million particles.
 
 Measured here, ms per step, best of three runs of 300, with the viewer
 attached and the spread diagnostic running (so these are the whole
-frame's cost, not the sim's alone):
+frame's cost, not the sim's alone). Both columns are coarser than the
+64^3 the example now runs, because the point of the sweep is what the
+CELL COUNT does to a float deposit:
 
 | deposit | 4^3 cells | 8^3 cells |
 | --- | ---: | ---: |
