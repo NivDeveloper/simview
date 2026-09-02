@@ -210,7 +210,12 @@ void metrics(ImGuiStyle &s, const Theme &t) {
     // Greyed, not ghostly: a disabled control still has to be readable
     // enough to say what it would do.
     s.DisabledAlpha = 0.45f;
-    s.WindowMenuButtonPosition = ImGuiDir_None;
+    // Every panel and every plot can be put away — a collapsed plot
+    // asks its sources nothing, which is the cheapest a window gets —
+    // and the only way to do it was a double-click on the title bar,
+    // which nobody discovers. The triangle says where.
+    s.WindowMenuButtonPosition =
+        t.collapse_button ? ImGuiDir_Left : ImGuiDir_None;
     s.AntiAliasedLines = true;
     s.AntiAliasedLinesUseTex = true;
     s.AntiAliasedFill = true;

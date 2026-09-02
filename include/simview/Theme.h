@@ -28,6 +28,7 @@ struct Theme {
     float control_border = 0.0f;
     float panel_alpha = 0.94f;
     float title_align = 0.0f;
+    bool collapse_button = true;
 
     float font_size = 16.0f;
     bool mono_ui = false;

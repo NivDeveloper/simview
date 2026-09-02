@@ -7,6 +7,7 @@
 // Tests may speak ImGui — they are not consumers.
 #include "harness/Bmp.h"
 #include "harness/Harness.h"
+#include "harness/Input.h"
 
 #include "probe/Probe.h"
 
@@ -121,14 +122,19 @@ int main() {
         const auto &q = img.at(x, y);
         return int(q[0]) + int(q[1]) + int(q[2]);
     };
-    // Against the BACKGROUND, not against the inset: a square-cornered
-    // panel is still darker at its corner than eight pixels in, because
-    // of the border and the title bar, so "darker" passes either way.
-    // Unpainted means indistinguishable from what is behind the panel.
+    // The corner against the BACKGROUND, and the title bar against it
+    // too. Painted is +47 here and unpainted is 0, because the panel
+    // BODY is only +3 over the app's own ground — which is why the
+    // painted sample has to be the title bar and not the body.
+    //
+    // Taken from the RIGHT end of that bar: the left holds the collapse
+    // control now, and the original sample eight pixels in was reading
+    // the title TEXT, which a glyph moving over it silently changed.
     const int outside = sum(px - 6, py - 6);
-    const int corner = sum(px + 1, py + 1), inset = sum(px + 9, py + 9);
+    const int corner = sum(px + 1, py + 1);
+    const int inset = sum(px + unsigned(w->Size.x) - 12, py + 9);
     CHECK_LT(corner - outside, 20);
-    CHECK_GT(inset - outside, 60);
+    CHECK_GT(inset - outside, 30);
     std::printf("(background %d, corner %d, eight pixels in %d)\n", outside,
                 corner, inset);
 
@@ -300,6 +306,35 @@ int main() {
     app.Theme(themes::Midnight);
     app.Step();
     CHECK_EQ(ImPlot::GetStyle().Colormap, map);
+
+    // Every panel and every plot can be put away, and a collapsed plot
+    // asks its sources nothing — but the only way to do it was a
+    // double-click on the title bar, which nobody discovers. So the
+    // control has to BE there, and that is what this asks: the style
+    // says where it goes, and the picture says it arrived.
+    //
+    // Asked of the STYLE, like every other token. Two other ways were
+    // tried and neither says what it looks like it says. Clicking it
+    // is unreliable: ImGui defers a press and a release delivered
+    // before one NewFrame to separate frames, so a sweep of synthetic
+    // clicks accumulates lag and a window toggles several frames after
+    // the check looked. And counting lit pixels in the corner cannot
+    // tell the glyph from the title TEXT, which moves into the same
+    // strip the moment the button is gone.
+    app.Theme(themes::Midnight);
+    for (int f = 0; f < 3; ++f)
+        app.Step();
+    CHECK_EQ(int(ImGui::GetStyle().WindowMenuButtonPosition),
+             int(ImGuiDir_Left));
+    Theme quiet = themes::Midnight;
+    quiet.collapse_button = false;
+    app.Theme(quiet);
+    for (int f = 0; f < 3; ++f)
+        app.Step();
+    CHECK_EQ(int(ImGui::GetStyle().WindowMenuButtonPosition),
+             int(ImGuiDir_None));
+    app.Theme(themes::Midnight);
+    app.Step();
 
     return check::summary("theme");
 }
