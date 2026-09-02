@@ -209,6 +209,38 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.line(0.44f, 0.62f, 0.80f, 0.62f);
         return;
 
+    // The three reductions, drawn as what each one PRODUCES. They sit
+    // in a menu beside their names, so the job is to be told apart at
+    // a glance rather than to be readable alone — a distribution, a
+    // field of cells, a line with its uncertainty.
+    case Icon::Histogram:
+        p.slab(0.08f, 0.62f, 0.24f, 0.90f);
+        p.slab(0.27f, 0.38f, 0.43f, 0.90f);
+        p.slab(0.46f, 0.16f, 0.62f, 0.90f);
+        p.slab(0.65f, 0.44f, 0.81f, 0.90f);
+        p.line(0.06f, 0.94f, 0.94f, 0.94f);
+        return;
+
+    // Four cells and not nine: at this size the outline of a 3x3
+    // outweighs everything inside it, and two lit against two unlit
+    // says "some cells are busier" in a quarter of the ink.
+    case Icon::Density:
+        p.slab(0.08f, 0.08f, 0.46f, 0.46f, 0.04f);
+        p.box(0.54f, 0.08f, 0.92f, 0.46f, 0.04f);
+        p.box(0.08f, 0.54f, 0.46f, 0.92f, 0.04f);
+        p.slab(0.54f, 0.54f, 0.92f, 0.92f, 0.04f);
+        return;
+
+    case Icon::Profile:
+        p.poly({0.10f, 0.74f, 0.36f, 0.50f, 0.62f, 0.56f, 0.90f, 0.26f});
+        p.line(0.36f, 0.34f, 0.36f, 0.66f);
+        p.line(0.28f, 0.34f, 0.44f, 0.34f);
+        p.line(0.28f, 0.66f, 0.44f, 0.66f);
+        p.line(0.90f, 0.12f, 0.90f, 0.40f);
+        p.line(0.82f, 0.12f, 0.98f, 0.12f);
+        p.line(0.82f, 0.40f, 0.98f, 0.40f);
+        return;
+
     // An open ring with a head on it, not an ellipse: a flattened
     // ring is a second Eye, and the two sit next to each other.
     case Icon::Restart: {

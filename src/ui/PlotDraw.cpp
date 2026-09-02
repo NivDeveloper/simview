@@ -341,10 +341,33 @@ bool fittable(const impl::AxisState &a) {
 // costs one click; the same reduction written out costs an afternoon,
 // which is the difference between a question you ask and one you do
 // not bother to.
+Icon derived_icon(Derived k) {
+    switch (k) {
+    case Derived::Histogram:
+        return Icon::Histogram;
+    case Derived::Density:
+        return Icon::Density;
+    case Derived::Profile:
+        return Icon::Profile;
+    }
+    return Icon::Chart;
+}
+
+// Each entry drawn as what it would GIVE you. A menu of three
+// reductions is three lines of prose to read; the same three with
+// their shapes beside them is a glance, and the shape is the thing a
+// reader is choosing between.
 void reduce_menu(impl::PlotState &p, const std::vector<DeriveOption> &options) {
-    for (const DeriveOption &o : options)
+    const float h = ImGui::GetTextLineHeight();
+    for (const DeriveOption &o : options) {
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(h, h));
+        impl::icon_draw(ImGui::GetWindowDrawList(), derived_icon(o.kind), at, h,
+                        ImGui::GetColorU32(ImGuiCol_Text));
+        ImGui::SameLine();
         if (ImGui::Selectable(o.label.c_str()))
             impl::plot_derive(impl::Plot{&p}, o.kind, o.series->name.c_str());
+    }
 }
 
 // The engine's own tools, and then the caller's. Both are ICONS, so
