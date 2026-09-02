@@ -225,7 +225,7 @@ bool plot_tools(impl::App *a, const char *title, PlotTools *out) {
     for (const impl::PlotState &p : a->plots)
         if (p.title == title) {
             *out = {p.fit_offered, p.fit_pending, p.open, p.canvas_w,
-                    p.canvas_h};
+                    p.canvas_h,    p.legend,      p.grid};
             return true;
         }
     return false;

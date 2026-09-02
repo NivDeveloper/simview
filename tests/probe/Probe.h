@@ -118,6 +118,8 @@ struct PlotTools {
     // the arrangement something a check can read rather than admire.
     float canvas_w;
     float canvas_h;
+    bool legend;
+    bool grid;
 };
 bool plot_tools(impl::App *, const char *title, PlotTools *out);
 

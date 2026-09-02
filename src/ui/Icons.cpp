@@ -187,6 +187,28 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.ring(0.50f, 0.50f, 0.13f);
         return;
 
+    // What this plot can BECOME, as the thing it would become: a
+    // chart. A funnel was tried and reads as "filter", which is a
+    // different promise.
+    case Icon::Chart:
+        p.line(0.13f, 0.12f, 0.13f, 0.88f);
+        p.line(0.13f, 0.88f, 0.90f, 0.88f);
+        p.slab(0.26f, 0.55f, 0.42f, 0.86f);
+        p.slab(0.48f, 0.30f, 0.64f, 0.86f);
+        p.slab(0.70f, 0.44f, 0.86f, 0.86f);
+        return;
+
+    // A key: one swatch and the two lines of names beside it. Not an
+    // eye — an eye is visibility in general, and this switch is about
+    // one specific thing on the plot.
+    case Icon::Legend:
+        p.box(0.10f, 0.20f, 0.90f, 0.80f, 0.06f);
+        p.slab(0.20f, 0.34f, 0.36f, 0.46f, 0.02f);
+        p.line(0.44f, 0.40f, 0.80f, 0.40f);
+        p.slab(0.20f, 0.56f, 0.36f, 0.68f, 0.02f);
+        p.line(0.44f, 0.62f, 0.80f, 0.62f);
+        return;
+
     // An open ring with a head on it, not an ellipse: a flattened
     // ring is a second Eye, and the two sit next to each other.
     case Icon::Restart: {

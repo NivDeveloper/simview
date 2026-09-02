@@ -147,6 +147,7 @@ Plot plot_create(App *, const PlotDesc &);
 Plot plot3d_create(App *, const Plot3DDesc &);
 bool plot_series(Plot, const SeriesDesc &);
 Panel plot_controls(Plot);
+Panel plot_tools(Plot);
 Plot plot_derive(Plot, Derived, const char *series);
 
 }
@@ -167,6 +168,13 @@ class Plot {
 
     template <class F> Plot &Controls(F body) {
         sv::Panel bar{impl::plot_controls(p_)};
+        if (bar)
+            body(bar);
+        return *this;
+    }
+
+    template <class F> Plot &Tools(F body) {
+        sv::Panel bar{impl::plot_tools(p_)};
         if (bar)
             body(bar);
         return *this;

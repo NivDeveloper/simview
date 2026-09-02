@@ -15,11 +15,12 @@ namespace {
 
 using sv::Icon;
 
-constexpr Icon kAll[] = {
-    Icon::Home,        Icon::Fit,          Icon::Grid,   Icon::Axes,
-    Icon::Cube,        Icon::Light,        Icon::Eye,    Icon::Gear,
-    Icon::Perspective, Icon::Orthographic, Icon::Camera, Icon::Restart,
-    Icon::Forward,     Icon::Play,         Icon::Pause,  Icon::Step};
+constexpr Icon kAll[] = {Icon::Home,         Icon::Fit,     Icon::Grid,
+                         Icon::Axes,         Icon::Cube,    Icon::Light,
+                         Icon::Eye,          Icon::Gear,    Icon::Perspective,
+                         Icon::Orthographic, Icon::Camera,  Icon::Chart,
+                         Icon::Legend,       Icon::Restart, Icon::Forward,
+                         Icon::Play,         Icon::Pause,   Icon::Step};
 constexpr int kCount = int(sizeof kAll / sizeof kAll[0]);
 
 constexpr float kSize = 40.0f;

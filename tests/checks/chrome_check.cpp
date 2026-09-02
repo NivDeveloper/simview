@@ -56,6 +56,7 @@ int main() {
     if (!app)
         return check::skip("chrome", LastError());
 
+    bool mine = false;
     std::vector<float> x(64), y(64);
     for (std::size_t i = 0; i < 64; ++i) {
         x[i] = float(i) * 0.1f;
@@ -70,6 +71,7 @@ int main() {
               .x = {.label = "t"},
               .y = {.label = "y", .min = 0.0, .max = 1.0, .fit = Fit::Fixed}})
         .Scatter("pts", x, y, {.color = {1.0f, 0.0f, 1.0f, 1.0f}})
+        .Tools([&](Panel &t) { t.IconToggle(Icon::Eye, "mine", mine); })
         .Controls([&](Panel &p) { p.Slider("knob", knob, 0.0f, 1.0f); });
 
     ImGui::LoadIniSettingsFromMemory(
@@ -110,6 +112,41 @@ int main() {
     CHECK(bar.fit_offered);
     CHECK(rail.fit_offered);
     CHECK(menu.fit_offered);
+
+    // A rail is ONE BUTTON wide. It was a word wide first, because the
+    // views control was a text button, and a column holding a word is
+    // a panel that has not admitted it yet.
+    const float button =
+        ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.x * 2.0f;
+    const float spent = bar.canvas_w - rail.canvas_w;
+    std::printf("(rail costs %.0f px, one button is %.0f)\n", double(spent),
+                double(button));
+    CHECK_GT(button + 24.0f, spent);
+
+    // The caller's own tools ride the strip with the engine's. Which
+    // slot they land in is the engine's business, so this walks the
+    // rail clicking each in turn and asks only that one of them is the
+    // caller's — an ordering the check does not have to know.
+    app.Theme(with(PlotChrome::Rail));
+    for (int f = 0; f < 4; ++f)
+        app.Step();
+    const ImGuiWindow *sw = ImGui::FindWindowByName("signal");
+    REQUIRE(sw != nullptr);
+    const float pitch =
+        ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
+    const float rx = sw->Pos.x + ImGui::GetStyle().WindowPadding.x +
+                     ImGui::GetFrameHeight() * 0.5f + 4.0f;
+    const float ry = sw->Pos.y + 40.0f + ImGui::GetFrameHeight() * 0.5f;
+    int hit = -1;
+    for (int k = 0; k < 8 && hit < 0; ++k) {
+        input::move(app, rx, ry + pitch * float(k));
+        input::press(app);
+        input::release(app);
+        if (mine)
+            hit = k;
+    }
+    std::printf("(the caller's tool answered at rail slot %d)\n", hit);
+    CHECK_GT(hit, -1);
 
     // A setting the chrome owns reaches the plot. The legend sits
     // ABOVE the axes, so turning it off gives its band back to the

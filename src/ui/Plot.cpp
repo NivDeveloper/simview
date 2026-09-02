@@ -376,6 +376,15 @@ Panel plot_controls(Plot p) {
     return Panel{st->controls.get()};
 }
 
+Panel plot_tools(Plot p) {
+    PlotState *st = static_cast<PlotState *>(p.p);
+    if (!st)
+        return set_error("a plot's tools need a plot"), Panel{};
+    if (!st->tools)
+        st->tools = std::make_unique<PanelState>();
+    return Panel{st->tools.get()};
+}
+
 Plot plot_derive(Plot p, Derived kind, const char *series) {
     PlotState *st = static_cast<PlotState *>(p.p);
     if (!st || !st->app)

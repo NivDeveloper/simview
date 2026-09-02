@@ -27,6 +27,8 @@ enum class Icon : std::uint8_t {
     Light,
     Eye,
     Gear,
+    Chart,
+    Legend,
     Restart,
     Forward,
     Play,

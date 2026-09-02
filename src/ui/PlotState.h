@@ -80,6 +80,12 @@ struct PlotState {
     // The plot's own strip of controls, above the canvas. Empty for a
     // plot that asked for none.
     std::unique_ptr<PanelState> controls;
+    // The caller's ICON controls, which ride with the engine's own on
+    // whatever strip the arrangement gives them. Separate from
+    // `controls` because a labelled slider and an icon button want
+    // different rooms, and asking the widget kind at draw time would
+    // put that decision somewhere nobody would look for it.
+    std::unique_ptr<PanelState> tools;
     std::unique_ptr<Derivation> derivation;
     // A derived view is engine-made and closable; closing hides it and
     // asking the same question again brings this one back rather than
@@ -147,7 +153,7 @@ void panel_draw(impl::PanelState &);
 
 // The widget walk, without a window around it: a plot's control strip
 // is the same list drawn in the plot's own window.
-void panel_body(impl::PanelState &);
+void panel_body(impl::PanelState &, bool inline_row = false);
 
 // Recompute a derived plot from its source. Called at the top of the
 // derived plot's draw, before its series are read.

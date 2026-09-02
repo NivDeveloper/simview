@@ -347,53 +347,53 @@ void reduce_menu(impl::PlotState &p, const std::vector<DeriveOption> &options) {
             impl::plot_derive(impl::Plot{&p}, o.kind, o.series->name.c_str());
 }
 
-// The two the engine owns on every 2-D plot. They are HERE and not on
-// PlotDesc because a reader turning a legend off is not the caller
-// changing the plot's definition.
-void settings_menu(impl::PlotState &p) {
-    ImGui::Checkbox("legend", &p.legend);
-    ImGui::Checkbox("grid", &p.grid);
-}
+// The engine's own tools, and then the caller's. Both are ICONS, so
+// both fit a row and a column without either knowing which it is in.
+// `column` stacks them.
+//
+// Legend and grid are here rather than behind the gear because they
+// are the two a reader reaches for while looking, and a look-and-click
+// is not a look-and-two-clicks. What is left behind a gear is the
+// caller's full controls, which do not fit a strip of buttons.
+void chrome_tools(impl::PlotState &p, const std::vector<DeriveOption> &options,
+                  bool column) {
+    const auto step = [column] {
+        if (!column)
+            ImGui::SameLine();
+    };
 
-// `column` stacks them; `tuck` puts the caller's controls in the gear
-// popup instead of leaving them for the caller region — which is what a
-// narrow rail has to do, since a labelled slider does not fit in a
-// column of buttons and clipping it helps nobody.
-void chrome_buttons(impl::PlotState &p,
-                    const std::vector<DeriveOption> &options, bool column,
-                    bool tuck) {
     if (p.fit_offered) {
         if (impl::icon_button(Icon::Fit, "fit", "fit the axes to the data"))
             p.fit_pending = true;
-        if (!column)
-            ImGui::SameLine();
+        step();
     }
     if (!options.empty()) {
-        if (ImGui::SmallButton("views"))
+        if (impl::icon_button(Icon::Chart, "views",
+                              "see this as a distribution, a density or a "
+                              "profile"))
             ImGui::OpenPopup("##views");
         if (ImGui::BeginPopup("##views")) {
             reduce_menu(p, options);
             ImGui::EndPopup();
         }
-        if (!column)
-            ImGui::SameLine();
+        step();
     }
-    const bool has_controls = p.controls && !p.controls->widgets.empty();
-    const bool tucked = tuck && has_controls;
-    if (p.family == impl::Family::Plot2D || tucked) {
-        if (impl::icon_button(Icon::Gear, "settings",
-                              tucked ? "controls, legend and grid"
-                                     : "legend and grid"))
-            ImGui::OpenPopup("##settings");
-        if (ImGui::BeginPopup("##settings")) {
-            if (p.family == impl::Family::Plot2D)
-                settings_menu(p);
-            if (tucked) {
-                ImGui::SeparatorText("controls");
-                panel_body(*p.controls);
-            }
-            ImGui::EndPopup();
-        }
+    if (p.family == impl::Family::Plot2D) {
+        if (impl::icon_button(Icon::Legend, "legend", "the key", p.legend))
+            p.legend = !p.legend;
+        step();
+        if (impl::icon_button(Icon::Grid, "grid", "grid lines", p.grid))
+            p.grid = !p.grid;
+        step();
+    }
+
+    // The caller's, on the same strip: a plot's own buttons belong
+    // where the plot's buttons are.
+    if (p.tools && !p.tools->widgets.empty()) {
+        if (column)
+            panel_body(*p.tools, /*inline_row=*/false);
+        else
+            panel_body(*p.tools, /*inline_row=*/true);
     }
 }
 
@@ -416,16 +416,7 @@ ImVec2 plot_chrome(impl::PlotState &p, float bar_w) {
         if (impl::icon_button(Icon::Gear, "menu", "controls and views"))
             ImGui::OpenPopup("##menu");
         if (ImGui::BeginPopup("##menu")) {
-            if (p.fit_offered && ImGui::Selectable("fit the axes to the data"))
-                p.fit_pending = true;
-            if (!options.empty()) {
-                ImGui::SeparatorText("views");
-                reduce_menu(p, options);
-            }
-            if (p.family == impl::Family::Plot2D) {
-                ImGui::SeparatorText("show");
-                settings_menu(p);
-            }
+            chrome_tools(p, options, /*column=*/false);
             if (has_controls) {
                 ImGui::SeparatorText("controls");
                 panel_body(*p.controls);
@@ -437,19 +428,30 @@ ImVec2 plot_chrome(impl::PlotState &p, float bar_w) {
     }
 
     if (how == PlotChrome::Rail) {
-        // A rail sized from the FONT, so it holds its text button at
-        // any theme's text size rather than at one theme's.
-        const float w = ImGui::CalcTextSize("views").x +
-                        ImGui::GetStyle().FramePadding.x * 4.0f;
+        // Icons only, so the rail is one button wide whatever the
+        // theme's text size — a column holding a word is a panel that
+        // has not admitted it yet. What does not fit a button goes
+        // behind the gear at its foot.
+        const float w =
+            ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.x * 2.0f;
         ImGui::BeginChild("##rail", ImVec2(w, -1), ImGuiChildFlags_None);
-        chrome_buttons(p, options, /*column=*/true, /*tuck=*/true);
+        chrome_tools(p, options, /*column=*/true);
+        if (has_controls) {
+            ImGui::Separator();
+            if (impl::icon_button(Icon::Gear, "more", "this plot's controls"))
+                ImGui::OpenPopup("##more");
+            if (ImGui::BeginPopup("##more")) {
+                panel_body(*p.controls);
+                ImGui::EndPopup();
+            }
+        }
         ImGui::EndChild();
         ImGui::SameLine();
         ImGui::PopID();
         return ImVec2(-1 - bar_w, -1);
     }
 
-    chrome_buttons(p, options, /*column=*/false, /*tuck=*/false);
+    chrome_tools(p, options, /*column=*/false);
     if (has_controls)
         panel_body(*p.controls);
     ImGui::Separator();
@@ -828,7 +830,7 @@ void group_end(const impl::WidgetState &w) {
 // is not in front — must not draw its children AND must not emit its
 // own End, which is why `on` is remembered per frame rather than asked
 // again.
-void panel_body(impl::PanelState &p) {
+void panel_body(impl::PanelState &p, bool inline_row) {
     struct Frame {
         impl::Group group;
         bool on;
@@ -836,6 +838,7 @@ void panel_body(impl::PanelState &p) {
     };
     std::vector<Frame> stack;
     int hidden = 0;
+    bool first = true;
 
     for (impl::WidgetState &w : p.widgets) {
         if (w.kind == impl::WidgetKind::GroupBegin) {
@@ -862,7 +865,14 @@ void panel_body(impl::PanelState &p) {
             if (!stack.back().first && w.kind != impl::WidgetKind::Help)
                 ImGui::SameLine();
             stack.back().first = false;
+        } else if (inline_row && !first) {
+            // A tool strip is a row the caller did not have to ask for:
+            // Tools holds icon controls, and icon controls in a column
+            // where a row was meant is the kind of thing a caller ends
+            // up spelling on every plot.
+            ImGui::SameLine();
         }
+        first = false;
         widget_draw(w, p.mono);
     }
 }
