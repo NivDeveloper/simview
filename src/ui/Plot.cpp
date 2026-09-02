@@ -397,10 +397,13 @@ Plot plot_derive(Plot p, Derived kind, const char *series) {
                          "derive from the plot that holds the data"),
                Plot{};
 
+    // Asked of the series directly, not of the menu: the menu is a
+    // curated list and a caller naming a reduction has not asked to be
+    // curated.
     const SeriesState *from = nullptr;
-    for (const DeriveOption &o : derive_options(*st))
-        if (o.kind == kind && (!series || o.series->name == series)) {
-            from = o.series;
+    for (const SeriesState &s : st->series)
+        if (reducible(s.kind) && (!series || s.name == series)) {
+            from = &s;
             break;
         }
     if (!from) {

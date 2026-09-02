@@ -172,4 +172,8 @@ struct DeriveOption {
 };
 std::vector<DeriveOption> derive_options(const impl::PlotState &);
 
+// Whether a reduction can be taken of a series at all — the
+// capability, where derive_options is the offer.
+bool reducible(impl::SeriesKind);
+
 } // namespace sv

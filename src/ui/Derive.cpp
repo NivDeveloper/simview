@@ -335,25 +335,30 @@ void derive_update(impl::PlotState &p) {
     profile(d, xs, ys, line, *(++it));
 }
 
-std::vector<DeriveOption> derive_options(const impl::PlotState &p) {
-    std::vector<DeriveOption> out;
-    if (!p.derive || p.derivation || p.family != impl::Family::Plot2D)
-        return out;
+// Which series a reduction can be taken OF. A capability, and the
+// question plot_derive asks — separate from what the MENU offers,
+// because a caller writing `Derive(Density)` has already decided and a
+// reader picking from a list has not.
+bool reducible(impl::SeriesKind k) {
+    return k == impl::SeriesKind::Line || k == impl::SeriesKind::Scatter ||
+           k == impl::SeriesKind::Stairs || k == impl::SeriesKind::Stems ||
+           k == impl::SeriesKind::Bars;
+}
 
-    for (const impl::SeriesState &s : p.series) {
-        const bool points = s.kind == impl::SeriesKind::Line ||
-                            s.kind == impl::SeriesKind::Scatter ||
-                            s.kind == impl::SeriesKind::Stairs ||
-                            s.kind == impl::SeriesKind::Stems ||
-                            s.kind == impl::SeriesKind::Bars;
-        if (!points)
-            continue;
-        out.push_back({&s, Derived::Histogram, "histogram of " + s.name});
-        out.push_back({&s, Derived::Density, "density of " + s.name});
-        out.push_back({&s, Derived::Profile, "profile of " + s.name});
-        out.push_back({&s, Derived::Joint, "joint view of " + s.name});
-    }
-    return out;
+// What the menu OFFERS, and deliberately nothing.
+//
+// A one-click view is only worth a line in a menu if a reader would
+// otherwise have gone and written it, and four of them competing for
+// that judgement made the menu a list to read rather than a choice to
+// make. The set is curated from empty rather than pruned from what
+// happened to be easy to compute.
+//
+// Adding one back costs a line here and nothing else: the reductions
+// themselves stay reachable through Plot::Derive, so what is being
+// decided here is the OFFER and not the capability.
+std::vector<DeriveOption> derive_options(const impl::PlotState &p) {
+    (void)p;
+    return {};
 }
 
 } // namespace sv

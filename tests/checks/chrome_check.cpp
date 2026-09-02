@@ -151,7 +151,12 @@ int main() {
     // A setting the chrome owns reaches the plot. The legend sits
     // ABOVE the axes, so turning it off gives its band back to the
     // data and nothing else in the window moves.
+    // Set ON first rather than assumed: the rail walk above clicks
+    // every slot, and one of them is this very toggle. A test that
+    // starts from whatever the last one left is a test of the order
+    // they happen to run in.
     app.Theme(with(PlotChrome::Bar));
+    probe::plot_show_legend(app.Raw(), "signal", true);
     for (int f = 0; f < 4; ++f)
         app.Step();
     probe::PlotTools shown{}, hidden{};
