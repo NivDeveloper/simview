@@ -40,10 +40,15 @@ int main() {
                                       3.0f * std::numbers::pi_v<float>};
 
     // Controls live on the plot they belong to, not in a panel across
-    // the window. The phase runs the wave through every 2D kind at
-    // once, since they all read the same arrays; the eye drops the
-    // noisy copy by handing back no points, which takes its legend
-    // entry with it.
+    // the window, and in the two rooms a plot has: an icon control
+    // goes on the TOOL strip beside the engine's own, a labelled one
+    // goes under it. Switch the look to terminal and the strip is a
+    // sidebar; to paper and it is one button — the same two controls
+    // either way.
+    //
+    // The phase runs the wave through every 2D kind at once, since
+    // they all read the same arrays; the eye drops the noisy copy by
+    // handing back no points, which takes its legend entry with it.
     float phase = 0.0f;
     bool show_noise = true;
 
@@ -58,12 +63,11 @@ int main() {
                                        : sv::Points<float>{};
                  },
                  {.marker_size = 3.0f, .marker = 0})
-        .Controls([&](sv::Panel &p) {
-            p.Row([&](sv::Panel &q) {
-                q.IconToggle(sv::Icon::Eye, "show the noisy copy", show_noise)
-                    .Slider("phase", phase, 0.0f, 6.283f);
-            });
-        });
+        .Tools([&](sv::Panel &t) {
+            t.IconToggle(sv::Icon::Eye, "show the noisy copy", show_noise);
+        })
+        .Controls(
+            [&](sv::Panel &p) { p.Slider("phase", phase, 0.0f, 6.283f); });
 
     app.Plot({.title = "stairs", .x = {.label = "t"}}).Stairs("steps", x, s);
 
