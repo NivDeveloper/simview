@@ -105,6 +105,17 @@ struct CameraState {
 };
 bool camera_of(impl::App *, const char *title, CameraState *out);
 
+// A plot's toolbar as the plot itself sees it: whether a fit control
+// was offered on the last draw, whether a click on it is still waiting
+// to be consumed, and whether the window is showing at all. A picture
+// can say a button is there; only this says which button it is.
+struct PlotTools {
+    bool fit_offered;
+    bool fit_pending;
+    bool open;
+};
+bool plot_tools(impl::App *, const char *title, PlotTools *out);
+
 // Make the next graphics submission wait GPU-side on a compute-timeline
 // value nothing will ever signal — the hang a deleted pump or a stamp
 // past what compute will reach would cause — so a check can prove the

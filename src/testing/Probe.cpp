@@ -192,5 +192,16 @@ Extent2 view_extent(impl::App *a, const char *title) {
     return {};
 }
 
+bool plot_tools(impl::App *a, const char *title, PlotTools *out) {
+    if (!a || !title || !out)
+        return false;
+    for (const impl::PlotState &p : a->plots)
+        if (p.title == title) {
+            *out = {p.fit_offered, p.fit_pending, p.open};
+            return true;
+        }
+    return false;
+}
+
 } // namespace probe
 } // namespace sv

@@ -403,8 +403,12 @@ Plot plot_derive(Plot p, Derived kind, const char *series) {
     }
 
     App *a = st->app;
-    if (PlotState *seen = already_derived(a, from, kind))
+    // Asking again re-OPENS it: a closed view is the same answer put
+    // away, not a missing one, and a second copy of it helps nobody.
+    if (PlotState *seen = already_derived(a, from, kind)) {
+        seen->open = true;
         return Plot{seen};
+    }
 
     PlotState &d = a->plots.emplace_back();
     d.slot = a->windows++;

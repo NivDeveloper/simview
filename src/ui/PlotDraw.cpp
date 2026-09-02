@@ -301,12 +301,29 @@ void place_window(int slot, float width, float height) {
 // costs one click; the same reduction written out costs an afternoon,
 // which is the difference between a question you ask and one you do
 // not bother to.
+// Refitting is worth a control only where it would change something:
+// a fixed axis ignores it, and a streaming one has already refitted
+// this frame. That leaves the two that fit ONCE and are then the
+// reader's — which is exactly when a reader who has panned away wants
+// the data back.
+bool fittable(const impl::AxisState &a) {
+    return a.desc.fit == Fit::Data || a.desc.fit == Fit::Start;
+}
+
 void plot_toolbar(impl::PlotState &p) {
     const std::vector<DeriveOption> options = derive_options(p);
     const bool has_controls = p.controls && !p.controls->widgets.empty();
-    if (options.empty() && !has_controls)
+    p.fit_offered =
+        p.family == impl::Family::Plot2D && (fittable(p.x) || fittable(p.y));
+    if (options.empty() && !has_controls && !p.fit_offered)
         return;
 
+    if (p.fit_offered) {
+        if (impl::icon_button(Icon::Fit, "fit", "fit the axes to the data"))
+            p.fit_pending = true;
+        if (!options.empty())
+            ImGui::SameLine();
+    }
     if (!options.empty()) {
         if (ImGui::SmallButton("views"))
             ImGui::OpenPopup("##views");
@@ -326,10 +343,19 @@ void plot_toolbar(impl::PlotState &p) {
 } // namespace
 
 void plot_draw(impl::PlotState &p) {
+    // A view the engine offered is a view the reader may dismiss. One
+    // the CALLER declared is not: it would close with nothing left to
+    // reopen it from.
+    const bool closable = p.derivation != nullptr;
+    if (closable && !p.open)
+        return;
+
     place_window(p.slot, 520.0f, 360.0f);
     // A collapsed panel asks its sources nothing.
-    if (!ImGui::Begin(p.title.c_str())) {
+    bool keep = true;
+    if (!ImGui::Begin(p.title.c_str(), closable ? &keep : nullptr)) {
         ImGui::End();
+        p.open = keep;
         return;
     }
     if (p.derivation)
@@ -377,9 +403,14 @@ void plot_draw(impl::PlotState &p) {
         if (mapped)
             ImPlot::PopColormap();
         ImGui::End();
+        p.open = keep;
         return;
     }
 
+    if (p.fit_pending) {
+        ImPlot::SetNextAxesToFit();
+        p.fit_pending = false;
+    }
     if (ImPlot::BeginPlot("##canvas", ImVec2(-1 - bar_w, -1))) {
         setup_axis(ImAxis_X1, p.x);
         setup_axis(ImAxis_Y1, p.y);
@@ -412,6 +443,7 @@ void plot_draw(impl::PlotState &p) {
     if (mapped)
         ImPlot::PopColormap();
     ImGui::End();
+    p.open = keep;
 }
 
 namespace {

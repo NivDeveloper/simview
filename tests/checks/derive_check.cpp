@@ -5,6 +5,7 @@
 // bug in a 2-D histogram passes every arithmetic assertion.
 #include "harness/Bmp.h"
 #include "harness/Harness.h"
+#include "harness/Input.h"
 
 #include "probe/Probe.h"
 
@@ -92,6 +93,45 @@ int main() {
     // bottom-right instead, which is the bug this catches.
     CHECK_GT(q.tr, q.tl + q.bl + q.br);
     CHECK_GT(q.tr, std::size_t(40));
+
+    // The window the engine offered, the reader may dismiss. Clicking
+    // the title bar's close box is what a reader does, so that is what
+    // this clicks — a probe that closed it directly would prove the
+    // flag and not the affordance.
+    probe::PlotTools t{};
+    REQUIRE(probe::plot_tools(app.Raw(), "density of pts (cloud)", &t));
+    CHECK(t.open);
+    input::move(app, w->Pos.x + w->Size.x - 14.0f, w->Pos.y + 12.0f);
+    input::press(app);
+    input::release(app);
+    REQUIRE(probe::plot_tools(app.Raw(), "density of pts (cloud)", &t));
+    CHECK(!t.open);
+
+    // Asking again brings THAT one back rather than a second copy.
+    auto reopened = cloud.Derive(Derived::Density);
+    CHECK(reopened.Raw().p == dens.Raw().p);
+    app.Step();
+    REQUIRE(probe::plot_tools(app.Raw(), "density of pts (cloud)", &t));
+    CHECK(t.open);
+
+    // A fit control where a refit would do something, and none where
+    // it would not. A plot whose axes fit once and are then the
+    // reader's offers one — the source and the density both do. A
+    // plot pinned to fixed limits ignores a refit, so offering it
+    // would be a button that does nothing.
+    CHECK(t.fit_offered);
+    probe::PlotTools src{};
+    REQUIRE(probe::plot_tools(app.Raw(), "cloud", &src));
+    CHECK(src.fit_offered);
+
+    app.Plot({.title = "pinned",
+              .x = {.min = 0.0, .max = 1.0, .fit = Fit::Fixed},
+              .y = {.min = 0.0, .max = 1.0, .fit = Fit::Fixed}})
+        .Line("l", x, y);
+    app.Step();
+    probe::PlotTools pinned{};
+    REQUIRE(probe::plot_tools(app.Raw(), "pinned", &pinned));
+    CHECK(!pinned.fit_offered);
 
     return check::summary("derive");
 }

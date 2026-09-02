@@ -81,6 +81,13 @@ struct PlotState {
     // plot that asked for none.
     std::unique_ptr<PanelState> controls;
     std::unique_ptr<Derivation> derivation;
+    // A derived view is engine-made and closable; closing hides it and
+    // asking the same question again brings this one back rather than
+    // a second copy. Both fit_* are what the LAST toolbar decided, so
+    // a probe reads what was drawn and not a fresh guess.
+    bool open = true;
+    bool fit_offered = false;
+    bool fit_pending = false;
     App *app = nullptr;
 };
 
