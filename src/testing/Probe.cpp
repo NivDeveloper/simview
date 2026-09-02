@@ -170,6 +170,33 @@ bool camera_of(impl::App *a, const char *title, CameraState *out) {
     return true;
 }
 
+bool world_preset(impl::App *a, const char *title, int preset) {
+    impl::WorldState *w = world_of(a, title);
+    std::size_t n = 0;
+    const Preset *table = world_presets(&n);
+    if (!w || preset < 0 || std::size_t(preset) >= n)
+        return false;
+    world_look(*w, table[preset].az, table[preset].el);
+    return true;
+}
+
+bool world_show(impl::App *a, const char *title, int what, bool on) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w)
+        return false;
+    impl::WorldItem *it = what == 0 ? w->grid : w->axes;
+    if (!it)
+        return false;
+    it->visible = on;
+    return true;
+}
+
+std::size_t world_preset_count() {
+    std::size_t n = 0;
+    world_presets(&n);
+    return n;
+}
+
 void stall_frame(impl::App *a) {
     if (!a)
         return;

@@ -180,11 +180,13 @@ const WorldItemOps kAxesOps{
 void world_add_grid(impl::WorldState &w) {
     impl::WorldItem &it = world_item_add(w, &kGridOps);
     it.state = new GridState{};
+    w.grid = &it;
 }
 
 void world_add_axes(impl::WorldState &w) {
     impl::WorldItem &it = world_item_add(w, &kAxesOps);
     it.state = new AxesState{};
+    w.axes = &it;
 }
 
 } // namespace sv

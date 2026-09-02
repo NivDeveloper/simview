@@ -181,7 +181,8 @@ int main() {
     REQUIRE(bool(main));
     CHECK(!app.World({}));
 
-    sv::World w = app.World({.title = "world", .grid = false, .axes = false});
+    sv::World w = app.World(
+        {.title = "world", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(w));
     CHECK(!app.World({.title = "world"}));
     w.Camera({.focus = {0.0f, 0.0f, 0.0f},
@@ -252,7 +253,8 @@ int main() {
     // Its own world, so the opaque spheres above cannot answer for it.
     // The NEAR cloud is registered FIRST: submission order alone would
     // paint the far one over it, and only the sort puts them right.
-    sv::World t = app.World({.title = "blend", .grid = false, .axes = false});
+    sv::World t = app.World(
+        {.title = "blend", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(t));
     t.Camera({.focus = {0.0f, 0.0f, 0.0f},
               .distance = 4.0f,
@@ -290,7 +292,8 @@ int main() {
     // A Sync: the world must register its gate, so the frame waits for
     // exactly the work behind what it shows.
     const std::size_t gates_before = probe::gate_count(app.Raw());
-    sv::World d = app.World({.title = "doors", .grid = false, .axes = false});
+    sv::World d = app.World(
+        {.title = "doors", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(d));
     // Pinned, because what follows has to be probed rather than merely
     // run: this section used to assert nothing about the picture and a
@@ -370,7 +373,8 @@ int main() {
     // the near one is half again as wide; under the orthographic
     // projection they measure the same, which is the whole reason a
     // caller reaches for it.
-    sv::World o = app.World({.title = "ortho", .grid = false, .axes = false});
+    sv::World o = app.World(
+        {.title = "ortho", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(o));
     o.Camera({.focus = {0.0f, 0.0f, 0.0f},
               .distance = 6.0f,
@@ -408,7 +412,8 @@ int main() {
     // Three points, three directions, three colours. It fails unless
     // the second buffer is bound AND indexed by the same point index
     // the position was.
-    sv::World m = app.World({.title = "map", .grid = false, .axes = false});
+    sv::World m = app.World(
+        {.title = "map", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(m));
     m.Camera({.focus = {0.0f, 0.0f, 0.0f},
               .distance = 6.0f,
@@ -456,7 +461,8 @@ int main() {
     // caller reads a velocity field by, and the reason a thermalized
     // gas looks like noise is that its speeds really are uncorrelated,
     // not that this is unhooked.
-    sv::World mg = app.World({.title = "mag", .grid = false, .axes = false});
+    sv::World mg = app.World(
+        {.title = "mag", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(mg));
     mg.Camera({.focus = {0.0f, 0.0f, 0.0f},
                .distance = 6.0f,
@@ -497,7 +503,8 @@ int main() {
     // One sphere, one light from the side, no ambient. The lit half is
     // brighter than the dark half; a light at the camera — which is
     // what W1 had — lights a disc symmetrically and fails this.
-    sv::World l = app.World({.title = "light", .grid = false, .axes = false});
+    sv::World l = app.World(
+        {.title = "light", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(l));
     l.Camera({.focus = {0.0f, 0.0f, 0.0f},
               .distance = 5.0f,

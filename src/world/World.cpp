@@ -251,7 +251,7 @@ void world_draw_into(impl::WorldState &w, impl::Platform &pl,
     // An item with no bounds is drawn — see WorldItemOps::bounds.
     w.cmds.clear();
     for (impl::WorldItem &it : w.items) {
-        if (!it.ops || !it.ops->submit)
+        if (!it.ops || !it.ops->submit || !it.visible)
             continue;
         impl::Vec3 lo{}, hi{};
         if (w.cull && it.ops->bounds && it.ops->bounds(it, &lo, &hi) &&

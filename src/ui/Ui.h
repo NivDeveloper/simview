@@ -12,8 +12,10 @@
 #include <simview/Types.h>
 
 #include <SDL3/SDL.h>
+#include <imgui.h>
 #include <nvrhi/nvrhi.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <forward_list>
 #include <string>
@@ -81,6 +83,17 @@ void world_camera_gesture(impl::WorldState &, bool hovered, bool active);
 // a frame, after they are built, because that is when the answer is
 // true.
 void ui_world_input(impl::App *);
+void ui_world_overlay(impl::App *);
+void world_controls(impl::WorldState &, ::ImVec2);
+
+// The view presets, as the menu loops them. Shared so a test applies
+// the same table rather than a copy of it.
+struct Preset {
+    const char *name;
+    float az, el;
+};
+const Preset *world_presets(std::size_t *count);
+void world_look(impl::WorldState &, float az_deg, float el_deg);
 
 // Is there a UI frame to build? A context exists AND somebody asked
 // for a panel. With nobody asking, no ImGui frame is built at all and

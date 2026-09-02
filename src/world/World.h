@@ -39,6 +39,15 @@ struct WorldState {
     bool cull = true;
 
     Camera3 camera{};
+    // The pose world_camera was last given: what "home" means, since a
+    // caller's opening view is the one they composed and the presets
+    // are all departures from it.
+    CameraDesc home{};
+    // The two built-in items, kept so the chrome can hide them. Null
+    // when the world was created without them.
+    WorldItem *grid = nullptr;
+    WorldItem *axes = nullptr;
+    bool controls = true;
 
     // At most four, because a fixed set in the view block is what
     // keeps every shader's lighting one loop with no branch on which

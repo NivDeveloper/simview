@@ -389,6 +389,11 @@ void view_draw(impl::View &v) {
                 // invisible button — which owns the pointer properly,
                 // press and all — and the texture is drawn under it.
                 const ImVec2 p0 = ImGui::GetCursorScreenPos();
+                // The drag rect covers the whole picture, including the
+                // corner the controls sit in. Without this the earlier
+                // item keeps every click in its area and the button on
+                // top is hoverable, tooltip and all, but never pressed.
+                ImGui::SetNextItemAllowOverlap();
                 ImGui::InvisibleButton("##world", avail,
                                        ImGuiButtonFlags_MouseButtonLeft |
                                            ImGuiButtonFlags_MouseButtonRight);
@@ -397,6 +402,7 @@ void view_draw(impl::View &v) {
                 ImGui::GetWindowDrawList()->AddImage(
                     tex, p0, ImVec2(p0.x + avail.x, p0.y + avail.y));
                 world_camera_gesture(*v.world, hovered, active);
+                world_controls(*v.world, p0);
             } else {
                 ImGui::Image(tex, avail);
             }
@@ -413,6 +419,10 @@ bool ui_event(impl::App *a, const SDL_Event &ev) {
 
 void ui_run_panels(impl::App *a) {
     impl::in_order(a->ui.cbs, [](const impl::Cb &c) { c.fn(c.user); });
+    // The corner button is a panel too, as far as the pointer is
+    // concerned: drawn before the test below, so clicking it steers
+    // nothing.
+    ui_world_overlay(a);
     // After them, never before: whether a panel claimed the pointer is
     // only true once every panel has had its say.
     ui_world_input(a);

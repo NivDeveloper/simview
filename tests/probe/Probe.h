@@ -126,6 +126,16 @@ bool plot_tools(impl::App *, const char *title, PlotTools *out);
 // whose position is a layout detail.
 void plot_show_legend(impl::App *, const char *title, bool on);
 
+// The world's corner controls, driven the way its menu drives them.
+// `preset` indexes the SAME table the menu loops, so an entry that
+// duplicated its neighbour fails a check about the table rather than
+// about the check's idea of what the entries are. `what` is 0 for the
+// grid and 1 for the axes. `title` names a world in a panel; null asks
+// for the one in the window.
+bool world_preset(impl::App *, const char *title, int preset);
+bool world_show(impl::App *, const char *title, int what, bool on);
+std::size_t world_preset_count();
+
 // Make the next graphics submission wait GPU-side on a compute-timeline
 // value nothing will ever signal — the hang a deleted pump or a stamp
 // past what compute will reach would cause — so a check can prove the

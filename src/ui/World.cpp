@@ -8,6 +8,7 @@
 
 #include "../world/World.h"
 #include "../core/App.h"
+#include "Icons.h"
 #include "Ui.h"
 
 #include <simview/World.h>
@@ -51,9 +52,120 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
         impl::camera_dolly(w.camera, io.MouseWheel);
 }
 
+// The scene's own controls: one button in a corner of the picture,
+// and everything behind it.
+//
+// A 3D scene has no chrome to put a panel in — the picture IS the
+// window — so its controls have to sit ON it, and a control sitting on
+// a picture has to cost the picture almost nothing. One button does;
+// a strip of them would be a panel with extra steps.
+//
+// What is behind it is what a reader of a 3D scene actually reaches
+// for: somewhere known to get back to, the four standard directions,
+// and the toggles that change what the picture MEANS rather than
+// how it is arranged.
+
+constexpr float kDeg = 3.14159265f / 180.0f;
+
+// A preset keeps the focus and the distance the caller composed and
+// turns the camera only — a "front view" that also jumped the zoom
+// would be a different scene, not a different angle.
+void world_look(impl::WorldState &w, float az_deg, float el_deg) {
+    w.camera.q = impl::camera_pose(az_deg * kDeg, el_deg * kDeg);
+}
+
+// The presets as DATA, so the menu is a loop and there is no per-entry
+// code for two of them to end up sharing. A check applies them from
+// this same table, which is what makes "five entries, five views" a
+// property of the table rather than of the check's idea of it. Home
+// is not in it — a caller's opening view is not an angle.
+constexpr Preset kViews[] = {{"front", -90.0f, 0.0f},
+                             {"side", 0.0f, 0.0f},
+                             {"top", -90.0f, 89.0f},
+                             {"corner", -45.0f, 30.0f}};
+
+const Preset *world_presets(std::size_t *count) {
+    if (count)
+        *count = sizeof kViews / sizeof kViews[0];
+    return kViews;
+}
+
+void world_menu(impl::WorldState &w) {
+    ImGui::SeparatorText("view");
+    // Home is not a preset: it is whatever the caller composed, and no
+    // angle in a table can stand for that.
+    if (ImGui::Selectable("home"))
+        world_camera(impl::World{&w}, w.home);
+    for (const Preset &v : kViews)
+        if (ImGui::Selectable(v.name))
+            world_look(w, v.az, v.el);
+
+    ImGui::SeparatorText("projection");
+    bool ortho = w.camera.projection == impl::Projection::Orthographic;
+    if (impl::icon_button(Icon::Perspective, "persp", "perspective", !ortho))
+        w.camera.projection = impl::Projection::Perspective;
+    ImGui::SameLine();
+    if (impl::icon_button(Icon::Orthographic, "ortho", "orthographic", ortho))
+        w.camera.projection = impl::Projection::Orthographic;
+
+    if (w.grid || w.axes) {
+        ImGui::SeparatorText("show");
+        if (w.grid)
+            ImGui::Checkbox("grid", &w.grid->visible);
+        if (w.axes)
+            ImGui::Checkbox("axes", &w.axes->visible);
+    }
+}
+
+// Drawn at `at`, which is the top-left of the picture. The caller owns
+// the window; this only knows where the corner is.
+void world_controls(impl::WorldState &w, ImVec2 at) {
+    if (!w.controls)
+        return;
+    const ImVec2 keep = ImGui::GetCursorScreenPos();
+    const float pad = ImGui::GetStyle().WindowPadding.x;
+    ImGui::SetCursorScreenPos(ImVec2(at.x + pad, at.y + pad));
+    ImGui::PushID(&w);
+    if (impl::icon_button(Icon::Cube, "view", "camera and what is drawn"))
+        ImGui::OpenPopup("##world_menu");
+    if (ImGui::BeginPopup("##world_menu")) {
+        world_menu(w);
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
+    // Put the cursor back for whatever the caller draws next, and
+    // submit something after moving it: ImGui warns about a cursor
+    // moved with nothing following, because that is how a window ends
+    // up sized to content it never measured.
+    ImGui::SetCursorScreenPos(keep);
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
+}
+
 // The window's world steers on whatever the panels did not claim.
 // WantCaptureMouse is the whole test: it is true while a panel is
 // hovered or owns a drag, and false over the scene behind them.
+// A world drawn into the WINDOW has no ImGui window to hang a corner
+// button on — the panels float over a swapchain nobody owns. So it
+// gets one of its own: undecorated, unmoved, unsaved, and exactly the
+// size of the button, which is as close to "drawn on the picture" as
+// an ImGui item gets.
+void ui_world_overlay(impl::App *a) {
+    if (!a || !a->world || !a->world->controls)
+        return;
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowBgAlpha(0.0f);
+    if (ImGui::Begin("##world_controls", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoFocusOnAppearing |
+                         ImGuiWindowFlags_NoNav |
+                         ImGuiWindowFlags_NoBringToFrontOnFocus))
+        world_controls(*a->world, vp->WorkPos);
+    ImGui::End();
+}
+
 void ui_world_input(impl::App *a) {
     if (!a || !a->world)
         return;
@@ -92,6 +204,7 @@ World world_create(App *a, const WorldDesc &d) {
         a->world->gates = &a->gates;
         a->world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
         a->world->samples = a->platform.vk.samples;
+        a->world->controls = d.controls;
         if (d.grid)
             world_add_grid(*a->world);
         if (d.axes)
@@ -119,6 +232,7 @@ World world_create(App *a, const WorldDesc &d) {
     v.world->gates = &a->gates;
     v.world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
     v.world->samples = a->platform.vk.samples;
+    v.world->controls = d.controls;
     if (d.grid)
         world_add_grid(*v.world);
     if (d.axes)
@@ -136,6 +250,9 @@ void world_camera(World w, const CameraDesc &d) {
     ws->camera.focus = {d.focus[0], d.focus[1], d.focus[2]};
     ws->camera.distance = d.distance > 0.0f ? d.distance : 5.0f;
     ws->camera.q = camera_pose(d.azimuth_deg * kDeg, d.elevation_deg * kDeg);
+    // Remembered whole, because "home" is the view the caller composed
+    // and every preset is a departure from it.
+    ws->home = d;
     ws->camera.fovy = d.fov_deg * kDeg;
     // The projection is the ONLY thing an orthographic camera changes:
     // the pose, the turntable and the depth convention are shared, so

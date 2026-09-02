@@ -12,6 +12,7 @@ struct WorldDesc {
     const char *title = nullptr;
     bool grid = true;
     bool axes = true;
+    bool controls = true;
 };
 
 enum class Projection : int {

@@ -137,6 +137,10 @@ struct WorldItem {
     // from Stats::triangles, and the only way to ask a level-of-detail
     // rule what it actually chose rather than what it could have.
     std::uint64_t triangles = 0;
+    // Off means SKIPPED at submit, not removed: the grid a reader
+    // switched away is one they can switch back, and rebuilding its
+    // buffers to do that would make the toggle cost what the item cost.
+    bool visible = true;
 };
 
 } // namespace impl
