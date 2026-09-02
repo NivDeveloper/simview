@@ -61,7 +61,7 @@ WorldView view_of(const impl::WorldState &w, std::uint32_t tw, std::uint32_t th,
     const float znear = w.camera.znear(scene);
     const impl::Mat4 v = w.camera.view();
     const impl::Mat4 p = w.camera.proj(aspect, znear);
-    const impl::Mat4 vp = impl::mat_mul(p, v);
+    const impl::Mat4 vp = p * v;
     return {.world_to_clip = vp,
             .world_to_view = v,
             .view_to_clip = p,
@@ -123,8 +123,8 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
             c.light_rgb[0][k] = 1.0f;
     }
     for (std::size_t i = 0; i < n; ++i) {
-        const impl::Vec3 d = impl::normalize(impl::rotate(
-            impl::conjugate(w.camera.pose()), w.lights[i].direction));
+        const impl::Vec3 d = impl::normalize(impl::conjugate(w.camera.pose()) *
+                                             w.lights[i].direction);
         c.light_dir[i][0] = d.x;
         c.light_dir[i][1] = d.y;
         c.light_dir[i][2] = d.z;

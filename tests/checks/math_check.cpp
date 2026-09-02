@@ -104,7 +104,7 @@ int main() {
 
     // The inverse is real: a cursor ray will invert exactly this
     // product, and a wrong one there looks plausible on screen.
-    const Mat4 M = mat_mul(P, V), I = mat_mul(M, mat_inverse(M));
+    const Mat4 M = P * V, I = (M) * (mat_inverse(M));
     for (int i = 0; i < 16; ++i)
         CHECK(near(I.m[i], (i % 5 == 0) ? 1.0f : 0.0f, 1e-3f));
 
@@ -138,10 +138,10 @@ int main() {
     CHECK(near(oc.view_height(),
                2.0f * oc.distance() * std::tan(0.5f * oc.fovy()), 1e-5f));
     const Vec3 pp =
-        transform_point(mat_mul(c.proj(1.0f), c.view()),
+        transform_point((c.proj(1.0f)) * (c.view()),
                         c.focus() + c.up() * (0.5f * c.view_height()));
     const Vec3 po =
-        transform_point(mat_mul(oc.proj(1.0f), oc.view()),
+        transform_point((oc.proj(1.0f)) * (oc.view()),
                         oc.focus() + oc.up() * (0.5f * oc.view_height()));
     CHECK(near(pp.y, po.y, 1e-3f));
 
@@ -154,12 +154,12 @@ int main() {
          {Projection::Perspective, Projection::Orthographic}) {
         Camera3 k = c;
         k.set_mode(proj);
-        const Mat4 M = mat_mul(k.proj(1.0f), k.view());
+        const Mat4 M = (k.proj(1.0f)) * (k.view());
         CHECK_GT(depth_key(M, k.focus() + fwd * -2.0f),
                  depth_key(M, k.focus()));
         CHECK_GT(depth_key(M, k.focus()), depth_key(M, k.focus() + fwd * 2.0f));
     }
-    const Mat4 VP = mat_mul(c.proj(1.0f), V);
+    const Mat4 VP = (c.proj(1.0f)) * (V);
     const std::uint16_t d_near = depth_key(VP, c.focus() + fwd * -2.0f);
     const std::uint16_t d_mid = depth_key(VP, c.focus());
     const std::uint16_t d_far = depth_key(VP, c.focus() + fwd * 2.0f);
@@ -200,7 +200,7 @@ int main() {
     Camera3 fc{};
     fc.frame({0.0f, 0.0f, 0.0f}, 10.0f);
     fc.look(0.0f, 0.0f);
-    const Mat4 F = mat_mul(fc.proj(1.0f), fc.view());
+    const Mat4 F = (fc.proj(1.0f)) * (fc.view());
     const Frustum fr = frustum_of(F);
     // Five, not six: the perspective projection runs to infinity, so
     // its far plane comes out with a zero normal and is dropped rather
@@ -224,7 +224,7 @@ int main() {
 
     Camera3 orthoc = fc;
     orthoc.set_mode(Projection::Orthographic);
-    const Frustum orf = frustum_of(mat_mul(orthoc.proj(1.0f), orthoc.view()));
+    const Frustum orf = frustum_of((orthoc.proj(1.0f)) * (orthoc.view()));
     // Six here: an orthographic depth is linear, so it HAS a far plane
     // and the same extraction finds it.
     std::printf("  orthographic frustum: %d planes\n", orf.count);
@@ -260,6 +260,25 @@ int main() {
     CHECK_GT(ortho_px, 0.0f);
     std::printf("  focal: %.1f px per unit at unit depth, ortho %.1f flat\n",
                 double(f1), double(ortho_px));
+
+    // ── the operators ────────────────────────────────────────────
+    // Each spelled once, so a reader can trust the shape: negation is
+    // scaling by -1, a scalar reads the same on either side, and a
+    // compound assignment is its binary form.
+    const Vec3 v{1.0f, -2.0f, 3.5f};
+    CHECK(near(length(-v - v * -1.0f), 0.0f, 1e-6f));
+    CHECK(near(length(2.0f * v - v * 2.0f), 0.0f, 1e-6f));
+    CHECK(near(length(v / 2.0f - v * 0.5f), 0.0f, 1e-6f));
+    Vec3 acc{1.0f, 1.0f, 1.0f};
+    acc += v;
+    CHECK(near(length(acc - (Vec3{1.0f, 1.0f, 1.0f} + v)), 0.0f, 1e-6f));
+
+    // Composing two rotations and applying the product is applying
+    // them in turn — which is the one law that makes `q * q` and
+    // `q * v` safe to be the same operator.
+    const Quat q1 = axis_angle({0.0f, 0.0f, 1.0f}, 0.7f);
+    const Quat q2 = axis_angle({1.0f, 0.0f, 0.0f}, -0.4f);
+    CHECK(near(length((q1 * q2) * v - q1 * (q2 * v)), 0.0f, 1e-5f));
 
     // ── binning ──────────────────────────────────────────────────
     // A span always has WIDTH: a set of identical values would

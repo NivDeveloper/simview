@@ -103,11 +103,11 @@ class Camera3 {
     // one that must win.
 
     Vec3 position() const {
-        return focus_ + rotate(pose_, Vec3{0.0f, 0.0f, 1.0f}) * distance_;
+        return focus_ + pose_ * Vec3{0.0f, 0.0f, 1.0f} * distance_;
     }
-    Vec3 right() const { return rotate(pose_, Vec3{1.0f, 0.0f, 0.0f}); }
-    Vec3 up() const { return rotate(pose_, Vec3{0.0f, 1.0f, 0.0f}); }
-    Vec3 forward() const { return rotate(pose_, Vec3{0.0f, 0.0f, -1.0f}); }
+    Vec3 right() const { return pose_ * Vec3{1.0f, 0.0f, 0.0f}; }
+    Vec3 up() const { return pose_ * Vec3{0.0f, 1.0f, 0.0f}; }
+    Vec3 forward() const { return pose_ * Vec3{0.0f, 0.0f, -1.0f}; }
 
     // ── what a gesture does to it ────────────────────────────────────
 
@@ -143,8 +143,7 @@ class Camera3 {
     // ── the matrices it hands the renderer ───────────────────────────
 
     Mat4 view() const {
-        return mat_mul(mat_from_quat(conjugate(pose_)),
-                       mat_translate(position() * -1.0f));
+        return mat_from_quat(conjugate(pose_)) * mat_translate(-position());
     }
 
     // The near plane follows the orbit scale. Depth precision is

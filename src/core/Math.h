@@ -42,6 +42,18 @@ inline Vec3 operator-(Vec3 a, Vec3 b) {
     return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 inline Vec3 operator*(Vec3 v, float s) { return {v.x * s, v.y * s, v.z * s}; }
+inline Vec3 operator*(float s, Vec3 v) { return v * s; }
+inline Vec3 operator/(Vec3 v, float s) { return {v.x / s, v.y / s, v.z / s}; }
+inline Vec3 operator-(Vec3 v) { return {-v.x, -v.y, -v.z}; }
+
+inline Vec3 &operator+=(Vec3 &a, Vec3 b) { return a = a + b; }
+inline Vec3 &operator-=(Vec3 &a, Vec3 b) { return a = a - b; }
+inline Vec3 &operator*=(Vec3 &v, float s) { return v = v * s; }
+inline Vec3 &operator/=(Vec3 &v, float s) { return v = v / s; }
+
+// Named, not an operator. `a * b` on two vectors could mean a dot, a
+// cross or an elementwise product and a reader would have to know
+// which this library chose — so it says.
 inline float dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
 inline Vec3 cross(Vec3 a, Vec3 b) {
@@ -87,7 +99,9 @@ inline Quat normalize(Quat q) {
     return {q.w * k, q.x * k, q.y * k, q.z * k};
 }
 
-inline Vec3 rotate(Quat q, Vec3 v) {
+// `q * v` rotates, the way `q * q` composes: one operator, and which
+// of the two is meant is decided by what is on the right.
+inline Vec3 operator*(Quat q, Vec3 v) {
     const Vec3 u{q.x, q.y, q.z};
     const Vec3 t = cross(u, v) * 2.0f;
     return v + t * q.w + cross(u, t);
@@ -97,7 +111,7 @@ struct Mat4 {
     float m[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
 
-inline Mat4 mat_mul(const Mat4 &a, const Mat4 &b) {
+inline Mat4 operator*(const Mat4 &a, const Mat4 &b) {
     Mat4 r{};
     for (int c = 0; c < 4; ++c)
         for (int i = 0; i < 4; ++i) {
