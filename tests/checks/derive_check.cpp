@@ -133,5 +133,64 @@ int main() {
     REQUIRE(probe::plot_tools(app.Raw(), "pinned", &pinned));
     CHECK(!pinned.fit_offered);
 
+    // The joint view is pictures that have to AGREE. A marginal
+    // computed off the wrong axis, or a sideways bar handed its
+    // arguments the way an upright one takes them, leaves the field
+    // right and one margin wrong.
+    // Its own source, and deliberately NOT symmetric in x and y: the
+    // scatter above spreads both over the same range, so a joint view
+    // that counted each margin off the other axis would draw exactly
+    // the same picture. Here the mass is LEFT in x and HIGH in y, so
+    // the two margins lean opposite ways and swapping them flips both.
+    std::vector<float> sx(400), sy(400);
+    for (std::size_t i = 0; i < 400; ++i) {
+        const float u = float(i) / 399.0f;
+        sx[i] = 0.05f + 0.40f * u;
+        sy[i] = 0.80f + 0.15f * u;
+    }
+    sx.push_back(0.0f);
+    sy.push_back(0.0f);
+    sx.push_back(1.0f);
+    sy.push_back(1.0f);
+    auto spread = app.Plot({.title = "spread"});
+    spread.Scatter("pts", sx, sy);
+    auto jt = spread.Derive(Derived::Joint);
+    REQUIRE(bool(jt));
+    ImGui::LoadIniSettingsFromMemory(
+        "[Window][spread]\nPos=1400,300\nSize=200,120\nCollapsed=1\n\n"
+        "[Window][joint view of pts (spread)]\nPos=40,40\nSize=640,520\n\n");
+    for (int f = 0; f < 6; ++f)
+        app.Step();
+
+    Bmp jimg;
+    REQUIRE(harness::shot(app, "derive_joint", jimg));
+    const ImGuiWindow *jw =
+        ImGui::FindWindowByName("joint view of pts (spread)");
+    REQUIRE(jw != nullptr);
+
+    // Boxes from the subplot's OWN ratios and not from the window's
+    // middle: the field column is 76% of the width, so its midpoint is
+    // at 0.38 and a split down the centre puts part of the right
+    // margin in the left half.
+    const float jx = jw->Pos.x + 14.0f, jy = jw->Pos.y + 96.0f;
+    const float jw_w = jw->Pos.x + jw->Size.x - 14.0f - jx;
+    const float jw_h = jw->Pos.y + jw->Size.y - 14.0f - jy;
+    const auto at_x = [&](float f) { return unsigned(jx + jw_w * f); };
+    const auto at_y = [&](float f) { return unsigned(jy + jw_h * f); };
+
+    const std::size_t top_left =
+        lit_count(jimg, at_x(0.02f), at_y(0.02f), at_x(0.38f), at_y(0.24f), 60);
+    const std::size_t top_right =
+        lit_count(jimg, at_x(0.38f), at_y(0.02f), at_x(0.74f), at_y(0.24f), 60);
+    const std::size_t side_up =
+        lit_count(jimg, at_x(0.78f), at_y(0.28f), at_x(0.99f), at_y(0.62f), 60);
+    const std::size_t side_down =
+        lit_count(jimg, at_x(0.78f), at_y(0.62f), at_x(0.99f), at_y(0.98f), 60);
+    std::printf("(joint margins: top %zu left vs %zu right, side %zu up vs "
+                "%zu down)\n",
+                top_left, top_right, side_up, side_down);
+    CHECK_GT(top_left, top_right * 2);
+    CHECK_GT(side_up, side_down * 2);
+
     return check::summary("derive");
 }

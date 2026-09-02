@@ -47,7 +47,7 @@ enum class Palette : std::int8_t {
     Greys
 };
 
-enum class Derived : std::uint8_t { Histogram, Density, Profile };
+enum class Derived : std::uint8_t { Histogram, Density, Profile, Joint };
 
 struct PlotDesc {
     const char *title = "plot";
@@ -99,6 +99,7 @@ enum class Family : std::int32_t { Plot2D, Plot3D };
 
 enum class SeriesKind : std::int32_t {
     Line,
+    Contour,
     Scatter,
     Histogram,
     Stairs,

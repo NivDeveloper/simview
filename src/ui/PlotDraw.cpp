@@ -89,7 +89,8 @@ double emit_series(const impl::SeriesState &s, const impl::SeriesData &d,
     const T *a = static_cast<const T *>(d.a);
     const T *b = static_cast<const T *>(d.b);
     switch (s.kind) {
-    case impl::SeriesKind::Line: // a = x (optional), b = y
+    case impl::SeriesKind::Contour: // a, b = segment endpoints, 2 per
+    case impl::SeriesKind::Line:    // a = x (optional), b = y
         if (a)
             ImPlot::PlotLine(name, a, b, n, spec);
         else
@@ -169,6 +170,10 @@ double emit_series(const impl::SeriesState &s, const impl::SeriesData &d,
 // A kind's flag lives on the spec, set from the style: horizontal is
 // the one every bar-shaped kind shares.
 void apply_flags(ImPlotSpec &spec, impl::SeriesKind k, const SeriesStyle &st) {
+    if (k == impl::SeriesKind::Contour) {
+        spec.Flags |= ImPlotLineFlags_Segments;
+        return;
+    }
     if (!st.horizontal)
         return;
     switch (k) {
@@ -397,6 +402,8 @@ Icon derived_icon(Derived k) {
         return Icon::Density;
     case Derived::Profile:
         return Icon::Profile;
+    case Derived::Joint:
+        return Icon::Joint;
     }
     return Icon::Chart;
 }
@@ -466,6 +473,106 @@ void chrome_tools(impl::PlotState &p, const std::vector<DeriveOption> &options,
         else
             panel_body(*p.tools, /*inline_row=*/true);
     }
+}
+
+// The joint view: one field with a distribution along each axis.
+//
+// Four cells of a 2x2, and the two link flags are what make it a
+// FIGURE rather than three plots side by side — LinkCols ties the x of
+// the column (the field and the strip above it) and LinkRows ties the
+// y of the row (the field and the strip beside it), so panning the
+// field moves both margins with it and they cannot come to disagree.
+//
+// The empty corner is drawn rather than skipped: a subplot iterates
+// its cells in order and a cell that does not open its plot puts every
+// later one in the wrong place.
+void joint_draw(impl::PlotState &p, ImVec2 canvas) {
+    auto it = p.series.begin();
+    impl::SeriesState &field = *it;
+    impl::SeriesState &line = *(++it);
+    impl::SeriesState &mx = *(++it);
+    impl::SeriesState &my = *(++it);
+
+    static float kRows[2] = {0.26f, 0.74f};
+    static float kCols[2] = {0.76f, 0.24f};
+    const ImPlotSubplotFlags flags =
+        ImPlotSubplotFlags_NoTitle | ImPlotSubplotFlags_NoResize |
+        ImPlotSubplotFlags_LinkRows | ImPlotSubplotFlags_LinkCols;
+    if (!ImPlot::BeginSubplots("##joint", 2, 2, canvas, flags, kRows, kCols))
+        return;
+
+    // The margins take the CHROME's accent and the contours its text.
+    // Left alone they would pick the next colour out of the field's
+    // colormap, which is a colour that means a density in the panel
+    // beside them and means nothing here.
+    const Theme &t = theme_of(p);
+    const ImVec4 accent(t.accent[0], t.accent[1], t.accent[2], 1.0f);
+    const ImVec4 ink(t.text[0], t.text[1], t.text[2], 0.85f);
+
+    const auto emit = [](impl::SeriesState &s, const ImPlotSpec &spec) {
+        const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
+        if (!d.b || !d.count)
+            return;
+        emit_series<double>(s, d, spec);
+    };
+
+    // Top left: the distribution along x. Its x is the field's, by the
+    // link; only the count axis is its own, and that one follows the
+    // data because a marginal's height means nothing on its own.
+    if (ImPlot::BeginPlot("##mx", ImVec2(), ImPlotFlags_CanvasOnly)) {
+        ImPlot::SetupAxes(nullptr, nullptr, ImPlotAxisFlags_NoDecorations,
+                          ImPlotAxisFlags_NoDecorations |
+                              ImPlotAxisFlags_AutoFit);
+        ImPlotSpec bars = spec_of(mx.style, t);
+        bars.LineColor = accent;
+        bars.FillColor = accent;
+        emit(mx, bars);
+        ImPlot::EndPlot();
+    }
+    if (ImPlot::BeginPlot("##corner", ImVec2(), ImPlotFlags_CanvasOnly)) {
+        ImPlot::SetupAxes(nullptr, nullptr, ImPlotAxisFlags_NoDecorations,
+                          ImPlotAxisFlags_NoDecorations);
+        ImPlot::EndPlot();
+    }
+
+    // Bottom left: the field, with its contours over it.
+    if (ImPlot::BeginPlot("##field", ImVec2(), ImPlotFlags_NoLegend)) {
+        setup_axis(ImAxis_X1, p.x, p.grid);
+        setup_axis(ImAxis_Y1, p.y, p.grid);
+        // From the field's OWN rect, once. A heatmap does not offer its
+        // extent to an autofit — it is drawn into a rectangle it was
+        // given — so without this the axes stay on ImPlot's 0..1 and
+        // the picture is a corner of the data at ten times the size.
+        ImPlot::SetupAxisLimits(ImAxis_X1, field.bounds.x0, field.bounds.x1,
+                                ImPlotCond_Once);
+        ImPlot::SetupAxisLimits(ImAxis_Y1, field.bounds.y0, field.bounds.y1,
+                                ImPlotCond_Once);
+        ImPlot::SetupFinish();
+        p.canvas_w = ImPlot::GetPlotSize().x;
+        p.canvas_h = ImPlot::GetPlotSize().y;
+        emit(field, spec_of(field.style, t));
+        ImPlotSpec cs = spec_of(line.style, t);
+        apply_flags(cs, impl::SeriesKind::Contour, line.style);
+        cs.LineColor = ink;
+        emit(line, cs);
+        ImPlot::EndPlot();
+    }
+
+    // Bottom right: the distribution along y, lying on its side.
+    if (ImPlot::BeginPlot("##my", ImVec2(), ImPlotFlags_CanvasOnly)) {
+        ImPlot::SetupAxes(nullptr, nullptr,
+                          ImPlotAxisFlags_NoDecorations |
+                              ImPlotAxisFlags_AutoFit,
+                          ImPlotAxisFlags_NoDecorations);
+        ImPlotSpec bars = spec_of(my.style, t);
+        bars.Flags |= ImPlotBarsFlags_Horizontal;
+        bars.LineColor = accent;
+        bars.FillColor = accent;
+        emit(my, bars);
+        ImPlot::EndPlot();
+    }
+
+    ImPlot::EndSubplots();
 }
 
 // Draws the chrome and returns what is left for the canvas. Every arm
@@ -602,6 +709,14 @@ void plot_draw(impl::PlotState &p) {
     if (p.fit_pending) {
         ImPlot::SetNextAxesToFit();
         p.fit_pending = false;
+    }
+    if (p.derivation && p.derivation->kind == Derived::Joint) {
+        joint_draw(p, canvas);
+        if (mapped)
+            ImPlot::PopColormap();
+        ImGui::End();
+        p.open = keep;
+        return;
     }
     if (ImPlot::BeginPlot("##canvas", canvas,
                           p.legend ? 0 : ImPlotFlags_NoLegend)) {

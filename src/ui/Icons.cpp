@@ -241,6 +241,16 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.line(0.82f, 0.40f, 0.98f, 0.40f);
         return;
 
+    // The figure's own LAYOUT: a panel with a margin above it and one
+    // beside it. Drawn as three rectangles because that is what the
+    // reader is choosing — an arrangement — and a miniature of the
+    // contents would be three unreadable pictures at this size.
+    case Icon::Joint:
+        p.box(0.06f, 0.06f, 0.64f, 0.26f, 0.03f);
+        p.box(0.06f, 0.34f, 0.64f, 0.94f, 0.03f);
+        p.box(0.72f, 0.34f, 0.94f, 0.94f, 0.03f);
+        return;
+
     // An open ring with a head on it, not an ellipse: a flattened
     // ring is a second Eye, and the two sit next to each other.
     case Icon::Restart: {

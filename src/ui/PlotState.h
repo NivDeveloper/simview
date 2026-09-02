@@ -67,6 +67,9 @@ struct Derivation {
     int bins = 32;
     // The reduction's own storage; the derived series borrows it.
     std::vector<double> a, b, c;
+    // The joint view needs four things at once: the field, a bin
+    // centre per axis for the two marginals, and the contour segments.
+    std::vector<double> mx, my, cx, cy, seg_x, seg_y;
 };
 
 struct PlotState {

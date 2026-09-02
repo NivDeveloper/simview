@@ -34,6 +34,7 @@ enum class Icon : std::uint8_t {
     Histogram,
     Density,
     Profile,
+    Joint,
     Restart,
     Forward,
     Play,

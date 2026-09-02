@@ -343,6 +343,8 @@ const char *derived_word(Derived k) {
         return "density";
     case Derived::Profile:
         return "profile";
+    case Derived::Joint:
+        return "joint view";
     }
     return "view";
 }
@@ -450,6 +452,16 @@ Plot plot_derive(Plot p, Derived kind, const char *series) {
         d.y.label = "mean " + (st->y.label.empty() ? from->name : st->y.label);
         derived_series(d, SeriesKind::Line, "mean");
         derived_series(d, SeriesKind::ErrorBars, "standard error");
+        break;
+    case Derived::Joint:
+        // Four series in a fixed order, because the draw puts each in
+        // its own cell of a 2x2 rather than all of them in one plot.
+        d.x.label = st->x.label;
+        d.y.label = st->y.label;
+        derived_series(d, SeriesKind::Heatmap, from->name);
+        derived_series(d, SeriesKind::Contour, "contours");
+        derived_series(d, SeriesKind::Bars, "along x");
+        derived_series(d, SeriesKind::Bars, "along y");
         break;
     }
 
