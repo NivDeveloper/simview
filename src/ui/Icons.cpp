@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <initializer_list>
 
 namespace sv {
@@ -187,8 +188,8 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         return;
 
     // An open ring with a head on it, not an ellipse: a flattened
-    // orbit is a second Eye, and the two sit next to each other.
-    case Icon::Orbit: {
+    // ring is a second Eye, and the two sit next to each other.
+    case Icon::Restart: {
         ImVec2 arc[22];
         for (int k = 0; k < 22; ++k)
             arc[k] = p.polar(0.10f + 0.82f * float(k) / 21.0f, 0.33f);
@@ -196,9 +197,13 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         const ImVec2 head[3] = {p.polar(0.00f, 0.33f), p.polar(0.12f, 0.22f),
                                 p.polar(0.12f, 0.44f)};
         dl->AddConvexPolyFilled(head, 3, col);
-        p.disc(0.50f, 0.50f, 0.09f);
         return;
     }
+
+    case Icon::Forward:
+        p.fill({0.10f, 0.16f, 0.50f, 0.50f, 0.10f, 0.84f});
+        p.fill({0.50f, 0.16f, 0.90f, 0.50f, 0.50f, 0.84f});
+        return;
 
     case Icon::Play:
         p.fill({0.28f, 0.13f, 0.85f, 0.50f, 0.28f, 0.87f});
@@ -214,6 +219,35 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.slab(0.73f, 0.15f, 0.86f, 0.85f, 0.04f);
         return;
     }
+}
+
+// The button is sized from the FONT, not from a constant: a control
+// carrying an icon must line up with one carrying text, and the frame
+// height is what every other widget in the row is already using.
+bool icon_button(Icon ic, const char *id, const char *tip, bool on) {
+    const float h = ImGui::GetFrameHeight();
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+
+    // "##" so ImGui identifies the button without drawing the id as
+    // its label — the icon IS the label.
+    char tag[64];
+    std::snprintf(tag, sizeof tag, "##%s", id ? id : "icon");
+
+    const ImGuiCol face = on ? ImGuiCol_ButtonActive : ImGuiCol_Button;
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(face));
+    const bool hit = ImGui::Button(tag, {h, h});
+    ImGui::PopStyleColor();
+
+    // Drawn after the button, over its face, and greyed with it: a
+    // disabled group fades the frame and the glyph must go with it.
+    const float glyph = h * 0.62f;
+    const float pad = (h - glyph) * 0.5f;
+    icon_draw(ImGui::GetWindowDrawList(), ic, {at.x + pad, at.y + pad}, glyph,
+              ImGui::GetColorU32(ImGuiCol_Text));
+
+    if (tip && *tip && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tip);
+    return hit;
 }
 
 } // namespace impl

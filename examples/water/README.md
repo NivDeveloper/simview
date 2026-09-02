@@ -28,6 +28,7 @@ quantity actually has:
 | drag | poke impulse | unbounded on purpose: there is no principled largest poke |
 | enabled group | the sway pair | greyed, not hidden — a control that vanishes never explains why |
 | help markers | every parameter | a sentence each, on hover, because a panel that spells them out in full is a panel nobody reads |
+| icon button | back to the opening view | a view control is a picture, and it belongs in a row rather than on a line of its own; the name it cannot show lives in the tooltip |
 | tabs and sections | the three groups | twelve controls in a flat list is a list nobody reads either |
 | progress | kinetic energy | a fraction against its whole reads at a glance where a number does not |
 

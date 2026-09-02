@@ -53,8 +53,8 @@ int main() {
         .Scatter("samples", x, noisy, {.marker_size = 3.0f, .marker = 0})
         .Controls([&](sv::Panel &p) {
             p.Row([&](sv::Panel &q) {
-                q.Slider("phase", phase, 0.0f, 6.283f)
-                    .Checkbox("noise", show_noise);
+                q.IconToggle(sv::Icon::Eye, "show the noisy copy", show_noise)
+                    .Slider("phase", phase, 0.0f, 6.283f);
             });
         });
 

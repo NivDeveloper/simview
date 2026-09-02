@@ -13,6 +13,25 @@ enum class DType : std::uint8_t { f32, f64, i32, u32, u8 };
 
 enum class Scale : std::uint8_t { Linear, Log };
 
+enum class Icon : std::uint8_t {
+    Home,
+    Fit,
+    Grid,
+    Axes,
+    Cube,
+    Perspective,
+    Orthographic,
+    Camera,
+    Light,
+    Eye,
+    Gear,
+    Restart,
+    Forward,
+    Play,
+    Pause,
+    Step
+};
+
 struct Config {
     const char *title = "simview";
     Extent2 size = {1200, 800};

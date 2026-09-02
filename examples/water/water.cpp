@@ -405,12 +405,15 @@ int main() {
     (void)pos.Current()[0, 0];
     (void)tone.Current()[0, 0];
 
+    // Named, because the view button puts it back: an opening pose
+    // spelled twice is one that drifts.
+    constexpr sv::CameraDesc kOpening{.focus = {0.0f, 0.0f, 0.34f},
+                                      .distance = 4.5f,
+                                      .azimuth_deg = -58.0f,
+                                      .elevation_deg = 21.0f};
+
     auto world = app.World({});
-    world
-        .Camera({.focus = {0.0f, 0.0f, 0.34f},
-                 .distance = 4.5f,
-                 .azimuth_deg = -58.0f,
-                 .elevation_deg = 21.0f})
+    world.Camera(kOpening)
         .Light({.direction = {0.35f, 0.45f, 0.82f}, .intensity = 0.8f})
         .Ambient(0.40f, 0.44f, 0.52f);
 
@@ -558,8 +561,10 @@ int main() {
                                   "needs it to.");
                     })
                 .Tab("view", [&](sv::Panel &q) {
-                    q.Choice("colour by", colour_by,
-                             {"speed", "height", "where it started"})
+                    q.IconButton(sv::Icon::Home, "back to the opening view",
+                                 [&] { world.Camera(kOpening); })
+                        .Choice("colour by", colour_by,
+                                {"speed", "height", "where it started"})
                         .Help("Speed reads the flow; where it started reads "
                               "the mixing, because a particle keeps its tag.")
                         .Slider("ramp tops out at m/s", top, 0.3f, 20.0f,

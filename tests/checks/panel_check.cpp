@@ -73,6 +73,21 @@ int main() {
               std::string::npos);
         (void)none;
 
+        // An icon control has no visible label, so the tooltip is the
+        // only place its name can appear — and a control nobody can
+        // name is one the reader has to click to find out about.
+        CHECK(!impl::panel_widget(
+            p.Raw(), impl::WidgetDesc{.kind = impl::WidgetKind::IconButton,
+                                      .icon = Icon::Gear}));
+        CHECK(std::string(LastError()).find("an icon is not a name") !=
+              std::string::npos);
+        CHECK(!impl::panel_widget(
+            p.Raw(), impl::WidgetDesc{.label = "grid",
+                                      .kind = impl::WidgetKind::IconToggle,
+                                      .icon = Icon::Grid}));
+        CHECK(std::string(LastError()).find("needs a value to toggle") !=
+              std::string::npos);
+
         // A tab only exists inside a bar, and a bar draws tabs and
         // nothing else: both are ImGui assertions inside a draw nobody
         // is watching, so they are refused at registration instead.
@@ -119,6 +134,19 @@ int main() {
     input::press(b);
     input::release(b);
     CHECK_EQ(clicks, 1);
+
+    // And behind an IconToggle, which has no label to click on — only
+    // the square the glyph is drawn in.
+    bool shown = false;
+    App d({.headless = true});
+    d.Panel("toggle").IconToggle(Icon::Eye, "show it", shown);
+    d.Step();
+    const ImVec2 t0 = first_widget("toggle");
+    CHECK_GT(t0.x, 0.0f);
+    input::move(d, t0.x + 10.0f, t0.y + 10.0f);
+    input::press(d);
+    input::release(d);
+    CHECK(shown);
 
     // A drag reaches the value behind a Slider: from its left edge to
     // well past its right lands on the maximum.

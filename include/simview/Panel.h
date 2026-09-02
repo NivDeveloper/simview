@@ -19,6 +19,8 @@ enum class WidgetKind : std::int32_t {
     Separator,
     Help,
     Button,
+    IconButton,
+    IconToggle,
     Slider,
     SliderInt,
     SliderVec3,
@@ -46,6 +48,7 @@ struct WidgetDesc {
     const char *label = nullptr;
     WidgetKind kind = WidgetKind::Text;
     Group group = Group::Section;
+    Icon icon = Icon::Gear;
     void *target = nullptr;
     float min = 0.0f, max = 1.0f;
     float speed = 0.0f;
@@ -208,6 +211,27 @@ class Panel {
                     .on_click = [](void *u) { (*static_cast<F *>(u))(); },
                     .user = new F(std::move(on_click)),
                     .free = [](void *u) { delete static_cast<F *>(u); }});
+        return *this;
+    }
+
+    template <class F> Panel &IconButton(Icon ic, const char *tip, F on_click) {
+        impl::panel_widget(
+            p_, impl::WidgetDesc{
+                    .label = tip,
+                    .kind = impl::WidgetKind::IconButton,
+                    .icon = ic,
+                    .on_click = [](void *u) { (*static_cast<F *>(u))(); },
+                    .user = new F(std::move(on_click)),
+                    .free = [](void *u) { delete static_cast<F *>(u); }});
+        return *this;
+    }
+
+    Panel &IconToggle(Icon ic, const char *tip, bool &value) {
+        impl::panel_widget(
+            p_, impl::WidgetDesc{.label = tip,
+                                 .kind = impl::WidgetKind::IconToggle,
+                                 .icon = ic,
+                                 .target = &value});
         return *this;
     }
 

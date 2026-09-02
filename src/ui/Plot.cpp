@@ -233,6 +233,17 @@ const char *widget_needs(const WidgetDesc &d) {
         return d.target ? nullptr : "a colour needs three floats to edit";
     case WidgetKind::Checkbox:
         return d.target ? nullptr : "a checkbox needs a value to toggle";
+    case WidgetKind::IconToggle:
+        if (!d.target)
+            return "an icon toggle needs a value to toggle";
+        [[fallthrough]];
+    case WidgetKind::IconButton:
+        // The tooltip is the label: an icon that cannot say its own
+        // name in words is a control the reader has to guess at, and
+        // there is no second place for that name to appear.
+        return (d.label && *d.label)
+                   ? nullptr
+                   : "an icon control needs a tooltip — an icon is not a name";
     case WidgetKind::Transport:
         return d.target ? nullptr : "a transport needs an Executor to drive";
     case WidgetKind::Progress:
@@ -300,6 +311,7 @@ bool panel_widget(Panel p, const WidgetDesc &d) {
         w.options.emplace_back(d.options[i] ? d.options[i] : "");
     w.kind = d.kind;
     w.group = d.group;
+    w.icon = d.icon;
     w.target = d.target;
     w.min = d.min;
     w.max = d.max;
@@ -309,8 +321,14 @@ bool panel_widget(Panel p, const WidgetDesc &d) {
     w.on_click = d.on_click;
     w.user = d.user;
     w.free = d.free;
+    // Anything ImGui must tell apart gets an id of its own. An icon
+    // control has no visible label to be identified by, so two of them
+    // in one panel would be the SAME control without this.
     if (d.kind == WidgetKind::GroupBegin && d.group == Group::Tabs)
-        w.id = "##tabs" + std::to_string(st->bars++);
+        w.id = "##tabs" + std::to_string(st->ids++);
+    else if (d.kind == WidgetKind::IconButton ||
+             d.kind == WidgetKind::IconToggle)
+        w.id = "icon" + std::to_string(st->ids++);
     return true;
 }
 

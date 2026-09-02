@@ -91,6 +91,7 @@ struct WidgetState {
     std::vector<std::string> options;
     WidgetKind kind = WidgetKind::Text;
     Group group = Group::Section;
+    Icon icon = Icon::Gear;
     void *target = nullptr;
     float min = 0.0f, max = 1.0f;
     float speed = 0.0f;
@@ -120,7 +121,7 @@ struct PanelState {
     ::ImFont *mono = nullptr;
     std::list<WidgetState> widgets;
     std::vector<Group> open;
-    int bars = 0;
+    int ids = 0;
 };
 
 } // namespace impl

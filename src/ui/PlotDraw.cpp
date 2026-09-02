@@ -8,6 +8,7 @@
 // axes are configured, SetupFinish draws the line, and only then are
 // the sources asked.
 
+#include "Icons.h"
 #include "PlotState.h"
 
 #include "../core/App.h"
@@ -431,11 +432,13 @@ struct Numerals {
 // about what the sim is doing.
 void transport_draw(void *target, ::ImFont *mono) {
     const impl::Executor ex{target};
+    ImGui::PushID(target);
     const bool playing = impl::executor_playing(ex);
-    if (ImGui::Button(playing ? "||" : ">"))
+    if (impl::icon_button(playing ? Icon::Pause : Icon::Play, "tp_play",
+                          playing ? "pause" : "play"))
         playing ? impl::executor_pause(ex) : impl::executor_play(ex);
     ImGui::SameLine();
-    if (ImGui::Button(">|"))
+    if (impl::icon_button(Icon::Step, "tp_step", "one step"))
         impl::executor_advance(ex, 1);
     ImGui::SameLine();
 
@@ -445,10 +448,11 @@ void transport_draw(void *target, ::ImFont *mono) {
     ImGui::SetNextItemWidth(72.0f);
     ImGui::InputInt("##n", &run_n, 0, 0);
     ImGui::SameLine();
-    if (ImGui::Button(">>") && run_n > 0)
+    if (impl::icon_button(Icon::Forward, "tp_run", "run that many steps") &&
+        run_n > 0)
         impl::executor_advance(ex, std::uint64_t(run_n));
     ImGui::SameLine();
-    if (ImGui::Button("restart"))
+    if (impl::icon_button(Icon::Restart, "tp_restart", "restart"))
         impl::executor_restart(ex);
 
     {
@@ -489,6 +493,7 @@ void transport_draw(void *target, ::ImFont *mono) {
     if (ImGui::SliderFloat("##delay", &ms, 0.0f, 1000.0f, "%.1f ms",
                            ImGuiSliderFlags_Logarithmic))
         impl::executor_set_delay_ns(ex, std::uint64_t(ms * 1e6f));
+    ImGui::PopID();
 }
 
 void choice_draw(impl::WidgetState &w) {
@@ -589,6 +594,17 @@ void widget_draw(impl::WidgetState &w, ::ImFont *mono) {
     case impl::WidgetKind::Progress:
         progress_draw(w, mono);
         break;
+    case impl::WidgetKind::IconButton:
+        if (impl::icon_button(w.icon, w.id.c_str(), w.label.c_str()) &&
+            w.on_click)
+            w.on_click(w.user);
+        break;
+    case impl::WidgetKind::IconToggle: {
+        bool &on = *static_cast<bool *>(w.target);
+        if (impl::icon_button(w.icon, w.id.c_str(), w.label.c_str(), on))
+            on = !on;
+        break;
+    }
     case impl::WidgetKind::Transport:
         transport_draw(w.target, mono);
         break;
