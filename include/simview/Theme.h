@@ -38,6 +38,7 @@ struct Theme {
     float line_weight = 1.75f;
     float marker_size = 3.5f;
     float fill_alpha = 0.60f;
+    PlotChrome plot_chrome = PlotChrome::Bar;
 };
 
 namespace themes {
@@ -72,7 +73,8 @@ inline constexpr Theme Paper{.name = "paper",
                              .tick_len = 8.0f,
                              .line_weight = 1.4f,
                              .marker_size = 3.0f,
-                             .fill_alpha = 0.35f};
+                             .fill_alpha = 0.35f,
+                             .plot_chrome = PlotChrome::Menu};
 
 inline constexpr Theme Contrast{.name = "contrast",
                                 .ink = {0.0f, 0.0f, 0.0f},
@@ -137,7 +139,8 @@ inline constexpr Theme Terminal{.name = "terminal",
                                 .tick_len = 4.0f,
                                 .line_weight = 1.25f,
                                 .marker_size = 2.5f,
-                                .fill_alpha = 0.28f};
+                                .fill_alpha = 0.28f,
+                                .plot_chrome = PlotChrome::Rail};
 
 }
 

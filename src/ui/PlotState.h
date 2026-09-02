@@ -88,6 +88,14 @@ struct PlotState {
     bool open = true;
     bool fit_offered = false;
     bool fit_pending = false;
+    // Offered by the chrome on every plot, so a reader never has to
+    // find out whether THIS one happens to expose them.
+    bool legend = true;
+    bool grid = true;
+    // What the last draw left for the data, which is the number every
+    // arrangement is really trading against.
+    float canvas_w = 0.0f;
+    float canvas_h = 0.0f;
     App *app = nullptr;
 };
 

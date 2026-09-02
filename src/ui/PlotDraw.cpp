@@ -30,8 +30,9 @@
 namespace sv {
 namespace {
 
-void setup_axis(ImAxis ax, const impl::AxisState &a) {
-    ImPlotAxisFlags flags = ImPlotAxisFlags_None;
+void setup_axis(ImAxis ax, const impl::AxisState &a, bool grid) {
+    ImPlotAxisFlags flags =
+        grid ? ImPlotAxisFlags_None : ImPlotAxisFlags_NoGridLines;
     if (a.desc.fit == Fit::Stream)
         flags |= ImPlotAxisFlags_AutoFit;
     if (a.desc.invert)
@@ -309,11 +310,24 @@ void place_window(int slot, float width, float height) {
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
 }
 
-// The strip above the canvas: what this plot can BECOME, then whatever
-// controls the caller put on it. A reduction offered where the data is
-// costs one click; the same reduction written out costs an afternoon,
-// which is the difference between a question you ask and one you do
-// not bother to.
+// The CHROME: everything in a plot's window that is not the data.
+//
+// One function draws it for every plot, so a control the engine offers
+// is in the same place on all of them and a caller who adds controls
+// gets them arranged rather than appended. What varies is the
+// ARRANGEMENT, and that is a theme's decision — the same design system
+// that says how round a button is says whether a plot wears its
+// controls as a strip, a rail, or one button.
+//
+//   Bar   a row above the canvas. Cheapest to read, costs height.
+//   Rail  a column beside it. Costs width, which a wide plot has and
+//         a short one does not.
+//   Menu  one gear, everything behind it. Costs nothing but a click,
+//         which is what a figure meant to be LOOKED at wants.
+//
+// Every arrangement offers the same things, so which one is in force
+// changes where a reader looks and never what is there.
+
 // Refitting is worth a control only where it would change something:
 // a fixed axis ignores it, and a streaming one has already refitted
 // this frame. That leaves the two that fit ONCE and are then the
@@ -323,34 +337,124 @@ bool fittable(const impl::AxisState &a) {
     return a.desc.fit == Fit::Data || a.desc.fit == Fit::Start;
 }
 
-void plot_toolbar(impl::PlotState &p) {
-    const std::vector<DeriveOption> options = derive_options(p);
-    const bool has_controls = p.controls && !p.controls->widgets.empty();
-    p.fit_offered =
-        p.family == impl::Family::Plot2D && (fittable(p.x) || fittable(p.y));
-    if (options.empty() && !has_controls && !p.fit_offered)
-        return;
+// What this plot can BECOME. A reduction offered where the data is
+// costs one click; the same reduction written out costs an afternoon,
+// which is the difference between a question you ask and one you do
+// not bother to.
+void reduce_menu(impl::PlotState &p, const std::vector<DeriveOption> &options) {
+    for (const DeriveOption &o : options)
+        if (ImGui::Selectable(o.label.c_str()))
+            impl::plot_derive(impl::Plot{&p}, o.kind, o.series->name.c_str());
+}
 
+// The two the engine owns on every 2-D plot. They are HERE and not on
+// PlotDesc because a reader turning a legend off is not the caller
+// changing the plot's definition.
+void settings_menu(impl::PlotState &p) {
+    ImGui::Checkbox("legend", &p.legend);
+    ImGui::Checkbox("grid", &p.grid);
+}
+
+// `column` stacks them; `tuck` puts the caller's controls in the gear
+// popup instead of leaving them for the caller region — which is what a
+// narrow rail has to do, since a labelled slider does not fit in a
+// column of buttons and clipping it helps nobody.
+void chrome_buttons(impl::PlotState &p,
+                    const std::vector<DeriveOption> &options, bool column,
+                    bool tuck) {
     if (p.fit_offered) {
         if (impl::icon_button(Icon::Fit, "fit", "fit the axes to the data"))
             p.fit_pending = true;
-        if (!options.empty())
+        if (!column)
             ImGui::SameLine();
     }
     if (!options.empty()) {
         if (ImGui::SmallButton("views"))
             ImGui::OpenPopup("##views");
         if (ImGui::BeginPopup("##views")) {
-            for (const DeriveOption &o : options)
-                if (ImGui::Selectable(o.label.c_str()))
-                    impl::plot_derive(impl::Plot{&p}, o.kind,
-                                      o.series->name.c_str());
+            reduce_menu(p, options);
+            ImGui::EndPopup();
+        }
+        if (!column)
+            ImGui::SameLine();
+    }
+    const bool has_controls = p.controls && !p.controls->widgets.empty();
+    const bool tucked = tuck && has_controls;
+    if (p.family == impl::Family::Plot2D || tucked) {
+        if (impl::icon_button(Icon::Gear, "settings",
+                              tucked ? "controls, legend and grid"
+                                     : "legend and grid"))
+            ImGui::OpenPopup("##settings");
+        if (ImGui::BeginPopup("##settings")) {
+            if (p.family == impl::Family::Plot2D)
+                settings_menu(p);
+            if (tucked) {
+                ImGui::SeparatorText("controls");
+                panel_body(*p.controls);
+            }
             ImGui::EndPopup();
         }
     }
+}
+
+// Draws the chrome and returns what is left for the canvas. Every arm
+// ends with the cursor where the plot begins, and the size it returns
+// is the size the plot is given — so the trade each arrangement makes
+// is one number a check can read.
+ImVec2 plot_chrome(impl::PlotState &p, float bar_w) {
+    const std::vector<DeriveOption> options = derive_options(p);
+    const bool has_controls = p.controls && !p.controls->widgets.empty();
+    p.fit_offered =
+        p.family == impl::Family::Plot2D && (fittable(p.x) || fittable(p.y));
+
+    const PlotChrome how = theme_of(p).plot_chrome;
+    ImGui::PushID("chrome");
+
+    if (how == PlotChrome::Menu) {
+        const float h = ImGui::GetFrameHeight();
+        ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - h);
+        if (impl::icon_button(Icon::Gear, "menu", "controls and views"))
+            ImGui::OpenPopup("##menu");
+        if (ImGui::BeginPopup("##menu")) {
+            if (p.fit_offered && ImGui::Selectable("fit the axes to the data"))
+                p.fit_pending = true;
+            if (!options.empty()) {
+                ImGui::SeparatorText("views");
+                reduce_menu(p, options);
+            }
+            if (p.family == impl::Family::Plot2D) {
+                ImGui::SeparatorText("show");
+                settings_menu(p);
+            }
+            if (has_controls) {
+                ImGui::SeparatorText("controls");
+                panel_body(*p.controls);
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+        return ImVec2(-1 - bar_w, -1);
+    }
+
+    if (how == PlotChrome::Rail) {
+        // A rail sized from the FONT, so it holds its text button at
+        // any theme's text size rather than at one theme's.
+        const float w = ImGui::CalcTextSize("views").x +
+                        ImGui::GetStyle().FramePadding.x * 4.0f;
+        ImGui::BeginChild("##rail", ImVec2(w, -1), ImGuiChildFlags_None);
+        chrome_buttons(p, options, /*column=*/true, /*tuck=*/true);
+        ImGui::EndChild();
+        ImGui::SameLine();
+        ImGui::PopID();
+        return ImVec2(-1 - bar_w, -1);
+    }
+
+    chrome_buttons(p, options, /*column=*/false, /*tuck=*/false);
     if (has_controls)
         panel_body(*p.controls);
     ImGui::Separator();
+    ImGui::PopID();
+    return ImVec2(-1 - bar_w, -1);
 }
 
 } // namespace
@@ -373,7 +477,6 @@ void plot_draw(impl::PlotState &p) {
     }
     if (p.derivation)
         derive_update(p);
-    plot_toolbar(p);
 
     // PushColormap wraps the whole bracket — and the colourbar beside
     // it, which is why a heatmap's bar reserves its width up front.
@@ -384,6 +487,8 @@ void plot_draw(impl::PlotState &p) {
     const impl::SeriesState *bar = colourbar_of(p);
     const float bar_w = bar ? 60.0f + ImGui::GetStyle().ItemSpacing.x : 0.0f;
 
+    const ImVec2 canvas = plot_chrome(p, bar_w);
+
     // ONE function, ONE place the family is switched: the bracket.
     // The window, the title namespace, the source pull, the dtype
     // erasure and the list addressing are shared; only the library
@@ -391,7 +496,8 @@ void plot_draw(impl::PlotState &p) {
     if (p.family == impl::Family::Plot3D) {
         if (mapped)
             ImPlot3D::PushColormap(map);
-        if (ImPlot3D::BeginPlot("##canvas", ImVec2(-1, -1))) {
+        if (ImPlot3D::BeginPlot("##canvas",
+                                ImVec2(canvas.x + bar_w, canvas.y))) {
             setup_axis3(ImAxis3D_X, p.x);
             setup_axis3(ImAxis3D_Y, p.y);
             setup_axis3(ImAxis3D_Z, p.z);
@@ -424,16 +530,29 @@ void plot_draw(impl::PlotState &p) {
         ImPlot::SetNextAxesToFit();
         p.fit_pending = false;
     }
-    if (ImPlot::BeginPlot("##canvas", ImVec2(-1 - bar_w, -1))) {
-        setup_axis(ImAxis_X1, p.x);
-        setup_axis(ImAxis_Y1, p.y);
+    if (ImPlot::BeginPlot("##canvas", canvas,
+                          p.legend ? 0 : ImPlotFlags_NoLegend)) {
+        setup_axis(ImAxis_X1, p.x, p.grid);
+        setup_axis(ImAxis_Y1, p.y, p.grid);
         // A key ABOVE the axes, not floating on the data: an inside
         // legend covers whatever it lands on, and the one place it can
         // never be in the way is outside the frame.
+        //
+        // The FLAG on BeginPlot is what removes it, and this call only
+        // says where it goes when there is one. Guarding this call
+        // instead also works — both were measured — but that route
+        // reads as "do not configure it" where the flag reads as "there
+        // is none", and one of those is the thing being asked for.
         ImPlot::SetupLegend(ImPlotLocation_North,
                             ImPlotLegendFlags_Outside |
                                 ImPlotLegendFlags_Horizontal);
         ImPlot::SetupFinish();
+
+        // What the chrome actually left for the data — the number
+        // every arrangement is trading against, recorded where it is
+        // known rather than recomputed from the window.
+        p.canvas_w = ImPlot::GetPlotSize().x;
+        p.canvas_h = ImPlot::GetPlotSize().y;
 
         for (impl::SeriesState &s : p.series) {
             const impl::SeriesData d = s.src ? s.src(s.user) : s.data;

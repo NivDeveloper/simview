@@ -113,8 +113,18 @@ struct PlotTools {
     bool fit_offered;
     bool fit_pending;
     bool open;
+    // What the chrome left for the data on the last draw. A bar costs
+    // height, a rail costs width, a menu costs neither — which makes
+    // the arrangement something a check can read rather than admire.
+    float canvas_w;
+    float canvas_h;
 };
 bool plot_tools(impl::App *, const char *title, PlotTools *out);
+
+// Flip a setting the CHROME owns, the way its menu does — so a check
+// can prove the setting reaches the plot without hunting a popup entry
+// whose position is a layout detail.
+void plot_show_legend(impl::App *, const char *title, bool on);
 
 // Make the next graphics submission wait GPU-side on a compute-timeline
 // value nothing will ever signal — the hang a deleted pump or a stamp

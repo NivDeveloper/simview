@@ -197,10 +197,19 @@ bool plot_tools(impl::App *a, const char *title, PlotTools *out) {
         return false;
     for (const impl::PlotState &p : a->plots)
         if (p.title == title) {
-            *out = {p.fit_offered, p.fit_pending, p.open};
+            *out = {p.fit_offered, p.fit_pending, p.open, p.canvas_w,
+                    p.canvas_h};
             return true;
         }
     return false;
+}
+
+void plot_show_legend(impl::App *a, const char *title, bool on) {
+    if (!a || !title)
+        return;
+    for (impl::PlotState &p : a->plots)
+        if (p.title == title)
+            p.legend = on;
 }
 
 } // namespace probe
