@@ -152,6 +152,10 @@ struct PanelState {
 } // namespace impl
 
 // One panel each, drawn from the ui callbacks they register.
+// Where a window lands before the layout file has an opinion —
+// asked by both a plot and a panel, so it belongs to neither.
+void place_window(impl::App *, int slot, float width, float height);
+
 void plot_draw(impl::PlotState &);
 void panel_draw(impl::PanelState &);
 
