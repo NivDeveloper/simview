@@ -1,17 +1,21 @@
-// The world's arithmetic, with no device in the room.
+// The engine's arithmetic, with no device in the room.
 //
 // Every claim the 3D path makes about where something lands is made
 // here first: the projection, the pose, the turntable's invariants and
-// the ordering keys. A shot check can only say the picture changed; it
-// takes numbers to say the picture is RIGHT, and these numbers are
-// checkable on a machine with no GPU at all.
+// the ordering keys. Then the reductions' half — binning a set of
+// values into cells, and tracing a contour through a field. A shot
+// check can only say the picture changed; it takes numbers to say the
+// picture is RIGHT, and these numbers are checkable on a machine with
+// no GPU at all.
 
 #include "harness/Check.h"
 
-#include "world/Math.h"
+#include "core/Math.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 using namespace sv;
 using namespace sv::impl;
@@ -258,5 +262,55 @@ int main() {
     std::printf("  focal: %.1f px per unit at unit depth, ortho %.1f flat\n",
                 double(f1), double(ortho_px));
 
-    return check::summary("world math");
+    // ── binning ──────────────────────────────────────────────────
+    // A span always has WIDTH: a set of identical values would
+    // otherwise put every one of them in the same cell and the picture
+    // would be one spike saying nothing.
+    const impl::Span flat = impl::span_of({2.5, 2.5, 2.5});
+    CHECK_GT(flat.hi, flat.lo);
+    const impl::Span s01 = impl::span_of({0.0, 0.25, 1.0});
+    CHECK_EQ(s01.lo, 0.0);
+    CHECK_EQ(s01.hi, 1.0);
+
+    // The ends land in the end cells, and anything outside is CLAMPED
+    // rather than dropped or wrapped.
+    CHECK_EQ(impl::bin_of(0.0, s01, 8), 0);
+    CHECK_EQ(impl::bin_of(1.0, s01, 8), 7);
+    CHECK_EQ(impl::bin_of(-5.0, s01, 8), 0);
+    CHECK_EQ(impl::bin_of(5.0, s01, 8), 7);
+
+    // ── contours ─────────────────────────────────────────────────
+    // A flat field has no level to cross, so it traces nothing — the
+    // case a marching square gets wrong by emitting a segment on every
+    // cell of an empty picture.
+    std::vector<double> flat_field(64, 0.0);
+    std::vector<double> cx, cy;
+    impl::contours(flat_field, 8, {0.0, 1.0}, {0.0, 1.0}, 0.0, cx, cy);
+    CHECK_EQ(int(cx.size()), 0);
+
+    // One hot cell is a closed curve around it: segments come in
+    // PAIRS of points, and every point is inside the field's own span.
+    std::vector<double> spot(64, 0.0);
+    spot[3 * 8 + 4] = 10.0;
+    impl::contours(spot, 8, {0.0, 1.0}, {0.0, 1.0}, 10.0, cx, cy);
+    std::printf("  contours: %d points around one hot cell\n", int(cx.size()));
+    CHECK_GT(int(cx.size()), 0);
+    CHECK_EQ(int(cx.size()) % 2, 0);
+    CHECK_EQ(int(cx.size()), int(cy.size()));
+    // And it is AROUND that cell rather than merely on the canvas.
+    // The hot cell is column 4 and row 3 of eight over the unit
+    // square, so its centre is (0.5625, 0.4375) and every point of the
+    // curve belongs within a cell or two of it — which is the claim a
+    // coordinate mapping that is off by a cell actually breaks.
+    double far_x = 0.0, far_y = 0.0;
+    for (std::size_t i = 0; i < cx.size(); ++i) {
+        far_x = std::max(far_x, std::abs(cx[i] - 0.5625));
+        far_y = std::max(far_y, std::abs(cy[i] - 0.4375));
+    }
+    std::printf("  contours: furthest point %.3f, %.3f from the hot cell\n",
+                far_x, far_y);
+    CHECK_GT(0.20, far_x);
+    CHECK_GT(0.20, far_y);
+
+    return check::summary("math");
 }

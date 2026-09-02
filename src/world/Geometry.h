@@ -11,7 +11,7 @@
 // asks for a shape and the item picks the tier from how many there
 // are, which is a decision no user should have to make.
 
-#include "Math.h"
+#include "../core/Math.h"
 
 #include <cstdint>
 #include <vector>

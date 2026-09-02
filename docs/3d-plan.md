@@ -105,7 +105,9 @@ a 3D program would come back empty.
 ```
 include/simview/World.h        WorldDesc, CameraDesc, the World builder
 include/simview/world/Cloud.h  CloudMode/CloudDesc, the Cloud handle
-src/world/Math.h    Vec3, Quat, Mat4, Camera3, the projection, the keys
+src/core/Math.h     Vec3, Quat, Mat4, Camera3, the projection, the keys
+                    (moved out of world/ once it was the engine's only
+                    arithmetic rather than the 3D stratum's)
 src/world/Passes.h  the pass table
 src/world/Items.h   WorldItemOps, WorldItem, DrawCmd, WorldView
 src/world/World.h   WorldState + the draw
@@ -119,7 +121,7 @@ shaders/{world_view,cloud,grid3,axes3}.slang
 
 Math is a 250-line internal header rather than a dependency: ten
 functions do not justify pinning a library, and being header-only is
-what lets `world_math_check` prove the projection and the camera with
+what lets `math_check` prove the projection and the camera with
 no device in the room.
 
 ## The camera
@@ -316,7 +318,7 @@ boundary. `examples/orbit` is the same world in one panel-free window.
 
 ## What the checks prove
 
-`world_math_check` (pure, no device): the projection's fixed points
+`math_check` (pure, no device): the projection's fixed points
 and monotonicity, the pose against its own spherical definition, the
 view matrix agreeing with the pose, the turntable's invariants, the
 matrix inverse, and both key orderings.

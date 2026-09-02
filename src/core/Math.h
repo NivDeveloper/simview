@@ -1,6 +1,7 @@
 #pragma once
 
-// Internal to src/ — the only linear algebra in the engine, and
+// Internal to src/ — the engine's arithmetic, and the only file that
+// holds any. Linear algebra for the 3D stratum, and
 // deliberately the smallest one that closes the 3D path: a vector, a
 // quaternion, a 4x4, and the camera the world looks through.
 //
@@ -21,8 +22,11 @@
 //     GreaterOrEqual test) lives with the pass table; this file owns
 //     the matrix.
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace sv {
 namespace impl {
@@ -505,6 +509,159 @@ inline std::uint16_t depth_key(const Mat4 &world_to_clip, Vec3 p) {
     if (d > 1.0f)
         d = 1.0f;
     return static_cast<std::uint16_t>(d * 65535.0f);
+}
+
+// ── hashing ──────────────────────────────────────────────────────────
+//
+// FNV-1a, a byte at a time. Used to NAME a thing after its own
+// contents, where a library offers a registry that can add but never
+// replace: two callers with the same content then find one entry and
+// a caller with new content gets a new one, with nobody keeping a
+// counter.
+
+inline constexpr std::uint32_t kFnvSeed = 2166136261u;
+
+constexpr std::uint32_t fnv1a(std::uint32_t h, std::uint32_t byte) {
+    return (h ^ byte) * 16777619u;
+}
+
+// ── binning ──────────────────────────────────────────────────────────
+//
+// Turning a set of values into cells, which is what every reduction of
+// a point cloud starts with and none of them should each spell.
+
+struct Span {
+    double lo = 0.0, hi = 1.0;
+};
+
+// A range that always has width: a degenerate one makes every bin index
+// the same bin, and the picture is a single spike that says nothing.
+inline Span span_of(const std::vector<double> &v) {
+    if (v.empty())
+        return {};
+    auto [a, b] = std::minmax_element(v.begin(), v.end());
+    Span s{*a, *b};
+    if (!(s.hi > s.lo))
+        s.hi = s.lo + 1.0;
+    return s;
+}
+
+inline int bin_of(double v, Span s, int bins) {
+    const double t = (v - s.lo) / (s.hi - s.lo);
+    return std::clamp(int(t * double(bins)), 0, bins - 1);
+}
+
+// ── fields ───────────────────────────────────────────────────────────
+
+// Marching squares. For each cell of the binned field and each level,
+// the four corners above or below the level pick one of sixteen cases,
+// and the crossings are found by linear interpolation along the edges
+// they lie on — so a contour follows the DATA rather than the cell
+// boundaries and does not staircase.
+//
+// The two saddle cases are resolved by the cell's own average, which
+// is the cheapest rule that is at least self-consistent: whichever way
+// it decides, the two crossings it joins are the two the average says
+// are on the same side.
+//
+// Output is pairs of points, which is what a line drawn as SEGMENTS
+// takes — one item for every level rather than one per segment.
+inline void contours(const std::vector<double> &f, int n, Span sx, Span sy,
+                     double top, std::vector<double> &xs,
+                     std::vector<double> &ys) {
+    xs.clear();
+    ys.clear();
+    if (n < 2 || top <= 0.0)
+        return;
+
+    const double dx = (sx.hi - sx.lo) / double(n);
+    const double dy = (sy.hi - sy.lo) / double(n);
+    const auto px = [&](double i) { return sx.lo + (i + 0.5) * dx; };
+    const auto py = [&](double j) { return sy.lo + (j + 0.5) * dy; };
+    const auto at = [&](int i, int j) {
+        return f[std::size_t(j) * std::size_t(n) + std::size_t(i)];
+    };
+
+    // Four levels, evenly through the field's range. Enough to read a
+    // shape; more at 32 bins is noise dressed as detail.
+    for (int k = 1; k <= 4; ++k) {
+        const double level = top * double(k) / 5.0;
+        for (int j = 0; j + 1 < n; ++j)
+            for (int i = 0; i + 1 < n; ++i) {
+                const double v[4] = {at(i, j), at(i + 1, j), at(i + 1, j + 1),
+                                     at(i, j + 1)};
+                int code = 0;
+                for (int c = 0; c < 4; ++c)
+                    if (v[c] > level)
+                        code |= 1 << c;
+                if (code == 0 || code == 15)
+                    continue;
+
+                // The crossing on each edge, as a point.
+                const auto lerp = [&](double a, double b) {
+                    const double t = (level - a) / (b - a);
+                    return t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+                };
+                const double bottom_t = lerp(v[0], v[1]);
+                const double right_t = lerp(v[1], v[2]);
+                const double top_t = lerp(v[3], v[2]);
+                const double left_t = lerp(v[0], v[3]);
+                const double ex[4] = {px(double(i) + bottom_t),
+                                      px(double(i + 1)), px(double(i) + top_t),
+                                      px(double(i))};
+                const double ey[4] = {py(double(j)), py(double(j) + right_t),
+                                      py(double(j + 1)),
+                                      py(double(j) + left_t)};
+
+                const auto emit = [&](int e0, int e1) {
+                    xs.push_back(ex[e0]);
+                    ys.push_back(ey[e0]);
+                    xs.push_back(ex[e1]);
+                    ys.push_back(ey[e1]);
+                };
+                switch (code) {
+                case 1:
+                case 14:
+                    emit(3, 0);
+                    break;
+                case 2:
+                case 13:
+                    emit(0, 1);
+                    break;
+                case 3:
+                case 12:
+                    emit(3, 1);
+                    break;
+                case 4:
+                case 11:
+                    emit(1, 2);
+                    break;
+                case 6:
+                case 9:
+                    emit(0, 2);
+                    break;
+                case 7:
+                case 8:
+                    emit(3, 2);
+                    break;
+                case 5:
+                case 10: {
+                    const double mid = (v[0] + v[1] + v[2] + v[3]) * 0.25;
+                    const bool joined = (mid > level) == (code == 5);
+                    if (joined) {
+                        emit(3, 0);
+                        emit(1, 2);
+                    } else {
+                        emit(0, 1);
+                        emit(3, 2);
+                    }
+                    break;
+                }
+                default:
+                    break;
+                }
+            }
+    }
 }
 
 } // namespace impl

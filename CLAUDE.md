@@ -477,6 +477,11 @@ src/               folded by LAYER, not by stratum (the namespace
 src/core/App.h     the composed App: each member's type from its own
                    layer's header. Lint rule (j) is the DAG: scene/
                    and the platform state headers never name ui/
+src/core/Math.h    the engine's ARITHMETIC, all of it, and free of
+                   every SDK type: linear algebra and the camera for
+                   the 3D stratum, binning and marching squares for
+                   the reductions, one hash. `math_check` proves it
+                   with no device in the room
 src/render/        the bottom of the drawing stack, under BOTH
                    strata and owned by neither: the two devices, a
                    resizable target, how a shader is named. It

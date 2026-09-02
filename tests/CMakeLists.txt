@@ -82,19 +82,19 @@ set_tests_properties(headless.hang_check PROPERTIES
     PASS_REGULAR_EXPRESSION "waited 500 ms for the shot's frame"
     SKIP_REGULAR_EXPRESSION "^SKIP:")
 
-# The world's arithmetic, with no device: it includes src/world/Math.h
+# The engine's arithmetic, with no device: it includes src/core/Math.h
 # directly, so it needs the src include dir the foreach checks lack —
 # and it is `pure`, which is what puts it in the sanitizer job.
-add_executable(world_math_check checks/world_math_check.cpp)
-target_include_directories(world_math_check PRIVATE
+add_executable(math_check checks/math_check.cpp)
+target_include_directories(math_check PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
-set_target_properties(world_math_check PROPERTIES
+set_target_properties(math_check PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(NOT MSVC)
-    target_compile_options(world_math_check PRIVATE ${SIMVIEW_WARNINGS})
+    target_compile_options(math_check PRIVATE ${SIMVIEW_WARNINGS})
 endif()
-add_test(NAME headless.world_math_check COMMAND world_math_check)
-set_tests_properties(headless.world_math_check PROPERTIES
+add_test(NAME headless.math_check COMMAND math_check)
+set_tests_properties(headless.math_check PROPERTIES
     SKIP_RETURN_CODE 77 LABELS "pure")
 
 # S2's bring-up gate: the app-owned Vulkan stack with NVRHI and gpud

@@ -15,7 +15,7 @@
 #include "../render/Shader.h"
 #include "../render/Target.h"
 
-#include "Math.h"
+#include "../core/Math.h"
 #include "Passes.h"
 #include <simview/App.h>
 
