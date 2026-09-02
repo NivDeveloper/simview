@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -29,6 +30,24 @@ double luminance(const float (&c)[3]) {
         v[k] = u <= 0.04045 ? u / 12.92 : std::pow((u + 0.055) / 1.055, 2.4);
     }
     return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+
+// How many pixels in a box are within `tol` of one colour. A series is
+// drawn in a colour the theme names, so this is how a check asks
+// whether the DATA changed and not merely the chrome around it.
+std::size_t near(const Bmp &img, unsigned x0, unsigned y0, unsigned x1,
+                 unsigned y1, const float (&c)[3], int tol) {
+    const int r = int(c[0] * 255.0f), g = int(c[1] * 255.0f),
+              b = int(c[2] * 255.0f);
+    std::size_t n = 0;
+    for (unsigned y = y0; y < y1; ++y)
+        for (unsigned x = x0; x < x1; ++x) {
+            const auto &q = img.at(x, y);
+            if (std::abs(q[0] - r) + std::abs(q[1] - g) + std::abs(q[2] - b) <=
+                tol)
+                ++n;
+        }
+    return n;
 }
 
 double contrast(const float (&a)[3], const float (&b)[3]) {
@@ -78,8 +97,8 @@ int main() {
 
     // The style the theme set, at three places a panel actually shows:
     // a rounded window, rounded frames, and room between rows.
-    CHECK_EQ(s.WindowRounding, 6.0f);
-    CHECK_EQ(s.FrameRounding, 4.0f);
+    CHECK_EQ(s.WindowRounding, themes::Midnight.panel_rounding);
+    CHECK_EQ(s.FrameRounding, themes::Midnight.control_rounding);
     CHECK_GT(s.ItemSpacing.y, 6.0f);
     CHECK(s.WindowTitleAlign.x == 0.0f);
 
@@ -141,8 +160,9 @@ int main() {
     // This is the one property a palette can lose silently. Every
     // other mistake is visible the moment the window opens; a
     // contrast of 3.9 looks fine to whoever picked it.
-    for (const Theme &th :
-         {themes::Midnight, themes::Paper, themes::Contrast}) {
+    const Theme all[] = {themes::Midnight, themes::Paper, themes::Contrast,
+                         themes::Terminal};
+    for (const Theme &th : all) {
         const double on_panel = contrast(th.text, th.panel);
         const double dim_panel = contrast(th.text_dim, th.panel);
         const double on_field = contrast(th.text, th.field);
@@ -156,16 +176,115 @@ int main() {
         CHECK_GT(accent_panel, 3.0);
     }
 
+    // A look is more than a palette, so the SHAPE tokens have to vary
+    // across the set too — otherwise four themes are four colour
+    // schemes wearing the same suit. Asked of the values, since that
+    // is where a fifth theme would be added.
+    const auto varies = [&](auto pick) {
+        for (const Theme &th : all)
+            if (pick(th) != pick(all[0]))
+                return true;
+        return false;
+    };
+    CHECK(varies([](const Theme &v) { return v.panel_rounding; }));
+    CHECK(varies([](const Theme &v) { return v.control_rounding; }));
+    CHECK(varies([](const Theme &v) { return v.padding; }));
+    CHECK(varies([](const Theme &v) { return v.gap; }));
+    CHECK(varies([](const Theme &v) { return v.control_border; }));
+    CHECK(varies([](const Theme &v) { return v.font_size; }));
+    CHECK(varies([](const Theme &v) { return float(v.mono_ui); }));
+    CHECK(varies([](const Theme &v) { return v.plot_border; }));
+    CHECK(varies([](const Theme &v) { return v.tick_len; }));
+    CHECK(varies([](const Theme &v) { return v.line_weight; }));
+
+    // And every one of them REACHES the styles it names — the way a
+    // token added to the struct and never wired would not.
+    for (const Theme &th : all) {
+        app.Theme(th);
+        app.Step();
+        const ImGuiStyle &g = ImGui::GetStyle();
+        CHECK_EQ(g.WindowRounding, th.panel_rounding);
+        CHECK_EQ(g.FrameRounding, th.control_rounding);
+        CHECK_EQ(g.FrameBorderSize, th.control_border);
+        CHECK_EQ(g.WindowBorderSize, th.window_border);
+        CHECK_EQ(g.FontSizeBase, th.font_size);
+        CHECK_EQ(ImPlot::GetStyle().MinorAlpha, th.grid_alpha);
+        CHECK_EQ(ImPlot::GetStyle().PlotBorderSize, th.plot_border);
+        CHECK_EQ(ImPlot::GetStyle().MajorTickLen.x, th.tick_len);
+        CHECK_EQ(ImPlot3D::GetStyle().LineWeight, th.line_weight);
+        CHECK_EQ(io.FontDefault == mono, th.mono_ui);
+    }
+
+    // The corner test from above, run again under a SQUARE theme: the
+    // same assertion has to flip. A rounded panel leaves its extreme
+    // corner unpainted; a square one paints it. Nothing else in this
+    // file would notice a rounding that stopped being applied.
+    app.Theme(themes::Contrast);
+    app.Step();
+    Bmp sharp;
+    REQUIRE(harness::shot(app, "theme_sharp", sharp));
+    const auto sq = [&](unsigned x, unsigned y) {
+        const auto &q = sharp.at(x, y);
+        return int(q[0]) + int(q[1]) + int(q[2]);
+    };
+    std::printf("(square: background %d, corner %d)\n", sq(px - 6, py - 6),
+                sq(px + 1, py + 1));
+    CHECK_GT(sq(px + 1, py + 1) - sq(px - 6, py - 6), 10);
+
+    // The DATA takes the theme too, and this is the half that fails
+    // silently: a plot caches an item's colour when the item is first
+    // seen, so a switch recolours the chrome, leaves every existing
+    // series as it was, and looks applied. Asked of the canvas, in the
+    // colour each theme names for its first series.
+    std::vector<float> ly(64);
+    for (std::size_t i = 0; i < 64; ++i)
+        ly[i] = float(i % 17) * 0.06f;
+    app.Plot({.title = "one"}).Line("l", ly);
+    ImGui::LoadIniSettingsFromMemory(
+        "[Window][one]\nPos=700,80\nSize=380,280\n\n");
+
+    app.Theme(themes::Midnight);
+    for (int f = 0; f < 3; ++f)
+        app.Step();
+    const ImGuiWindow *lw = ImGui::FindWindowByName("one");
+    REQUIRE(lw != nullptr);
+    const auto cx0 = unsigned(lw->Pos.x + 70.0f);
+    const auto cy0 = unsigned(lw->Pos.y + 70.0f);
+    const auto cx1 = unsigned(lw->Pos.x + lw->Size.x - 30.0f);
+    const auto cy1 = unsigned(lw->Pos.y + lw->Size.y - 60.0f);
+
+    Bmp blue;
+    REQUIRE(harness::shot(app, "theme_series_a", blue));
+    const std::size_t az =
+        near(blue, cx0, cy0, cx1, cy1, themes::Midnight.series[0], 90);
+
+    app.Theme(themes::Terminal);
+    for (int f = 0; f < 3; ++f)
+        app.Step();
+    Bmp green;
+    REQUIRE(harness::shot(app, "theme_series_b", green));
+    const std::size_t still_az =
+        near(green, cx0, cy0, cx1, cy1, themes::Midnight.series[0], 90);
+    const std::size_t gr =
+        near(green, cx0, cy0, cx1, cy1, themes::Terminal.series[0], 90);
+    std::printf("(series: azure %zu -> %zu, terminal green %zu)\n", az,
+                still_az, gr);
+    CHECK_GT(az, std::size_t(120));
+    CHECK_GT(gr, std::size_t(120));
+    CHECK_GT(az, still_az * 4);
+
     // A theme reaches the pixels, and lands at a frame boundary rather
     // than mid-frame. Two shots of the same window under two themes
     // must differ; the same theme twice must not.
+    app.Theme(themes::Midnight);
+    app.Step();
     Bmp dark, light, again;
     REQUIRE(harness::shot(app, "theme_dark", dark));
     app.Theme(themes::Paper);
     app.Step();
     REQUIRE(harness::shot(app, "theme_light", light));
     CHECK(!similar(dark, light));
-    CHECK_EQ(ImGui::GetStyle().WindowRounding, themes::Paper.rounding);
+    CHECK_EQ(ImGui::GetStyle().WindowRounding, themes::Paper.panel_rounding);
 
     app.Theme(themes::Midnight);
     app.Step();
@@ -174,7 +293,7 @@ int main() {
 
     // Two themes, two registrations: switching back finds the palette
     // it registered the first time rather than the other theme's.
-    app.Theme(themes::Contrast);
+    app.Theme(themes::Terminal);
     app.Step();
     const ImPlotColormap other = ImPlot::GetStyle().Colormap;
     CHECK(other != map);

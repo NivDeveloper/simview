@@ -31,6 +31,8 @@
 #include <imgui.h>
 #include <implot.h>
 #include <implot3d.h>
+#include <implot3d_internal.h>
+#include <implot_internal.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -147,52 +149,61 @@ void colours(ImGuiStyle &s, const Roles &p) {
     c[ImGuiCol_InputTextCursor] = p.accent_hot;
 }
 
-// Rounding, borders and the space between things. ImGui's defaults are
-// tuned for a debug overlay: square, tight, and every control the same
-// weight. A control panel a person reads for an hour wants air.
+// Shape, weight and air — the half of a design system that is not
+// colour. ImGui's defaults are tuned for a debug overlay: square,
+// tight, and every control the same weight.
 //
-// Two numbers carry all of it. `density` scales every gap at once, so
-// compact and airy are one knob rather than nine that can disagree;
-// `rounding` sets the window and the rest follow it in fixed
-// proportion, because a panel rounder than the field inside it is what
-// makes a theme look assembled rather than designed.
+// Four tokens carry it, and they are four because each is a decision
+// somebody actually makes. PANEL and CONTROL rounding are separate,
+// because "soft windows holding crisp fields" and "square windows
+// holding pill buttons" are both real looks and one radius cannot
+// spell either. PADDING (inside a control) and GAP (between them) are
+// separate for the same reason: a dense console wants tight gaps and
+// still-legible controls, which one density number cannot say.
+//
+// A CONTROL BORDER is the other axis: a field can be defined by its
+// fill or by its outline, and print-like themes pick the outline —
+// which is why paper's field is the same white as its page.
 void metrics(ImGuiStyle &s, const Theme &t) {
-    const float d = t.density;
-    const float r = t.rounding;
+    const float p = t.padding;
+    const float g = t.gap;
+    const float r = t.panel_rounding;
+    const float c = t.control_rounding;
 
-    s.WindowPadding = ImVec2(11.0f * d, 9.0f * d);
-    s.FramePadding = ImVec2(8.0f * d, 4.0f * d);
-    s.CellPadding = ImVec2(7.0f * d, 4.0f * d);
-    s.ItemSpacing = ImVec2(9.0f * d, 7.0f * d);
-    s.ItemInnerSpacing = ImVec2(7.0f * d, 5.0f * d);
-    s.IndentSpacing = 18.0f * d;
-    s.ScrollbarSize = 11.0f * d;
-    s.GrabMinSize = 11.0f * d;
+    s.WindowPadding = ImVec2(11.0f * p, 9.0f * p);
+    s.FramePadding = ImVec2(8.0f * p, 4.0f * p);
+    s.CellPadding = ImVec2(7.0f * p, 4.0f * p);
+    s.ItemSpacing = ImVec2(9.0f * g, 7.0f * g);
+    s.ItemInnerSpacing = ImVec2(7.0f * g, 5.0f * g);
+    s.IndentSpacing = 18.0f * g;
+    s.ScrollbarSize = 11.0f * p;
+    s.GrabMinSize = 11.0f * p;
 
-    s.WindowBorderSize = t.border;
-    s.ChildBorderSize = t.border;
-    s.PopupBorderSize = t.border;
-    s.FrameBorderSize = 0.0f;
+    s.WindowBorderSize = t.window_border;
+    s.ChildBorderSize = t.window_border;
+    s.PopupBorderSize = t.window_border;
+    s.FrameBorderSize = t.control_border;
     s.TabBorderSize = 0.0f;
-    s.TabBarBorderSize = t.border;
+    s.TabBarBorderSize = t.window_border;
     s.SeparatorTextBorderSize = 1.0f;
 
-    // Exact fractions, not decimals near them: the ratios ARE the
-    // design, and a check that pins a rounding to 4 should not fail on
-    // 4.02.
+    // Exact fractions off the two radii, not decimals near them: the
+    // ratios ARE the design, and a check that pins a rounding to 4
+    // should not fail on 4.02.
     s.WindowRounding = r;
     s.ChildRounding = r * 5.0f / 6.0f;
-    s.FrameRounding = r * 2.0f / 3.0f;
     s.PopupRounding = r * 5.0f / 6.0f;
-    s.ScrollbarRounding = r;
-    s.GrabRounding = r * 5.0f / 6.0f;
-    s.TabRounding = r * 2.0f / 3.0f;
+    s.FrameRounding = c;
+    s.GrabRounding = c * 5.0f / 4.0f;
+    s.ScrollbarRounding = c * 3.0f / 2.0f;
+    s.TabRounding = c;
 
-    // A title left-aligned reads as a label on the panel; centred it
-    // reads as a heading, which is a weight this content does not have.
-    s.WindowTitleAlign = ImVec2(0.0f, 0.5f);
-    s.SeparatorTextAlign = ImVec2(0.0f, 0.5f);
-    s.SeparatorTextPadding = ImVec2(18.0f * d, 5.0f * d);
+    // Left reads as a label on the panel, centred as a heading — which
+    // is a weight most of this content does not have, so a theme that
+    // wants it has to say so.
+    s.WindowTitleAlign = ImVec2(t.title_align, 0.5f);
+    s.SeparatorTextAlign = ImVec2(t.title_align, 0.5f);
+    s.SeparatorTextPadding = ImVec2(18.0f * g, 5.0f * g);
     s.ButtonTextAlign = ImVec2(0.5f, 0.5f);
     s.SelectableTextAlign = ImVec2(0.0f, 0.5f);
 
@@ -252,7 +263,8 @@ ImPlot3DColormap series_colormap3(const Series &s) {
 
 void plot_theme(const Theme &t, const Roles &p) {
     const Series series = series_of(t);
-    const float gap = t.density;
+    const float pad = t.padding;
+    const float tick = t.tick_len;
     ImPlotStyle &a = ImPlot::GetStyle();
     ImVec4 *c = a.Colors;
     c[ImPlotCol_FrameBg] = fade(p.ink, 0.0f);
@@ -279,27 +291,30 @@ void plot_theme(const Theme &t, const Roles &p) {
     // data; short ticks with room around the numbers read as a scale.
     // Tick DENSITY is not ours — ImPlot's locator targets a fixed
     // pixels-per-tick and exposes no knob for it.
-    a.PlotPadding = ImVec2(12.0f * gap, 10.0f * gap);
-    a.LabelPadding = ImVec2(7.0f * gap, 6.0f * gap);
-    a.MajorTickLen = ImVec2(6.0f * gap, 6.0f * gap);
-    a.MinorTickLen = ImVec2(3.0f * gap, 3.0f * gap);
+    a.PlotPadding = ImVec2(12.0f * pad, 10.0f * pad);
+    a.LabelPadding = ImVec2(7.0f * pad, 6.0f * pad);
+    a.MajorTickLen = ImVec2(tick, tick);
+    a.MinorTickLen = ImVec2(tick * 0.5f, tick * 0.5f);
     a.MajorTickSize = ImVec2(1.0f, 1.0f);
     a.MinorTickSize = ImVec2(1.0f, 1.0f);
     // A curve that touches the frame reads as clipped. A fitted axis
     // leaves a little room, more above and below than left and right,
     // because that is where a peak lands.
     a.FitPadding = ImVec2(0.02f, 0.07f);
-    a.LegendPadding = ImVec2(9.0f * gap, 9.0f * gap);
-    a.LegendInnerPadding = ImVec2(6.0f * gap, 4.0f * gap);
-    a.PlotBorderSize = 0.0f;
-    a.MinorAlpha = 0.18f;
+    a.LegendPadding = ImVec2(9.0f * pad, 9.0f * pad);
+    a.LegendInnerPadding = ImVec2(6.0f * pad, 4.0f * pad);
+    a.PlotBorderSize = t.plot_border;
+    a.MinorAlpha = t.grid_alpha;
+    // ImPlot keeps the item weights on the SPEC and not on the style,
+    // so a 2-D series takes them in spec_of. ImPlot3D keeps them on
+    // the style, which is why only one of these two blocks has them.
     a.Colormap = series_colormap(series);
 
     ImPlot3DStyle &q = ImPlot3D::GetStyle();
-    q.LineWeight = 1.75f;
-    q.MarkerSize = 3.0f;
-    q.FillAlpha = 0.60f;
-    q.PlotPadding = ImVec2(11.0f * gap, 9.0f * gap);
+    q.LineWeight = t.line_weight;
+    q.MarkerSize = t.marker_size;
+    q.FillAlpha = t.fill_alpha;
+    q.PlotPadding = ImVec2(11.0f * pad, 9.0f * pad);
     q.Colormap = series_colormap3(series);
     ImVec4 *d = q.Colors;
     d[ImPlot3DCol_FrameBg] = fade(p.ink, 0.0f);
@@ -329,8 +344,9 @@ void ui_fonts(impl::UiState &ui) {
     cfg.FontDataOwnedByAtlas = false;
     cfg.OversampleH = 2;
     cfg.OversampleV = 1;
-    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char *>(sv_font_sans),
-                                   int(sizeof sv_font_sans), 0.0f, &cfg);
+    ui.sans = io.Fonts->AddFontFromMemoryTTF(
+        const_cast<unsigned char *>(sv_font_sans), int(sizeof sv_font_sans),
+        0.0f, &cfg);
     // A second face for NUMBERS. Digits that do not share a width make
     // a column of readouts jump as the last figure changes, which is
     // the one thing a reader is watching for.
@@ -339,13 +355,29 @@ void ui_fonts(impl::UiState &ui) {
         0.0f, &cfg);
 }
 
-void ui_style(const Theme &t) {
+void ui_style(impl::UiState &ui, const Theme &t) {
     const Roles p{t};
+    ImGuiIO &io = ImGui::GetIO();
+    // Both faces are loaded either way, so which one READS is a theme
+    // decision and not a load-time one. A console look wants the whole
+    // interface monospaced, not just its numbers.
+    io.FontDefault = t.mono_ui ? ui.mono : ui.sans;
+
     ImGuiStyle &s = ImGui::GetStyle();
     s.FontSizeBase = t.font_size;
     colours(s, p);
     metrics(s, t);
     plot_theme(t, p);
+
+    // A plot caches an item's colour when the item is FIRST seen, so a
+    // new colormap reaches new plots and leaves every existing series
+    // the colour the old theme gave it — the switch looks applied
+    // everywhere except the data, which is the half that matters.
+    // Busting the pools also clears which series a reader had hidden
+    // from the legend; a look that changes underneath is a fresh
+    // start, and there is no narrower call than this one.
+    ImPlot::BustItemCache();
+    ImPlot3D::BustItemCache();
 }
 
 } // namespace sv

@@ -65,9 +65,9 @@ struct GridDesc {
 struct SeriesStyle {
     float color[4] = {0.0f, 0.0f, 0.0f, -1.0f};
     float fill[4] = {0.0f, 0.0f, 0.0f, -1.0f};
-    float fill_alpha = 0.60f;
-    float weight = 1.75f;
-    float marker_size = 3.5f;
+    float fill_alpha = -1.0f;
+    float weight = -1.0f;
+    float marker_size = -1.0f;
     float size = 4.0f;
     int marker = -2;
     bool horizontal = false;

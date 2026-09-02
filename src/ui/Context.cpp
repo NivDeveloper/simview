@@ -97,7 +97,7 @@ void ui_init(impl::App *a, const Config &c) {
     io.IniFilename = nullptr; // the layout file is ours to place
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ui_fonts(a->ui);
-    ui_style(a->theme);
+    ui_style(a->ui, a->theme);
 
     // No Vulkan loader is linked anywhere in this build: the backend
     // resolves every entry point through the app's own
@@ -238,7 +238,7 @@ void ui_begin(impl::App *a) {
     if (a->theme_changed) {
         a->theme = a->pending;
         a->theme_changed = false;
-        ui_style(a->theme);
+        ui_style(a->ui, a->theme);
     }
     ImGui_ImplVulkan_NewFrame();
     if (a->platform.win)

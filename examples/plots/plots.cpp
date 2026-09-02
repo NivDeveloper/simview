@@ -177,8 +177,9 @@ int main() {
     int look = 0;
     int shown = 0;
     const sv::Theme all[] = {sv::themes::Midnight, sv::themes::Paper,
-                             sv::themes::Contrast};
-    app.Panel("look").Choice("theme", look, {"midnight", "paper", "contrast"});
+                             sv::themes::Contrast, sv::themes::Terminal};
+    app.Panel("look").Choice("theme", look,
+                             {"midnight", "paper", "contrast", "terminal"});
 
     app.OnFrame([&] {
         if (look != shown) {

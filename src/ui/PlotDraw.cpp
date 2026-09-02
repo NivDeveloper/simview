@@ -53,17 +53,24 @@ void setup_axis(ImAxis ax, const impl::AxisState &a) {
 
 // Never brace-initialised: ImPlotSpec's variadic constructor reads
 // braces as (property, value) pairs and fails the arity assert.
-ImPlotSpec spec_of(const SeriesStyle &st) {
+const Theme &theme_of(const impl::PlotState &p) {
+    static const Theme fallback{};
+    return p.app ? p.app->theme : fallback;
+}
+
+ImPlotSpec spec_of(const SeriesStyle &st, const Theme &t) {
     ImPlotSpec spec;
     if (st.color[3] >= 0.0f)
         spec.LineColor =
             ImVec4(st.color[0], st.color[1], st.color[2], st.color[3]);
     if (st.fill[3] >= 0.0f)
         spec.FillColor = ImVec4(st.fill[0], st.fill[1], st.fill[2], st.fill[3]);
-    spec.FillAlpha = st.fill_alpha;
-    spec.LineWeight = st.weight;
+    // Unset means the THEME decides — the same contract the colour
+    // slots already had, extended to the weights a look also owns.
+    spec.FillAlpha = st.fill_alpha >= 0.0f ? st.fill_alpha : t.fill_alpha;
+    spec.LineWeight = st.weight >= 0.0f ? st.weight : t.line_weight;
     spec.Marker = st.marker;
-    spec.MarkerSize = st.marker_size;
+    spec.MarkerSize = st.marker_size >= 0.0f ? st.marker_size : t.marker_size;
     spec.Size = st.size;
     return spec;
 }
@@ -210,10 +217,16 @@ ImPlot3DSpec spec3_of(const SeriesStyle &st) {
             ImVec4(st.color[0], st.color[1], st.color[2], st.color[3]);
     if (st.fill[3] >= 0.0f)
         spec.FillColor = ImVec4(st.fill[0], st.fill[1], st.fill[2], st.fill[3]);
-    spec.FillAlpha = st.fill_alpha;
-    spec.LineWeight = st.weight;
+    // Unset leaves ImPlot3D's own default, which ui_style already set
+    // from the theme — the 2-D side has no such style slot, which is
+    // why only spec_of is handed a Theme.
+    if (st.fill_alpha >= 0.0f)
+        spec.FillAlpha = st.fill_alpha;
+    if (st.weight >= 0.0f)
+        spec.LineWeight = st.weight;
     spec.Marker = st.marker;
-    spec.MarkerSize = st.marker_size;
+    if (st.marker_size >= 0.0f)
+        spec.MarkerSize = st.marker_size;
     return spec;
 }
 
@@ -426,7 +439,7 @@ void plot_draw(impl::PlotState &p) {
             const impl::SeriesData d = s.src ? s.src(s.user) : s.data;
             if (!d.b || !d.count)
                 continue;
-            ImPlotSpec spec = spec_of(s.style);
+            ImPlotSpec spec = spec_of(s.style, theme_of(p));
             apply_flags(spec, s.kind, s.style);
             if (s.dtype == DType::f32)
                 emit_series<float>(s, d, spec);
