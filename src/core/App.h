@@ -41,6 +41,13 @@ struct App {
     // the one a 3D program wants by default.
     std::unique_ptr<WorldState> world;
     UiState ui;
+    // The look, and the one a frame is about to switch to. A theme set
+    // from a panel callback is set MID-FRAME, where a style change
+    // would resize controls already drawn — so it lands at the top of
+    // the next frame instead.
+    Theme theme{};
+    Theme pending{};
+    bool theme_changed = false;
     std::list<View> views;
     std::list<PlotState> plots;
     std::list<PanelState> panels;

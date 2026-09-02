@@ -96,7 +96,8 @@ void ui_init(impl::App *a, const Config &c) {
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = nullptr; // the layout file is ours to place
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    ui_theme(a->ui);
+    ui_fonts(a->ui);
+    ui_style(a->theme);
 
     // No Vulkan loader is linked anywhere in this build: the backend
     // resolves every entry point through the app's own
@@ -232,6 +233,13 @@ void ui_begin(impl::App *a) {
     ImGui::SetCurrentContext(a->ui.ctx);
     ImPlot::SetCurrentContext(a->ui.plot);
     ImPlot3D::SetCurrentContext(a->ui.plot3d);
+    // Before NewFrame, so no control is measured against one style and
+    // drawn against another.
+    if (a->theme_changed) {
+        a->theme = a->pending;
+        a->theme_changed = false;
+        ui_style(a->theme);
+    }
     ImGui_ImplVulkan_NewFrame();
     if (a->platform.win)
         ImGui_ImplSDL3_NewFrame();

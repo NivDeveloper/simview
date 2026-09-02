@@ -4,6 +4,7 @@
 #include "Panel.h"
 #include "Plots.h"
 #include "Scene.h"
+#include "Theme.h"
 #include "Types.h"
 #include "World.h"
 
@@ -28,6 +29,7 @@ namespace impl {
 App *app_init(const Config &);
 void app_quit(App *);
 void app_on_frame(App *, void (*fn)(void *), void *user);
+void app_theme(App *, const Theme &);
 void app_on_event(App *, void (*fn)(const Event &, void *), void *user);
 void app_request_quit(App *);
 void app_run(App *);
@@ -57,6 +59,11 @@ class App {
 
     explicit operator bool() const { return a_ != nullptr; }
     impl::App *Raw() const { return a_; }
+
+    App &Theme(const sv::Theme &t) {
+        impl::app_theme(a_, t);
+        return *this;
+    }
 
     App &OnFrame(std::function<void()> fn) {
         cbs_.push_front(std::move(fn));

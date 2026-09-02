@@ -5,6 +5,7 @@
 #include "Panel.h"
 #include "Plots.h"
 #include "Scene.h"
+#include "Theme.h"
 #include "Types.h"
 #include "World.h"
 #include "scene/Field.h"

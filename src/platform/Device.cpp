@@ -251,6 +251,13 @@ void app_quit(App *a) {
     delete a;
 }
 
+void app_theme(App *a, const Theme &t) {
+    if (!a)
+        return;
+    a->pending = t;
+    a->theme_changed = true;
+}
+
 void app_on_frame(App *a, void (*fn)(void *), void *user) {
     if (a && fn)
         a->platform.frame_cbs.push_front({fn, user});

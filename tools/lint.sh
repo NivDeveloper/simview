@@ -26,7 +26,7 @@ for h in $(find include/simview -name "*.h" | sort); do
     base=$(basename "$h")
     # (a): every include is <std-ish> or "sibling.h"
     bad_inc=$(grep -nE '^#include' "$h" | grep -vE '#include <[a-z_]+>' \
-              | grep -vE '#include "(\.\./)?((scene|sync|world)/)?(Types|App|Event|Field|Panel|Plots|Scene|Sync|Particles|Lines|World|Cloud|simview)\.h"' || true)
+              | grep -vE '#include "(\.\./)?((scene|sync|world)/)?(Types|App|Event|Field|Panel|Plots|Scene|Sync|Particles|Lines|Theme|World|Cloud|simview)\.h"' || true)
     if [ "$base" = "gpud.h" ]; then
         bad_inc=$(echo "$bad_inc" | grep -v '#include <gpud/Device\.h>' || true)
     fi

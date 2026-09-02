@@ -1,7 +1,8 @@
 // The look, asserted rather than admired: that the text is a real
 // rasterized typeface and not the built-in bitmap, that the numeric
-// face is genuinely monospaced where the reading face is not, and that
-// the style the panels draw with is the one the theme set.
+// face is genuinely monospaced where the reading face is not, that the
+// style the panels draw with is the one the theme set — and that every
+// theme on offer is one a person can actually read.
 //
 // Tests may speak ImGui — they are not consumers.
 #include "harness/Bmp.h"
@@ -9,12 +10,31 @@
 
 #include "probe/Probe.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <implot.h>
 #include <implot3d.h>
+
+// WCAG relative luminance and the contrast ratio built from it. The
+// sRGB decode is the part that matters: a naive average of the three
+// channels calls white-on-yellow readable.
+double luminance(const float (&c)[3]) {
+    double v[3];
+    for (int k = 0; k < 3; ++k) {
+        const double u = double(c[k]);
+        v[k] = u <= 0.04045 ? u / 12.92 : std::pow((u + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+
+double contrast(const float (&a)[3], const float (&b)[3]) {
+    const double x = luminance(a), y = luminance(b);
+    return (std::max(x, y) + 0.05) / (std::min(x, y) + 0.05);
+}
 
 int main() {
     harness::begin();
@@ -97,19 +117,70 @@ int main() {
     // ImPlot3D keep separate ones, and a 3D plot that was never
     // registered falls back to its own defaults while every value in
     // Theme.cpp still looks right.
-    const ImPlotColormap map = ImPlot::GetColormapIndex("simview");
+    // Asked of the COLOURS and not of a name: the registration is
+    // named after a hash of the palette, so that a theme switch can
+    // register a new one where ImPlot offers no way to replace an old.
+    const ImPlotColormap map = ImPlot::GetStyle().Colormap;
     CHECK(map != -1);
-    CHECK_EQ(ImPlot::GetStyle().Colormap, map);
-    CHECK(ImPlot3D::GetColormapIndex("simview") != -1);
-    CHECK_EQ(ImPlot3D::GetStyle().Colormap,
-             ImPlot3D::GetColormapIndex("simview"));
+    CHECK_EQ(ImPlot::GetColormapSize(map), 8);
+    CHECK_EQ(ImPlot3D::GetColormapSize(ImPlot3D::GetStyle().Colormap), 8);
 
     // The first series colour IS the UI accent, so a one-series plot
     // and the chrome around it are the same blue.
     const ImVec4 first = ImPlot::GetColormapColor(0, map);
-    CHECK_LT(std::abs(first.x - 0.310f), 0.01f);
-    CHECK_LT(std::abs(first.y - 0.573f), 0.01f);
-    CHECK_LT(std::abs(first.z - 0.855f), 0.01f);
+    CHECK_LT(std::abs(first.x - themes::Midnight.accent[0]), 0.01f);
+    CHECK_LT(std::abs(first.y - themes::Midnight.accent[1]), 0.01f);
+    CHECK_LT(std::abs(first.z - themes::Midnight.accent[2]), 0.01f);
+
+    // What every theme owes its reader, checked of the THEMES rather
+    // than of a picture: text that can be read on the surface it sits
+    // on, and a dim text that is quieter without disappearing. WCAG
+    // wants 4.5 for body text; a UI at this size is held to 4.5 for
+    // text and to 3 for the secondary face the axis numbers use.
+    //
+    // This is the one property a palette can lose silently. Every
+    // other mistake is visible the moment the window opens; a
+    // contrast of 3.9 looks fine to whoever picked it.
+    for (const Theme &th :
+         {themes::Midnight, themes::Paper, themes::Contrast}) {
+        const double on_panel = contrast(th.text, th.panel);
+        const double dim_panel = contrast(th.text_dim, th.panel);
+        const double on_field = contrast(th.text, th.field);
+        const double accent_panel = contrast(th.accent, th.panel);
+        std::printf("(%s: text/panel %.2f  dim/panel %.2f  text/field %.2f  "
+                    "accent/panel %.2f)\n",
+                    th.name, on_panel, dim_panel, on_field, accent_panel);
+        CHECK_GT(on_panel, 4.5);
+        CHECK_GT(on_field, 4.5);
+        CHECK_GT(dim_panel, 3.0);
+        CHECK_GT(accent_panel, 3.0);
+    }
+
+    // A theme reaches the pixels, and lands at a frame boundary rather
+    // than mid-frame. Two shots of the same window under two themes
+    // must differ; the same theme twice must not.
+    Bmp dark, light, again;
+    REQUIRE(harness::shot(app, "theme_dark", dark));
+    app.Theme(themes::Paper);
+    app.Step();
+    REQUIRE(harness::shot(app, "theme_light", light));
+    CHECK(!similar(dark, light));
+    CHECK_EQ(ImGui::GetStyle().WindowRounding, themes::Paper.rounding);
+
+    app.Theme(themes::Midnight);
+    app.Step();
+    REQUIRE(harness::shot(app, "theme_back", again));
+    CHECK(similar(dark, again));
+
+    // Two themes, two registrations: switching back finds the palette
+    // it registered the first time rather than the other theme's.
+    app.Theme(themes::Contrast);
+    app.Step();
+    const ImPlotColormap other = ImPlot::GetStyle().Colormap;
+    CHECK(other != map);
+    app.Theme(themes::Midnight);
+    app.Step();
+    CHECK_EQ(ImPlot::GetStyle().Colormap, map);
 
     return check::summary("theme");
 }

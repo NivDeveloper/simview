@@ -8,6 +8,7 @@
 
 #include "../core/Callbacks.h"
 
+#include <simview/Theme.h>
 #include <simview/Types.h>
 
 #include <SDL3/SDL.h>
@@ -34,7 +35,7 @@ struct UiState {
     ::ImPlotContext *plot = nullptr;
     ::ImPlot3DContext *plot3d = nullptr;
     std::string ini;
-    ::ImFont *mono = nullptr;  // the numeric face; see ui_theme
+    ::ImFont *mono = nullptr;  // the numeric face; see ui_fonts
     std::forward_list<Cb> cbs; // panel callbacks, registration order
     // A view's texture is a lattice, not a photograph: the nearest
     // sampler its ImGui descriptor is baked with (VkSampler).
@@ -54,7 +55,8 @@ bool title_taken(App *, const char *title);
 
 // One look for every widget: the palette, the metrics, and the two
 // embedded typefaces. Applied once, at bring-up, before any frame.
-void ui_theme(impl::UiState &);
+void ui_fonts(impl::UiState &);
+void ui_style(const Theme &);
 
 // Run the panel callbacks — the middle of a UI frame, so platform
 // never touches ui's list itself.

@@ -170,6 +170,23 @@ int main() {
         .Mesh("torus", mx, my, mz, mi,
               {.fill = {0.4f, 0.7f, 1.0f, 1.0f}, .fill_alpha = 0.9f});
 
+    // The look is a value, so trying one is picking it from a list.
+    // Every window above re-draws under whichever is chosen, which is
+    // the point: a theme is judged on a full screen of controls and
+    // plots, not on a swatch.
+    int look = 0;
+    int shown = 0;
+    const sv::Theme all[] = {sv::themes::Midnight, sv::themes::Paper,
+                             sv::themes::Contrast};
+    app.Panel("look").Choice("theme", look, {"midnight", "paper", "contrast"});
+
+    app.OnFrame([&] {
+        if (look != shown) {
+            shown = look;
+            app.Theme(all[look]);
+        }
+    });
+
     app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
     app.Run();
 }
