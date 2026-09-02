@@ -233,6 +233,7 @@ add_library(simview STATIC
     src/ui/Context.cpp
     src/ui/Theme.cpp
     src/ui/Derive.cpp
+    src/ui/Icons.cpp
     src/ui/Plot.cpp
     src/ui/PlotDraw.cpp
     src/ui/View.cpp
