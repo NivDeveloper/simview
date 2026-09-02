@@ -477,11 +477,13 @@ src/               folded by LAYER, not by stratum (the namespace
 src/core/App.h     the composed App: each member's type from its own
                    layer's header. Lint rule (j) is the DAG: scene/
                    and the platform state headers never name ui/
-src/core/Math.h    the engine's ARITHMETIC, all of it, and free of
-                   every SDK type: linear algebra and the camera for
-                   the 3D stratum, binning and marching squares for
-                   the reductions, one hash. `math_check` proves it
-                   with no device in the room
+src/core/Math.h    the engine's ARITHMETIC and NOTHING domain-shaped:
+                   linear algebra, boxes and planes, binning, marching
+                   squares, one hash. Free of every SDK type, which is
+                   what lets `math_check` prove it with no device in
+                   the room. A convention — reverse-Z, a turntable, a
+                   near plane — is a decision and lives with the
+                   camera, not here
 src/render/        the bottom of the drawing stack, under BOTH
                    strata and owned by neither: the two devices, a
                    resizable target, how a shader is named. It
@@ -491,6 +493,11 @@ src/render/        the bottom of the drawing stack, under BOTH
 src/scene/         a kind is ONE file: state, uniform block, shaders,
                    KindOps, and its exported functions. Nothing else
                    names a kind
+src/world/Camera.h Camera3 as a CLASS: a focus, a distance and a pose,
+                   with every other question derived rather than
+                   stored beside them. The projection convention and
+                   the draw-ordering keys are here too, because both
+                   are made of the depth this camera writes
 src/world/         the 3D stratum BESIDE scene, not inside it: a pass
                    table, items that submit draws, one sort, reverse-Z
                    depth, the camera. An item is ONE file, the same

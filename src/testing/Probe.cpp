@@ -154,19 +154,19 @@ bool camera_of(impl::App *a, const char *title, CameraState *out) {
     impl::WorldState *w = world_of(a, title);
     if (!w || !out)
         return false;
-    const impl::Vec3 f = impl::camera_forward(w->camera);
-    const impl::Vec3 u = impl::camera_up(w->camera);
-    out->focus[0] = w->camera.focus.x;
-    out->focus[1] = w->camera.focus.y;
-    out->focus[2] = w->camera.focus.z;
-    out->distance = w->camera.distance;
+    const impl::Vec3 f = w->camera.forward();
+    const impl::Vec3 u = w->camera.up();
+    out->focus[0] = w->camera.focus().x;
+    out->focus[1] = w->camera.focus().y;
+    out->focus[2] = w->camera.focus().z;
+    out->distance = w->camera.distance();
     out->forward[0] = f.x;
     out->forward[1] = f.y;
     out->forward[2] = f.z;
     out->up[0] = u.x;
     out->up[1] = u.y;
     out->up[2] = u.z;
-    out->orthographic = w->camera.projection == impl::Projection::Orthographic;
+    out->orthographic = w->camera.orthographic();
     return true;
 }
 

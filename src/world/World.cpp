@@ -58,21 +58,20 @@ impl::Aabb scene_bounds(const impl::WorldState &w) {
 WorldView view_of(const impl::WorldState &w, std::uint32_t tw, std::uint32_t th,
                   const impl::Aabb &scene) {
     const float aspect = th ? float(tw) / float(th) : 1.0f;
-    const float znear = impl::camera_znear(w.camera, scene);
-    const impl::Mat4 v = impl::camera_view(w.camera);
-    const impl::Mat4 p = impl::camera_proj(w.camera, aspect, znear);
+    const float znear = w.camera.znear(scene);
+    const impl::Mat4 v = w.camera.view();
+    const impl::Mat4 p = w.camera.proj(aspect, znear);
     const impl::Mat4 vp = impl::mat_mul(p, v);
     return {.world_to_clip = vp,
             .world_to_view = v,
             .view_to_clip = p,
-            .camera_pos = impl::camera_position(w.camera),
+            .camera_pos = w.camera.position(),
             .znear = znear,
-            .distance = w.camera.distance,
+            .distance = w.camera.distance(),
             .tw = tw,
             .th = th,
-            .focal_px = impl::focal_px(w.camera, th),
-            .orthographic =
-                w.camera.projection == impl::Projection::Orthographic,
+            .focal_px = w.camera.focal_px(th),
+            .orthographic = w.camera.orthographic(),
             .frustum = impl::frustum_of(vp)};
 }
 
@@ -108,9 +107,8 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
     c.viewport[2] = view.tw ? 1.0f / float(view.tw) : 0.0f;
     c.viewport[3] = view.th ? 1.0f / float(view.th) : 0.0f;
     c.depth[0] = view.znear;
-    c.depth[1] = impl::camera_zfar(w.camera);
-    c.depth[2] =
-        w.camera.projection == impl::Projection::Orthographic ? 1.0f : 0.0f;
+    c.depth[1] = w.camera.zfar();
+    c.depth[2] = w.camera.orthographic() ? 1.0f : 0.0f;
 
     // Lights reach the shader in VIEW space, where an impostor knows
     // its own normal. Rotating them here is one transform a frame
@@ -125,8 +123,8 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
             c.light_rgb[0][k] = 1.0f;
     }
     for (std::size_t i = 0; i < n; ++i) {
-        const impl::Vec3 d = impl::normalize(
-            impl::rotate(impl::conjugate(w.camera.q), w.lights[i].direction));
+        const impl::Vec3 d = impl::normalize(impl::rotate(
+            impl::conjugate(w.camera.pose()), w.lights[i].direction));
         c.light_dir[i][0] = d.x;
         c.light_dir[i][1] = d.y;
         c.light_dir[i][2] = d.z;

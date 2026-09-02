@@ -43,13 +43,13 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
         const bool pan = io.KeyShift || right;
         if (d.x != 0.0f || d.y != 0.0f) {
             if (pan)
-                impl::camera_pan(w.camera, d.x, d.y);
+                w.camera.pan(d.x, d.y);
             else
-                impl::camera_orbit(w.camera, d.x, d.y);
+                w.camera.orbit(d.x, d.y);
         }
     }
     if (hovered && io.MouseWheel != 0.0f)
-        impl::camera_dolly(w.camera, io.MouseWheel);
+        w.camera.dolly(io.MouseWheel);
 }
 
 // The scene's own controls: one button in a corner of the picture,
@@ -71,7 +71,7 @@ constexpr float kDeg = 3.14159265f / 180.0f;
 // turns the camera only — a "front view" that also jumped the zoom
 // would be a different scene, not a different angle.
 void world_look(impl::WorldState &w, float az_deg, float el_deg) {
-    w.camera.q = impl::camera_pose(az_deg * kDeg, el_deg * kDeg);
+    w.camera.look(az_deg * kDeg, el_deg * kDeg);
 }
 
 // The presets as DATA, so the menu is a loop and there is no per-entry
@@ -101,12 +101,12 @@ void world_menu(impl::WorldState &w) {
             world_look(w, v.az, v.el);
 
     ImGui::SeparatorText("projection");
-    bool ortho = w.camera.projection == impl::Projection::Orthographic;
+    const bool ortho = w.camera.orthographic();
     if (impl::icon_button(Icon::Perspective, "persp", "perspective", !ortho))
-        w.camera.projection = impl::Projection::Perspective;
+        w.camera.set_mode(impl::Projection::Perspective);
     ImGui::SameLine();
     if (impl::icon_button(Icon::Orthographic, "ortho", "orthographic", ortho))
-        w.camera.projection = impl::Projection::Orthographic;
+        w.camera.set_mode(impl::Projection::Orthographic);
 
     if (w.grid || w.axes) {
         ImGui::SeparatorText("show");
@@ -202,7 +202,7 @@ World world_create(App *a, const WorldDesc &d) {
         a->world->stats = &a->stats;
         a->world->pipelines = &a->world_pipelines;
         a->world->gates = &a->gates;
-        a->world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
+        a->world->camera.look(-0.7853981634f, 0.5235987756f);
         a->world->samples = a->platform.vk.samples;
         a->world->controls = d.controls;
         if (d.grid)
@@ -230,7 +230,7 @@ World world_create(App *a, const WorldDesc &d) {
     v.world->stats = &a->stats;
     v.world->pipelines = &a->world_pipelines;
     v.world->gates = &a->gates;
-    v.world->camera.q = camera_pose(-0.7853981634f, 0.5235987756f);
+    v.world->camera.look(-0.7853981634f, 0.5235987756f);
     v.world->samples = a->platform.vk.samples;
     v.world->controls = d.controls;
     if (d.grid)
@@ -247,19 +247,16 @@ void world_camera(World w, const CameraDesc &d) {
     if (!ws)
         return;
     constexpr float kDeg = 3.14159265f / 180.0f;
-    ws->camera.focus = {d.focus[0], d.focus[1], d.focus[2]};
-    ws->camera.distance = d.distance > 0.0f ? d.distance : 5.0f;
-    ws->camera.q = camera_pose(d.azimuth_deg * kDeg, d.elevation_deg * kDeg);
+    ws->camera.frame({d.focus[0], d.focus[1], d.focus[2]},
+                     d.distance > 0.0f ? d.distance : 5.0f);
+    ws->camera.look(d.azimuth_deg * kDeg, d.elevation_deg * kDeg);
+    ws->camera.set_fov(d.fov_deg * kDeg);
+    ws->camera.set_mode(d.projection == sv::Projection::Orthographic
+                            ? impl::Projection::Orthographic
+                            : impl::Projection::Perspective);
     // Remembered whole, because "home" is the view the caller composed
     // and every preset is a departure from it.
     ws->home = d;
-    ws->camera.fovy = d.fov_deg * kDeg;
-    // The projection is the ONLY thing an orthographic camera changes:
-    // the pose, the turntable and the depth convention are shared, so
-    // switching it mid-run holds everything else still.
-    ws->camera.projection = d.projection == sv::Projection::Orthographic
-                                ? impl::Projection::Orthographic
-                                : impl::Projection::Perspective;
 }
 
 bool world_light(World w, const LightDesc &d) {

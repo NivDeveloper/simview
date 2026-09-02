@@ -276,8 +276,8 @@ void submit(impl::WorldItem &it, const WorldView &view,
     const std::uint16_t d = impl::depth_key(view.world_to_clip, cs.centre);
     const PassId pass = it.ops->pass;
     const std::uint64_t key = pass == PassId::Transparent
-                                  ? transparent_key(it.pipeline_id, d)
-                                  : opaque_key(it.pipeline_id, it.id, d);
+                                  ? impl::transparent_key(it.pipeline_id, d)
+                                  : impl::opaque_key(it.pipeline_id, it.id, d);
     out.push_back({.key = key, .seq = 0, .pass = pass, .item = &it, .part = 0});
 }
 

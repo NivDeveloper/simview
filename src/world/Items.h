@@ -16,6 +16,7 @@
 #include "../render/Target.h"
 
 #include "../core/Math.h"
+#include "Camera.h"
 #include "Passes.h"
 #include <simview/App.h>
 

@@ -105,9 +105,12 @@ a 3D program would come back empty.
 ```
 include/simview/World.h        WorldDesc, CameraDesc, the World builder
 include/simview/world/Cloud.h  CloudMode/CloudDesc, the Cloud handle
-src/core/Math.h     Vec3, Quat, Mat4, Camera3, the projection, the keys
-                    (moved out of world/ once it was the engine's only
-                    arithmetic rather than the 3D stratum's)
+src/core/Math.h     Vec3, Quat, Mat4, Aabb, Plane, Frustum — pure
+                    functions and nothing else
+src/world/Camera.h  Camera3, the reverse-Z projection, the near plane
+                    and the ordering keys: the DECISIONS about how this
+                    engine looks at a scene, which a file of pure
+                    functions should not be carrying
 src/world/Passes.h  the pass table
 src/world/Items.h   WorldItemOps, WorldItem, DrawCmd, WorldView
 src/world/World.h   WorldState + the draw

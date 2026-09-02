@@ -11,6 +11,7 @@
 #include "harness/Check.h"
 
 #include "core/Math.h"
+#include "world/Camera.h"
 
 #include <algorithm>
 #include <cmath>
@@ -59,47 +60,47 @@ int main() {
     // the horizon stays level. Z-up, so elevation lifts z.
     Camera3 c;
     const float az = -0.25f * kPi, el = kPi / 6.0f;
-    c.q = camera_pose(az, el);
-    const Vec3 p = camera_position(c);
-    CHECK(near(p.x, c.distance * std::cos(el) * std::cos(az), 1e-4f));
-    CHECK(near(p.y, c.distance * std::cos(el) * std::sin(az), 1e-4f));
-    CHECK(near(p.z, c.distance * std::sin(el), 1e-4f));
-    CHECK_GT(camera_up(c).z, 0.0f);
-    CHECK(near(camera_right(c).z, 0.0f, 1e-5f));
+    c.look(az, el);
+    const Vec3 p = c.position();
+    CHECK(near(p.x, c.distance() * std::cos(el) * std::cos(az), 1e-4f));
+    CHECK(near(p.y, c.distance() * std::cos(el) * std::sin(az), 1e-4f));
+    CHECK(near(p.z, c.distance() * std::sin(el), 1e-4f));
+    CHECK_GT(c.up().z, 0.0f);
+    CHECK(near(c.right().z, 0.0f, 1e-5f));
 
     // And the view matrix agrees with it: the focus is straight ahead
     // at exactly the orbit distance. This is the assertion a transposed
     // upload fails.
-    const Mat4 V = camera_view(c);
-    const Vec3 f = transform_point(V, c.focus);
+    const Mat4 V = c.view();
+    const Vec3 f = transform_point(V, c.focus());
     CHECK(near(f.x, 0.0f, 1e-4f));
     CHECK(near(f.y, 0.0f, 1e-4f));
-    CHECK(near(f.z, -c.distance, 1e-4f));
+    CHECK(near(f.z, -c.distance(), 1e-4f));
 
     // The turntable's three invariants: an orbit changes where the
     // camera looks from but not how far, a pan moves the subject but
     // not the orientation, a dolly does the reverse.
     Camera3 o = c;
-    camera_orbit(o, 37.0f, -19.0f);
-    CHECK(near(length(camera_position(o) - o.focus), c.distance, 1e-3f));
-    CHECK(near(std::sqrt(o.q.w * o.q.w + o.q.x * o.q.x + o.q.y * o.q.y +
-                         o.q.z * o.q.z),
+    o.orbit(37.0f, -19.0f);
+    CHECK(near(length(o.position() - o.focus()), c.distance(), 1e-3f));
+    CHECK(near(std::sqrt(o.pose().w * o.pose().w + o.pose().x * o.pose().x +
+                         o.pose().y * o.pose().y + o.pose().z * o.pose().z),
                1.0f, 1e-5f));
 
     Camera3 pn = c;
-    camera_pan(pn, 12.0f, -8.0f);
-    CHECK(near(pn.q.w, c.q.w, 1e-6f));
-    CHECK(near(pn.q.z, c.q.z, 1e-6f));
-    CHECK_GT(length(pn.focus - c.focus), 0.0f);
+    pn.pan(12.0f, -8.0f);
+    CHECK(near(pn.pose().w, c.pose().w, 1e-6f));
+    CHECK(near(pn.pose().z, c.pose().z, 1e-6f));
+    CHECK_GT(length(pn.focus() - c.focus()), 0.0f);
 
     Camera3 dz = c;
-    camera_dolly(dz, 3.0f);
-    CHECK_LT(dz.distance, c.distance);
-    CHECK(near(dz.focus.x, c.focus.x, 1e-6f));
-    camera_dolly(dz, -1e6f);
-    CHECK(near(dz.distance, dz.max_distance, 1e-3f));
-    camera_dolly(dz, 1e6f);
-    CHECK(near(dz.distance, dz.min_distance, 1e-6f));
+    dz.dolly(3.0f);
+    CHECK_LT(dz.distance(), c.distance());
+    CHECK(near(dz.focus().x, c.focus().x, 1e-6f));
+    dz.dolly(-1e6f);
+    CHECK(near(dz.distance(), Camera3::kMaxDistance, 1e-3f));
+    dz.dolly(1e6f);
+    CHECK(near(dz.distance(), Camera3::kMinDistance, 1e-6f));
 
     // The inverse is real: a cursor ray will invert exactly this
     // product, and a wrong one there looks plausible on screen.
@@ -133,34 +134,35 @@ int main() {
     // so switching holds the subject still and changes only the
     // convergence.
     Camera3 oc = c;
-    oc.projection = Projection::Orthographic;
-    CHECK(near(camera_view_height(oc),
-               2.0f * oc.distance * std::tan(0.5f * oc.fovy), 1e-5f));
-    const Vec3 pp = transform_point(
-        mat_mul(camera_proj(c, 1.0f), camera_view(c)),
-        c.focus + camera_up(c) * (0.5f * camera_view_height(c)));
-    const Vec3 po = transform_point(
-        mat_mul(camera_proj(oc, 1.0f), camera_view(oc)),
-        oc.focus + camera_up(oc) * (0.5f * camera_view_height(oc)));
+    oc.set_mode(Projection::Orthographic);
+    CHECK(near(oc.view_height(),
+               2.0f * oc.distance() * std::tan(0.5f * oc.fovy()), 1e-5f));
+    const Vec3 pp =
+        transform_point(mat_mul(c.proj(1.0f), c.view()),
+                        c.focus() + c.up() * (0.5f * c.view_height()));
+    const Vec3 po =
+        transform_point(mat_mul(oc.proj(1.0f), oc.view()),
+                        oc.focus() + oc.up() * (0.5f * oc.view_height()));
     CHECK(near(pp.y, po.y, 1e-3f));
 
     // The keys the sort reads. Opaque must ascend as things get
     // nearer, transparent must ascend as they get FARTHER — the two
     // orders a single comparator produces from one std::sort. Taken
     // through the real projection, so BOTH must order alike.
-    const Vec3 fwd = camera_forward(c);
+    const Vec3 fwd = c.forward();
     for (Projection proj :
          {Projection::Perspective, Projection::Orthographic}) {
         Camera3 k = c;
-        k.projection = proj;
-        const Mat4 M = mat_mul(camera_proj(k, 1.0f), camera_view(k));
-        CHECK_GT(depth_key(M, k.focus + fwd * -2.0f), depth_key(M, k.focus));
-        CHECK_GT(depth_key(M, k.focus), depth_key(M, k.focus + fwd * 2.0f));
+        k.set_mode(proj);
+        const Mat4 M = mat_mul(k.proj(1.0f), k.view());
+        CHECK_GT(depth_key(M, k.focus() + fwd * -2.0f),
+                 depth_key(M, k.focus()));
+        CHECK_GT(depth_key(M, k.focus()), depth_key(M, k.focus() + fwd * 2.0f));
     }
-    const Mat4 VP = mat_mul(camera_proj(c, 1.0f), V);
-    const std::uint16_t d_near = depth_key(VP, c.focus + fwd * -2.0f);
-    const std::uint16_t d_mid = depth_key(VP, c.focus);
-    const std::uint16_t d_far = depth_key(VP, c.focus + fwd * 2.0f);
+    const Mat4 VP = mat_mul(c.proj(1.0f), V);
+    const std::uint16_t d_near = depth_key(VP, c.focus() + fwd * -2.0f);
+    const std::uint16_t d_mid = depth_key(VP, c.focus());
+    const std::uint16_t d_far = depth_key(VP, c.focus() + fwd * 2.0f);
     CHECK_GT(d_near, d_mid);
     CHECK_GT(d_mid, d_far);
     CHECK_LT(opaque_key(0, 0, d_near), opaque_key(0, 0, d_mid));
@@ -196,10 +198,9 @@ int main() {
 
     // ── the frustum ──────────────────────────────────────────────────
     Camera3 fc{};
-    fc.focus = {0.0f, 0.0f, 0.0f};
-    fc.distance = 10.0f;
-    fc.q = camera_pose(0.0f, 0.0f);
-    const Mat4 F = mat_mul(camera_proj(fc, 1.0f), camera_view(fc));
+    fc.frame({0.0f, 0.0f, 0.0f}, 10.0f);
+    fc.look(0.0f, 0.0f);
+    const Mat4 F = mat_mul(fc.proj(1.0f), fc.view());
     const Frustum fr = frustum_of(F);
     // Five, not six: the perspective projection runs to infinity, so
     // its far plane comes out with a zero normal and is dropped rather
@@ -217,14 +218,13 @@ int main() {
     CHECK(!frustum_intersects(fr, at({40.0f, 0.0f, 0.0f}, 0.5f)));
     // Straddling the eye — the case a corner test gets wrong, and the
     // one the user is standing in.
-    CHECK(frustum_intersects(fr, at(camera_position(fc), 2.0f)));
+    CHECK(frustum_intersects(fr, at(fc.position(), 2.0f)));
     // A box so large it contains the whole frustum.
     CHECK(frustum_intersects(fr, at({0.0f, 0.0f, 0.0f}, 1000.0f)));
 
     Camera3 orthoc = fc;
-    orthoc.projection = Projection::Orthographic;
-    const Frustum orf =
-        frustum_of(mat_mul(camera_proj(orthoc, 1.0f), camera_view(orthoc)));
+    orthoc.set_mode(Projection::Orthographic);
+    const Frustum orf = frustum_of(mat_mul(orthoc.proj(1.0f), orthoc.view()));
     // Six here: an orthographic depth is linear, so it HAS a far plane
     // and the same extraction finds it.
     std::printf("  orthographic frustum: %d planes\n", orf.count);
@@ -237,27 +237,26 @@ int main() {
     // free to report no bounds, and geometry nobody accounted for must
     // not be sliced away by a plane derived from geometry somebody did.
     Camera3 nc{};
-    nc.distance = 1000.0f;
-    const float base = camera_znear(nc);
-    CHECK_LT(std::fabs(camera_znear(nc, Aabb{}) - base), 1e-9f);
+    nc.frame({}, 1000.0f);
+    const float base = nc.znear();
+    CHECK_LT(std::fabs(nc.znear(Aabb{}) - base), 1e-9f);
     // A subject half a unit from the eye: the default would put the
     // near plane a full unit out and clip it away entirely.
-    const Vec3 eye = camera_position(nc);
+    const Vec3 eye = nc.position();
     CHECK_GT(base, 0.5f);
-    CHECK_LT(camera_znear(nc, at(eye + camera_forward(nc) * 0.5f, 0.01f)),
-             0.5f);
+    CHECK_LT(nc.znear(at(eye + nc.forward() * 0.5f, 0.01f)), 0.5f);
     // Nothing but distant geometry does NOT push it out.
-    CHECK_LT(camera_znear(nc, at({0.0f, 0.0f, 0.0f}, 1.0f)), base + 1e-6f);
+    CHECK_LT(nc.znear(at({0.0f, 0.0f, 0.0f}, 1.0f)), base + 1e-6f);
     // And it never reaches zero, whatever the box says.
-    CHECK_GT(camera_znear(nc, at(eye, 5.0f)), 0.0f);
+    CHECK_GT(nc.znear(at(eye, 5.0f)), 0.0f);
 
     // ── projected size ───────────────────────────────────────────────
     // Halving the distance doubles the pixels; the orthographic camera
     // does not care how far away anything is, which is the whole of
     // the difference between them.
-    const float f1 = focal_px(fc, 400);
+    const float f1 = fc.focal_px(400);
     CHECK_GT(f1, 0.0f);
-    const float ortho_px = focal_px(orthoc, 400);
+    const float ortho_px = orthoc.focal_px(400);
     CHECK_GT(ortho_px, 0.0f);
     std::printf("  focal: %.1f px per unit at unit depth, ortho %.1f flat\n",
                 double(f1), double(ortho_px));
