@@ -17,32 +17,23 @@
 namespace sv {
 namespace {
 
-// The flip is the FIRST thing a frame does: every tracked Sync moves
-// shown onto current once, so the callbacks, the panels and the scene
-// all read one generation. One call per entry path (run, step, shot),
-// never inside frame_build or frame_render — a frame that flipped
-// twice would build its panels on one generation and draw another.
+// FIRST, so the callbacks, the panels and the scene all read one
+// generation. Once per entry path, never inside build or render.
 void frame_sync(impl::App *a) {
     for (impl::SyncGate g : a->gates)
         impl::sync_gate_flip(g);
 }
 
-// Frames-in-flight = 1, waited BEFORE the flips: a slot leaving Shown
-// then has no frame still reading it, so the producer may overwrite or
-// free it — the reverse edge of the decoupling, and the answer to the
-// in-place-writer question. (F=2 plus a completed-instance gate on the
-// flip is the named follow-up if record-stall ever shows.)
+// Waited BEFORE the flips: a slot leaving Shown then has no frame
+// still reading it, so the producer may overwrite or free it.
 void frame_wait_previous(impl::App *a) {
     impl::Platform &pl = a->platform;
     if (!pl.frame_instance)
         return;
     platform_wait_graphics(pl, pl.frame_instance, "the previous frame");
     pl.frame_instance = 0;
-    // The renderer learns that a frame finished ONLY from its own wait
-    // or from here. Ours is a bounded wait on the semaphore beneath it,
-    // so without this call its command buffers are never retired, the
-    // resources they reference are never released, and a versioned
-    // constant buffer runs out of versions after a few seconds.
+    // The renderer learns a frame finished only from here, and
+    // without it a versioned constant buffer runs out of versions.
     pl.ndev->runGarbageCollection();
     timing_collect(pl);
 }
@@ -59,10 +50,8 @@ void frame_build(impl::App *a) {
     ui_begin(a);
     ui_run_panels(a);
     ui_end(a);
-    // Headless: nothing renders after a Step, but torn-out viewports
-    // (the tests' fake) still expect the platform-windows pump after
-    // EndFrame — it is what keeps ImGui's cadence contract satisfied
-    // for a stepped frame. Windowed frames pump in frame_render.
+    // Headless renders nothing, but the fake's viewports still need
+    // the pump to keep ImGui's cadence assert satisfied.
     if (!a->platform.win)
         ui_viewports(a, /*render=*/false);
 }
@@ -72,12 +61,8 @@ void frame_render(impl::App *a, const Presenter &p) {
     // callback cannot desync them mid-frame.
     const bool ui = ui_on(a) && p.composites;
 
-    // The decoupling: the frame waits GPU-SIDE, on the compute
-    // timeline, for exactly the work that produced what it SHOWS —
-    // the stamps Publish took. A bare pull (no Sync, resolved at
-    // draw) has no stamp, so its scene falls back to everything
-    // submitted; the callbacks that stepped it have already run.
-    // The host never blocks here — that is the whole point.
+    // Waits GPU-SIDE on the compute timeline for exactly the work
+    // that produced what it SHOWS. The host never blocks here.
     if (gpud::Device *gdev = a->platform.gdev.get()) {
         std::uint64_t wait = 0;
         for (impl::SyncGate g : a->gates)
@@ -131,11 +116,8 @@ void frame_render(impl::App *a, const Presenter &p) {
         }
         {
             SV_ZONE("scene");
-            // One or the other into the window: a world owns the depth
-            // buffer and the clear, so the two cannot share a target.
-            // A world stamps its OWN passes: sections do not nest, so
-            // there is no "scene" around them to nest inside, and a
-            // number per pass is the only form of it worth having.
+            // One or the other: a world owns the depth buffer and the
+            // clear, and stamps its own passes.
             if (a->world) {
                 world_draw_into(*a->world, pl, cl, t.fb, t.w, t.h);
             } else {
@@ -152,10 +134,7 @@ void frame_render(impl::App *a, const Presenter &p) {
         }
     }
 
-    // Submitted BEFORE the torn-out windows, which sample what it
-    // wrote from command buffers of their own. Still outside the
-    // acquire: a torn-out panel keeps presenting while this window is
-    // minimized.
+    // BEFORE the torn-out windows, which sample what it wrote.
     {
         SV_ZONE("finish");
         p.finish(p.self, cl, have);
@@ -306,20 +285,16 @@ void app_step(App *a) {
     deliver_posted(a);
     frame_sync(a);
     in_order(a->platform.frame_cbs, [](const Cb &c) { c.fn(c.user); });
-    // A headless frame builds the UI too: the panels run, their
-    // geometry exists, and nothing is drawn — which is what makes the
-    // callbacks testable without a display. It does NOT render, which
-    // is why a Step counts no frame.
+    // A headless frame builds the UI too, which is what makes the
+    // callbacks testable without a display.
     frame_build(a);
 }
 
 bool app_shot(App *a, const char *path) {
     if (!a || !path)
         return set_error("shot: null"), false;
-    // Sized from the first field so the shot carries no letterbox
-    // bars; 512 square when the scene has none. A COMPOSITED shot is
-    // the exception: it must match what the UI frame was laid out
-    // for, because that is what ImGui's projection assumes.
+    // Sized from the first field; 512 square when there is none. A
+    // COMPOSITED shot must match what the UI frame was built at.
     std::uint32_t w = 512, h = 512;
     const bool composited = !a->platform.win && ui_on(a);
     if (composited) {
@@ -371,12 +346,8 @@ bool app_shot(App *a, const char *path) {
     }
     st.fb = dev->createFramebuffer(sfb);
 
-    // The same frame app_run draws, into a texture instead of a
-    // window. The order lives in frame_render, once — the readback
-    // included, because it has to be recorded after the drawing and
-    // before the submit. A composited shot reuses the draw data the
-    // last Step built, so it shows what THAT frame flipped to; a plain
-    // shot is a frame of its own and flips like one.
+    // The readback is recorded in frame_render, after the UI and
+    // before the submit.
     frame_wait_previous(a);
     if (!composited)
         frame_sync(a);

@@ -1,11 +1,3 @@
-// The two items every world may carry: the ground grid and the axes
-// at the origin. Both are ORIENTATION — without them a cloud floats in
-// a void with no scale and no sense of which way is up.
-//
-// They are ordinary items through the ordinary contract, not a special
-// case inside the world's draw loop. Three kinds through one contract
-// on the day it lands is the only way to know the contract is real.
-
 #include "World.h"
 
 #include "bytecode/axes3_fsmain_spirv.h"
@@ -80,12 +72,8 @@ void grid_draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     GridParams p{};
     for (int c = 0; c < 4; ++c)
         p.color[c] = gs.color[c];
-    // The extent FOLLOWS THE CAMERA. A fixed one is wrong in both
-    // directions: zoomed out past it the whole grid sits beyond its
-    // own fade and disappears, and zoomed in the fade never engages,
-    // so the far field grazes the plane and turns to moire. Twelve
-    // orbit distances is past the edge of any view at this field of
-    // view, and the fade below covers the last two thirds of it.
+    // FOLLOWS THE CAMERA: a fixed extent disappears when zoomed out
+    // past it and runs out when zoomed in.
     p.size = view.distance * 12.0f;
     p.cell = gs.cell;
     p.thick_alpha = gs.thick_alpha;

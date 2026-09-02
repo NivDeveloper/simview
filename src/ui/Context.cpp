@@ -1,14 +1,3 @@
-// The ImGui layer's implementation, on the upstream SDL3 + Vulkan
-// backends. Ordering is upstream's own: platform init before renderer
-// init, NewFrame renderer-then-platform, viewports before submit, and
-// shutdown platform-then-renderer so both halves of a torn-out window
-// are released while both hook sets are still registered.
-//
-// ui_draw is the app's ONE raw-Vulkan seam: NVRHI transitions the
-// attachments, a dynamic-rendering pass records ImGui's draw data into
-// the command list's native VkCommandBuffer (LOAD — the composite
-// invariant), and clearState() keeps NVRHI's cache honest after it.
-
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
@@ -29,12 +18,8 @@
 
 namespace {
 
-// A layout is EARNED: you arrange your panels once and expect them
-// back. The predecessor put its ini in the working directory, so two
-// apps clobbered each other and running from elsewhere lost the lot.
-// SDL's pref path is per-app and per-user, and it creates the
-// directory for us. A title is arbitrary text, and punctuation makes
-// SDL_GetPrefPath fail outright on Windows — hence the sieve.
+// Per-app, next to the executable: two apps sharing one ini clobber
+// each other, and a working-directory ini loses the layout.
 std::string ini_path(const char *title) {
     std::string app;
     for (const char *p = title ? title : ""; *p; ++p) {
@@ -71,10 +56,8 @@ VkFormat g_viewport_format = VK_FORMAT_B8G8R8A8_UNORM;
 
 namespace sv {
 
-// A UI frame runs when something needs one — and a world in the
-// window needs one even with no panels over it, because the pointer
-// it steers by is ImGui's to report. Without this a 3D program with
-// nothing but a scene never sees a mouse at all.
+// A world in the window needs a UI frame even with no panels: the
+// pointer it steers by is ImGui's to report.
 bool ui_on(impl::App *a) {
     return a && a->ui.ctx && (!a->ui.cbs.empty() || a->world);
 }
@@ -142,11 +125,9 @@ void ui_init(impl::App *a, const Config &c) {
                                       nullptr, 0);
         g_main_format = VkFormat(a->platform.sc.vk_format);
     } else {
-        // Headless keeps the RENDERER backend and drops only the
-        // platform one — the same frame code, the same font atlas, so
-        // the UI can composite into a shot. What a platform backend
-        // would have supplied is supplied here: the display metrics
-        // and a frame time, since the library owns no clock.
+        // Headless drops only the PLATFORM backend, so what it would
+        // have supplied — display metrics, a frame time — is supplied
+        // here; the library owns no clock.
         io.DisplaySize = ImVec2(float(c.size.w), float(c.size.h));
         io.DeltaTime = 1.0f / 60.0f;
         g_main_format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -213,10 +194,8 @@ void ui_quit(impl::App *a) {
             .destroySampler(reinterpret_cast<VkSampler>(a->ui.nearest_sampler));
         a->ui.nearest_sampler = 0;
     }
-    // The frame-count guard is the difference between saving a layout
-    // and truncating a good one: an App that opens and closes without
-    // ever building a UI frame has nothing to write, and that is the
-    // default path for an app with no panels.
+    // An App that never built a UI frame has nothing to write, and
+    // writing anyway truncates a good layout.
     if (!a->ui.ini.empty() && ImGui::GetFrameCount() > 0)
         ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
     // The plot contexts hold ImGui-derived state: they go first.
@@ -279,11 +258,8 @@ void ui_draw(impl::App *a, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb) {
     cl->setTextureState(target, nvrhi::AllSubresources,
                         nvrhi::ResourceStates::RenderTarget);
     cl->commitBarriers();
-    // commitBarriers ends NVRHI's own rendering pass ONLY when a
-    // barrier was pending; the scene's last draw may have left it
-    // open with the target already a render target. clearState ends
-    // it unconditionally — a nested vkCmdBeginRendering is a driver
-    // crash, not a message.
+    // commitBarriers ends NVRHI's pass only when a barrier was
+    // pending; clearState ends it either way.
     cl->clearState();
 
     const auto cmd = VkCommandBuffer(
@@ -310,20 +286,14 @@ void ui_draw(impl::App *a, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb) {
 
 void ui_viewports(impl::App *a, bool render) {
     ImGui::SetCurrentContext(a->ui.ctx);
-    // UpdatePlatformWindows once per frame, UNGATED by the enable
-    // flag: its bookkeeping is what ImGui's cadence assert reads at the
-    // next NewFrame, and a mid-run ViewportsEnable (the tests' fake)
-    // must find the previous frame pumped. ImGui asserts on a second
-    // call within one frame — a Step and a composited shot both ask.
+    // UNGATED: its bookkeeping is what ImGui's cadence assert reads
+    // at the next NewFrame.
     const int fc = ImGui::GetFrameCount();
     if (a->ui.viewports_pumped != fc) {
         a->ui.viewports_pumped = fc;
         ImGui::UpdatePlatformWindows();
     }
-    // The render, at most once per frame and only where the caller
-    // vouches the view textures are drawn: a torn-out panel rendered
-    // from a headless Step showed a view texture nothing had drawn yet
-    // — magenta, whenever the allocator handed back fresh memory.
+    // Only where the caller vouches the view textures are drawn.
     if (render && a->ui.viewports_rendered != fc &&
         (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) {
         a->ui.viewports_rendered = fc;
@@ -332,11 +302,8 @@ void ui_viewports(impl::App *a, bool render) {
 }
 
 void view_draw(impl::View &v) {
-    // A first size, or the view collapses: an ImGui window sizes
-    // itself to its content on its first frame, the content is an
-    // image sized from the window, and the two would settle at the
-    // smallest window ImGui will draw. No padding, so the image meets
-    // the frame and the letterbox is the scene's own.
+    // A first size, or the view collapses: the window sizes to its
+    // content and the content is sized from the window.
     ImGui::SetNextWindowSize(ImVec2(480, 360), ImGuiCond_FirstUseEver);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     const bool open = ImGui::Begin(v.title.c_str());
@@ -346,10 +313,8 @@ void view_draw(impl::View &v) {
         return;
     }
 
-    // What the panel has room for, in PIXELS: content region is in
-    // ImGui's points, and on a retina display a texture sized in
-    // points would be drawn at half resolution. Asking for the pixel
-    // size makes the image 1:1 and the letterbox the scene's own.
+    // In PIXELS: the content region is in ImGui's points, and a
+    // texture sized in points is drawn at half resolution on retina.
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const ImVec2 scale = ImGui::GetWindowViewport()->FramebufferScale;
     v.target.want_w =
@@ -357,16 +322,12 @@ void view_draw(impl::View &v) {
     v.target.want_h =
         std::uint32_t(std::max(1.0f, avail.y * std::max(1.0f, scale.y)));
 
-    // The texture is last frame's — this frame's is drawn into the
-    // same handle before the UI is composited, so what shows is
-    // current. The descriptor is baked with the NEAREST sampler and
-    // remade only when the resize gave the view a new texture.
+    // Last frame's handle, drawn into before the UI composites. The
+    // descriptor is baked with the NEAREST sampler.
     if (v.target.tex) {
-        // Keyed on the target's GENERATION, not its address: a resized
-        // target is a new texture the allocator may place exactly where
-        // the old one was, and a pointer comparison then keeps a
-        // descriptor whose image view is already destroyed — sampled
-        // garbage, and the validation layer's "imageView 0x0" to say so.
+        // Keyed on the GENERATION, not the address: a resized target
+        // may land exactly where the old one was, and a pointer
+        // comparison then keeps a dead image view.
         if (v.bound_gen != v.target.gen) {
             if (v.imgui_tex)
                 ImGui_ImplVulkan_RemoveTexture(
@@ -383,16 +344,11 @@ void view_draw(impl::View &v) {
             const ImTextureRef tex(
                 ImTextureID(reinterpret_cast<intptr_t>(v.imgui_tex)));
             if (v.world) {
-                // A world is DRAGGED, and an image cannot be: it is an
-                // item that can be hovered and never becomes active,
-                // because nothing about it responds. So the rect is an
-                // invisible button — which owns the pointer properly,
-                // press and all — and the texture is drawn under it.
+                // A world is DRAGGED and an image cannot be, so the
+                // rect is an invisible button.
                 const ImVec2 p0 = ImGui::GetCursorScreenPos();
-                // The drag rect covers the whole picture, including the
-                // corner the controls sit in. Without this the earlier
-                // item keeps every click in its area and the button on
-                // top is hoverable, tooltip and all, but never pressed.
+                // Without this the drag rect keeps every click in its
+                // area and the button on top is hoverable, never pressed.
                 ImGui::SetNextItemAllowOverlap();
                 ImGui::InvisibleButton("##world", avail,
                                        ImGuiButtonFlags_MouseButtonLeft |

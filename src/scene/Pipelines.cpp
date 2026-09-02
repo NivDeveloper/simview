@@ -1,9 +1,5 @@
-// The pipeline cache. It knows nothing about any kind — the shaders,
-// the binding shape and the blend state all arrive as data on the
-// KindOps. The cache is still keyed (kind, format): every target here
-// is a single color attachment with no depth, so framebuffer
-// compatibility folds into the format and the Stats semantics stay
-// exact — one format means one pipeline.
+// Keyed (kind, format): every target here is one colour attachment
+// with no depth, so framebuffer compatibility folds into the format.
 
 #include "Scene.h"
 

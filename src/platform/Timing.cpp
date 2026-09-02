@@ -47,11 +47,8 @@ std::uint64_t gpu_now_ns(impl::Platform &pl) {
 }
 
 #if SIMVIEW_TRACE
-// Tracy's GPU protocol, spoken directly — the same items its Vulkan
-// header emits, minus that header's own query pool, because the
-// stamps here come from two places (the frame's ring and gpud's
-// batches) and one emitter serves both. A context per queue; both
-// share the one calibration, since both read the device clock.
+// Tracy's GPU protocol spoken directly: its Vulkan header owns a
+// query pool, and these stamps come from the frame's own.
 struct TraceGpu {
     bool ready = false;
     std::uint8_t gfx = 0, compute = 0;
@@ -94,11 +91,8 @@ std::uint8_t trace_context(const char *name, std::int64_t tcpu,
     return id;
 }
 
-// One GPU zone, complete: begin and end in the serial stream, then
-// the two stamps that place them. The name is an ALLOCATED source
-// location, one per zone: the client frees it after sending, so a
-// cached one would be read after free — the begin item's type is what
-// tells the client the pointer is its own to free.
+// The name is an ALLOCATED source location, freed by Tracy after the
+// send — so it must never be cached.
 void trace_zone(std::uint8_t ctx, std::uint16_t &next, const char *name,
                 std::size_t name_len, std::uint64_t begin_ns,
                 std::uint64_t end_ns) {
@@ -254,10 +248,8 @@ std::uint32_t first_query(const impl::Timing &t, std::uint32_t ring) {
     return ring * 2 * impl::Timing::kMaxSections;
 }
 
-// Read one ring's stamps into `last`. False when the driver has not
-// published them yet — the caller leaves the ring unread and comes
-// back; `wait` forces the read (a ring two frames old, about to be
-// reset) and is the one bounded exception to never waiting.
+// False when the driver has not published them yet; the caller comes
+// back rather than waiting.
 bool read_ring(impl::Platform &pl, std::uint32_t ring, bool wait) {
     impl::Timing &t = pl.timing;
     impl::Timing::Ring &r = t.rings[ring];
@@ -335,10 +327,7 @@ void timing_collect(impl::Platform &pl) {
         return;
     const auto now = std::chrono::steady_clock::now();
 
-    // The completed frame's sections — and first any older ring the
-    // driver had not published at its own collect. In ring order, so
-    // the zones stay in time order; the first unready ring stops the
-    // pass, and its frame reads at the next collect.
+    // In ring order, so the zones stay in time order.
     t.last.clear();
     t.rings[t.ring].unread = true;
     for (std::uint32_t k = 1; k <= impl::Timing::kRings; ++k) {

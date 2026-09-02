@@ -1,27 +1,5 @@
 #pragma once
 
-// Internal to src/ — the engine's arithmetic, and the only file that
-// holds any. Linear algebra for the 3D stratum, and
-// deliberately the smallest one that closes the 3D path: a vector, a
-// quaternion, a 4x4, and the camera the world looks through.
-//
-// Header-only and free of every SDK type on purpose. It is the one
-// piece of the world a check can reach with no device at all, which is
-// what makes the projection, the pose and the orbit provable by
-// arithmetic rather than by looking at pixels (world_math_check).
-//
-// Conventions, all four load-bearing:
-//   - Matrices are COLUMN-MAJOR, m[col * 4 + row], composed as
-//     clip = P * V * point. That is the layout uploaded to the shader,
-//     which declares column_major to match.
-//   - View space is right-handed, looking down -Z, +Y up.
-//   - The WORLD is Z-UP: +Z is the vertical axis a turntable yaws
-//     around, and the grid lies in the XY plane.
-//   - Depth is REVERSE-Z: the near plane is 1 and infinity is 0. Every
-//     other half of that decision (the D32 target, the 0.0 clear, the
-//     GreaterOrEqual test) lives with the pass table; this file owns
-//     the matrix.
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -161,10 +139,8 @@ inline Mat4 mat_from_quat(Quat q) {
     return r;
 }
 
-// The general inverse, by cofactors. A camera matrix could be inverted
-// far more cheaply, but clip_to_world must invert the PROJECTION too,
-// and having the general one proved by a check is what keeps a future
-// cursor ray from repeating vklib's near-plane convention bug.
+// General, by cofactors: clip_to_world must invert the PROJECTION
+// too, which the cheap camera-only form cannot.
 inline Mat4 mat_inverse(const Mat4 &a) {
     const float *m = a.m;
     float inv[16];
@@ -215,10 +191,8 @@ inline Mat4 mat_inverse(const Mat4 &a) {
     return r;
 }
 
-// An axis-aligned box in world units, and the union of nothing: a box
-// that has not been given a point yet is INVALID rather than empty at
-// the origin, because a zero-extent box at the origin is a real
-// answer and "I do not know" is not.
+// A box given no point yet is INVALID, not empty at the origin: a
+// zero-extent box at the origin is a real answer.
 struct Aabb {
     Vec3 lo{}, hi{};
     bool valid = false;
@@ -259,15 +233,8 @@ struct Plane {
     float d = 0.0f;
 };
 
-// The five planes a point must be inside of to be drawn. Five, not
-// six: the perspective projection here runs to infinity, so its far
-// plane is degenerate — the extraction produces a zero normal and it
-// is dropped rather than special-cased at every test.
-//
-// Read straight off the combined matrix, which is what makes this
-// correct for BOTH projections without knowing which one it is: the
-// clip conditions are -w <= x,y <= w and 0 <= z <= w whatever produced
-// the matrix, and each is one row combination.
+// Five, not six: the perspective projection runs to infinity, so its
+// far plane extracts as a zero normal.
 struct Frustum {
     Plane p[6]{};
     int count = 0;
@@ -301,11 +268,8 @@ inline Frustum frustum_of(const Mat4 &m) {
     return f;
 }
 
-// Whether any part of the box could be drawn. Conservative in the one
-// direction that is safe: a box that straddles a corner of the frustum
-// can pass every plane test and still be invisible, which costs a draw
-// nobody sees. The reverse — a false MISS — would delete geometry, so
-// the test is written to make it impossible rather than tight.
+// Conservative the safe way: a box straddling a corner can pass
+// every plane test and still be invisible.
 inline bool frustum_intersects(const Frustum &f, const Aabb &b) {
     if (!b.valid)
         return true;
@@ -322,13 +286,9 @@ inline bool frustum_intersects(const Frustum &f, const Aabb &b) {
     return true;
 }
 
-// ── hashing ──────────────────────────────────────────────────────────
-//
-// FNV-1a, a byte at a time. Used to NAME a thing after its own
-// contents, where a library offers a registry that can add but never
-// replace: two callers with the same content then find one entry and
-// a caller with new content gets a new one, with nobody keeping a
-// counter.
+// ── hashing ─────────────────────────────────────────────────────
+// Names a thing after its own contents, where a registry can add but
+// never replace.
 
 inline constexpr std::uint32_t kFnvSeed = 2166136261u;
 
@@ -336,10 +296,7 @@ constexpr std::uint32_t fnv1a(std::uint32_t h, std::uint32_t byte) {
     return (h ^ byte) * 16777619u;
 }
 
-// ── binning ──────────────────────────────────────────────────────────
-//
-// Turning a set of values into cells, which is what every reduction of
-// a point cloud starts with and none of them should each spell.
+// ── binning ─────────────────────────────────────────────────────
 
 struct Span {
     double lo = 0.0, hi = 1.0;
@@ -364,19 +321,9 @@ inline int bin_of(double v, Span s, int bins) {
 
 // ── fields ───────────────────────────────────────────────────────────
 
-// Marching squares. For each cell of the binned field and each level,
-// the four corners above or below the level pick one of sixteen cases,
-// and the crossings are found by linear interpolation along the edges
-// they lie on — so a contour follows the DATA rather than the cell
-// boundaries and does not staircase.
-//
-// The two saddle cases are resolved by the cell's own average, which
-// is the cheapest rule that is at least self-consistent: whichever way
-// it decides, the two crossings it joins are the two the average says
-// are on the same side.
-//
-// Output is pairs of points, which is what a line drawn as SEGMENTS
-// takes — one item for every level rather than one per segment.
+// Marching squares; crossings interpolated along the edges, so a
+// curve follows the data rather than the cell boundaries. The two
+// saddle cases go to the cell average.
 inline void contours(const std::vector<double> &f, int n, Span sx, Span sy,
                      double top, std::vector<double> &xs,
                      std::vector<double> &ys) {

@@ -1,16 +1,5 @@
 #pragma once
 
-// Internal to src/ — the built-in shapes, generated rather than
-// shipped. Two of them, because two is what a scientific picture
-// needs: a sphere for a particle and a box for a cell or a bound.
-//
-// Each comes in TIERS. A sphere drawn once wants to look round; a
-// sphere drawn fifty thousand times wants to be cheap, and the same
-// mesh cannot be both — a display-quality sphere at that count is
-// thousands of triangles each and the frame is gone. So the caller
-// asks for a shape and the item picks the tier from how many there
-// are, which is a decision no user should have to make.
-
 #include "../core/Math.h"
 
 #include <cstdint>
@@ -38,13 +27,8 @@ struct MeshData {
 // vertex could only carry one of them.
 MeshData make_cube();
 
-// A sphere of radius 0.5, built by pushing a subdivided cube onto the
-// sphere. `subdivisions` is per face and per axis: 0 gives 12
-// triangles, 2 gives 108, 16 gives 3468.
-//
-// The cube-to-sphere map is the analytic one rather than a normalize,
-// because normalizing a subdivided cube bunches vertices at the
-// corners and the shading shows it.
+// `subdivisions` is per face and per axis: 0 gives 12 triangles, 2
+// gives 108, 16 gives 3468. The cube-to-sphere map is the analytic one.
 MeshData make_sphere(unsigned subdivisions);
 
 } // namespace impl

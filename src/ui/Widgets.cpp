@@ -1,10 +1,3 @@
-// A panel and the widgets in it: the vocabulary drawn, one case per
-// kind, and the two groups that arrange them.
-//
-// Split from PlotDraw because the two share a window and nothing else.
-// A series becoming ImPlot calls and a widget becoming ImGui calls are
-// different jobs, and one file doing both was the longest file here.
-
 #include "Icons.h"
 #include "PlotState.h"
 
@@ -30,10 +23,8 @@ struct Numerals {
     ~Numerals() { ImGui::PopFont(); }
 };
 
-// The transport is the one widget with state of its own to show. Every
-// control READS the Executor and WRITES it back through the any-thread
-// impl functions, so the panel, the keys and the code cannot disagree
-// about what the sim is doing.
+// Every control READS the Executor and WRITES it back, so the panel,
+// the keys and the code cannot disagree about what the sim is doing.
 void transport_draw(void *target, ::ImFont *mono) {
     const impl::Executor ex{target};
     ImGui::PushID(target);
@@ -260,14 +251,9 @@ void group_end(const impl::WidgetState &w) {
 
 } // namespace
 
-// The widgets are a FLAT list with Begin/End markers, walked with a
-// stack: the builder's lambdas make an unbalanced nesting unspellable,
-// and a flat list means one loop draws every depth.
-//
-// A group whose body is not showing — a collapsed section, the tab that
-// is not in front — must not draw its children AND must not emit its
-// own End, which is why `on` is remembered per frame rather than asked
-// again.
+// A FLAT list with Begin/End markers, walked with a stack. A group
+// that is not showing must not draw its children AND must not emit its
+// own End, so `on` is remembered rather than asked twice.
 void panel_body(impl::PanelState &p, bool inline_row) {
     struct Frame {
         impl::Group group;
@@ -304,10 +290,8 @@ void panel_body(impl::PanelState &p, bool inline_row) {
                 ImGui::SameLine();
             stack.back().first = false;
         } else if (inline_row && !first) {
-            // A tool strip is a row the caller did not have to ask for:
-            // Tools holds icon controls, and icon controls in a column
-            // where a row was meant is the kind of thing a caller ends
-            // up spelling on every plot.
+            // A tool strip is a row the caller did not have to ask
+            // for.
             ImGui::SameLine();
         }
         first = false;

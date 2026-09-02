@@ -454,8 +454,15 @@ bottom.
 
 **`include/` carries no comments — not one.** The public surface must
 explain itself; a header that needs prose needs renaming instead.
-Design rationale lives in docs/, implementation commentary in `src/`
-(where comments are fine). `tools/lint.sh` rule (e) gates this.
+`tools/lint.sh` rule (e) gates this.
+
+**`src/` carries no PARAGRAPHS.** Code is what a reader reads. A
+comment earns its place by saying something the code cannot — a
+platform bug, an ordering that looks arbitrary and is not, a unit that
+is not in a name — and that fits in a line or two. Anything longer is
+documentation, and documentation goes in `docs/` where it can be
+found. `tools/comments.py` caps a run at three lines; rule (k) gates
+it.
 
 ## Layout
 

@@ -85,14 +85,8 @@ void prepare(impl::SceneItem &it, nvrhi::ICommandList *cl) {
     }
 }
 
-// Make the binding set an external field draws with — at EVERY draw,
-// never cached on the VkBuffer's handle value: a producer that frees
-// and allocates per generation gets the same handle value back for a
-// different buffer, and a cached descriptor would then point at the
-// dead one. One descriptor per frame is nothing. The wrapped handle
-// carries keepInitialState(ShaderResource): NVRHI then emits no
-// barriers against memory the compute queue writes — cross-queue
-// visibility is the semaphore's job, not a barrier's.
+// At EVERY draw, never cached on the VkBuffer handle: a producer
+// that frees and reallocates can land on the same address.
 bool rebind_external(impl::SceneItem &it, FieldState &f,
                      const impl::PipelineEntry *pe) {
     gpud::Buffer *b = f.src.current();
@@ -130,10 +124,8 @@ void draw(impl::SceneItem &it, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb,
         pipeline_for(it.gpu, *it.pipelines, it.stats, &kFieldOps, fb);
     if (!pe)
         return;
-    // Resolved AT the bind, not a phase earlier: the pointer a source
-    // hands out is good for as long as the source says, and nothing
-    // should sit between asking and using. An owned buffer binds once,
-    // lazily, because the set needs the pipeline's layout.
+    // Resolved AT the bind: the pointer is good for as long as the
+    // source says, and nothing should sit between them.
     if (f.external) {
         if (!rebind_external(it, f, pe))
             return;

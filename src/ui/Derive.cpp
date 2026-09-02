@@ -1,15 +1,3 @@
-// Derived views: a plot computed from another plot's series, recomputed
-// every frame from whatever that series currently holds.
-//
-// The point is that the caller writes nothing. A scatter of particles
-// already hands the engine its positions every frame, so the engine can
-// answer "where are they concentrated" or "how are they distributed"
-// without being told how — which is the difference between a question
-// you can ask in one click and one you have to go and code.
-//
-// Every reduction here is O(n) over the source and allocates only on a
-// change of size, because it runs inside the frame that draws it.
-
 #include "PlotState.h"
 
 #include "../core/Math.h"
@@ -110,10 +98,8 @@ void profile(impl::Derivation &d, const std::vector<double> &xs,
         .a = d.a.data(), .b = d.b.data(), .c = d.c.data(), .count = d.a.size()};
 }
 
-// The joint view: the field, the distribution along each axis, and the
-// contours over the field. One reduction rather than four, because
-// they share the binning and a reader asking for one of them is
-// usually asking the question all four answer together.
+// One reduction rather than four: they share the binning, and a
+// reader asking for one is usually asking what all four answer.
 void joint(impl::Derivation &d, const std::vector<double> &xs,
            const std::vector<double> &ys, impl::SeriesState &field,
            impl::SeriesState &line, impl::SeriesState &mx,
@@ -211,27 +197,16 @@ void derive_update(impl::PlotState &p) {
     profile(d, xs, ys, line, *(++it));
 }
 
-// Which series a reduction can be taken OF. A capability, and the
-// question plot_derive asks — separate from what the MENU offers,
-// because a caller writing `Derive(Density)` has already decided and a
-// reader picking from a list has not.
+// The CAPABILITY, which plot_derive asks — separate from what the
+// menu offers.
 bool reducible(impl::SeriesKind k) {
     return k == impl::SeriesKind::Line || k == impl::SeriesKind::Scatter ||
            k == impl::SeriesKind::Stairs || k == impl::SeriesKind::Stems ||
            k == impl::SeriesKind::Bars;
 }
 
-// What the menu OFFERS, and deliberately nothing.
-//
-// A one-click view is only worth a line in a menu if a reader would
-// otherwise have gone and written it, and four of them competing for
-// that judgement made the menu a list to read rather than a choice to
-// make. The set is curated from empty rather than pruned from what
-// happened to be easy to compute.
-//
-// Adding one back costs a line here and nothing else: the reductions
-// themselves stay reachable through Plot::Derive, so what is being
-// decided here is the OFFER and not the capability.
+// What the menu OFFERS, and deliberately nothing: the set is curated
+// from empty. Adding one back costs a line here and nothing else.
 std::vector<DeriveOption> derive_options(const impl::PlotState &p) {
     (void)p;
     return {};

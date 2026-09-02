@@ -1,17 +1,5 @@
 #pragma once
 
-// Internal to src/ — what a world item IS, and what it hands the world.
-//
-// The 2D scene records its draws where they are built. A world cannot:
-// what is drawn where depends on the camera, so an item SUBMITS a
-// description and the world decides the order. That one indirection is
-// the whole optimization surface — sorting lives behind it today, and
-// culling or batching would land behind it without an item noticing.
-//
-// Like a 2D kind, an item is data: one static WorldItemOps per kind,
-// carrying its functions, its shaders and its pipeline shape. Nothing
-// switches on a kind and nothing enumerates them.
-
 #include "../render/Shader.h"
 #include "../render/Target.h"
 
@@ -40,10 +28,8 @@ struct WorldView {
     // rather than to the world scales by.
     float distance = 1.0f;
     std::uint32_t tw = 0, th = 0;
-    // Pixels per world unit at one unit of view depth, and whether
-    // the depth divides it. Together they answer "how big is this
-    // going to be on screen", which is the question a level of detail
-    // is really asking.
+    // Pixels per world unit at unit view depth; perspective divides
+    // by the depth, orthographic does not.
     float focal_px = 0.0f;
     bool orthographic = false;
     // The planes this frame draws inside of. The world tests items
@@ -95,14 +81,8 @@ struct WorldItemOps {
 
     void (*release)(impl::WorldItem &) = nullptr;
 
-    // The item's extent in world units, if it has one. Read by the
-    // world, not by the item: it is what decides whether `submit` is
-    // called at all, and where the near plane goes.
-    //
-    // FALSE means "I do not know", which is not the same as empty. An
-    // item whose data lives on the device cannot walk it to find out,
-    // and the answer to that is to draw it — never to guess a box and
-    // cull against the guess.
+    // False means "I do not know", not "empty": an item on the device
+    // cannot walk its data, and the answer is to draw it.
     bool (*bounds)(const impl::WorldItem &, impl::Vec3 *lo,
                    impl::Vec3 *hi) = nullptr;
 
@@ -129,10 +109,8 @@ struct WorldItem {
     const WorldItemOps *ops = nullptr;
     void *state = nullptr; // known only to the item's own file
     std::uint32_t id = 0;  // dense within a world, breaking key ties
-    // Which pipeline this item will resolve to, known before the
-    // framebuffer is: the ops decide it, so items that share an ops
-    // share this, and the sort key can group them without waiting for
-    // the cache.
+    // Known before the framebuffer is, so the sort key can group by
+    // it without waiting for the cache.
     std::uint32_t pipeline_id = 0;
     // What this item asked the device for last frame. The drill-down
     // from Stats::triangles, and the only way to ask a level-of-detail
@@ -160,10 +138,8 @@ void world_pipelines_release(std::vector<WorldPipelineEntry> &);
 std::uint32_t world_pipeline_id(const std::vector<WorldPipelineEntry> &,
                                 const WorldPipelineEntry *);
 
-// How big something of this world radius, at this world point, comes
-// out on screen — in pixels of radius. What a level of detail should
-// be chosen by: a shape is worth triangles when it is large enough
-// for them to show, and the count of shapes has nothing to do with it.
+// In pixels of radius — what a level of detail is chosen by, rather
+// than the count of shapes.
 inline float screen_radius(const WorldView &v, impl::Vec3 centre,
                            float radius) {
     if (v.orthographic)

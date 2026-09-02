@@ -1,8 +1,3 @@
-// The sync layer's engine: pure std, no SDL. Two things live here, the
-// Executor and the gate; both are small critical sections under a
-// mutex, fine at per-tick and per-frame rates — the wait-free refinement
-// waits for a measurement that wants it.
-
 #include "../core/Trace.h"
 #include <simview/sync/Sync.h>
 
@@ -18,16 +13,9 @@ namespace impl {
 
 namespace {
 
-// The gate: three slot INDICES with roles next / current / shown, and
-// the one mutex that orders the two threads. Publish moves current
-// onto next and picks a fresh next outside {current, shown}; flip moves
-// shown onto current. next is never current or shown, so the sim
-// writes what nobody reads and the frame reads what nobody writes.
-// Nothing is swapped or copied here — the slots belong to the template,
-// the gate only says which one plays which role. Lifetime is a
-// refcount: the owning Sync holds one, every registry that flips it
-// holds one, so a Sync destroyed mid-run leaves a dead gate the frame
-// skips rather than a dangling handle.
+// Three slot INDICES with roles next / current / shown. Publish moves
+// current onto next and picks a fresh next outside {current, shown};
+// flip moves shown onto current. Nothing is copied.
 struct GateImpl {
     std::mutex m;
     int next = 0, current = 1, shown = 2;
@@ -41,10 +29,8 @@ struct GateImpl {
     std::atomic<int> refs{1};
 };
 
-// The Executor KEEPS THE CLOCK. The body may read n and time; it never
-// fabricates its own counter — that is what makes a step counter, a
-// time readout and "advance N" derivable rather than hand-rolled, and
-// what the transport panel is built from.
+// The Executor KEEPS THE CLOCK: the body reads n and time and never
+// fabricates its own counter.
 struct ExecutorImpl {
     void (*tick)(void *) = nullptr;
     void (*timed)(const Tick &, void *) = nullptr;
@@ -355,10 +341,8 @@ double executor_rate(Executor ex) {
     if (!e)
         return 0.0;
     std::lock_guard lk(e->m);
-    // Prune against NOW, not only when a tick arrives: a paused
-    // executor stops adding timestamps, and without this the stale
-    // window would report the old rate forever. Measured — it read 76
-    // after a pause before this line existed.
+    // Against NOW: a paused executor stops adding timestamps, and
+    // without this it read 76 forever.
     const auto now = std::chrono::steady_clock::now();
     while (!e->recent.empty() &&
            now - e->recent.front() > std::chrono::seconds(1))

@@ -1,6 +1,5 @@
-// The one error channel: a refusal is a null handle or a false, with
-// its sentence logged at the refusal site and kept for LastError().
-// Thread-local, because two Apps on two threads must not read each
+// A refusal is a null handle or a false, with its sentence logged and
+// kept for LastError(). Thread-local: two Apps must not read each
 // other's sentence.
 
 #include "Error.h"

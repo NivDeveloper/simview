@@ -1,13 +1,3 @@
-// A world's frame, in one place: fill the camera constants, let every
-// item describe its draws, order them, replay them by pass.
-//
-// The order of those four is the contract. Uploads happen before any
-// pass is open (the 2D scene's rule, for the same reason); the view
-// block is written before any state is set, because the version a draw
-// reads is chosen when its state is; and the sort happens once over
-// every command rather than per pass, so a pass is a range, not a
-// filter.
-
 #include "World.h"
 
 #include "../core/Error.h"
@@ -39,10 +29,8 @@ void copy_mat(float (&dst)[16], const impl::Mat4 &m) {
     std::memcpy(dst, m.m, sizeof m.m);
 }
 
-// Everything the items reported about where they are. The near plane
-// and the frustum both come out of it, which is why it is collected
-// once, after prepare — an item's extent is only settled when its
-// uploads are.
+// Collected once, after prepare: an item's extent is only known
+// once its data has landed.
 impl::Aabb scene_bounds(const impl::WorldState &w) {
     impl::Aabb b{};
     for (const impl::WorldItem &it : w.items) {
@@ -78,10 +66,8 @@ WorldView view_of(const impl::WorldState &w, std::uint32_t tw, std::uint32_t th,
 bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
                    const WorldView &view) {
     if (!w.view_cb) {
-        // Volatile: the renderer versions the contents internally, so
-        // a binding set made once stays valid as the camera moves. The
-        // version count must cover every write in flight — one per
-        // world per frame, and frames in flight is one.
+        // Volatile: the renderer versions it, so a binding set made
+        // once stays valid. One write per world per frame.
         w.view_cb =
             w.gpu.dev->createBuffer(nvrhi::BufferDesc()
                                         .setByteSize(sizeof(ViewConstants))
@@ -110,11 +96,8 @@ bool write_view_cb(impl::WorldState &w, nvrhi::ICommandList *cl,
     c.depth[1] = w.camera.zfar();
     c.depth[2] = w.camera.orthographic() ? 1.0f : 0.0f;
 
-    // Lights reach the shader in VIEW space, where an impostor knows
-    // its own normal. Rotating them here is one transform a frame
-    // instead of a normal matrix in every shader that shades anything.
-    // An unlit world gets one light at the camera — already view space,
-    // so it is the one direction that needs no rotating.
+    // VIEW space, where an impostor knows its own normal: one
+    // transform a frame instead of a normal matrix per shader.
     const std::size_t n = w.lights.size() < 4 ? w.lights.size() : 4;
     if (n == 0) {
         c.light_dir[0][2] = 1.0f;
@@ -243,10 +226,8 @@ void world_draw_into(impl::WorldState &w, impl::Platform &pl,
         return;
     view.view_cb = w.view_cb;
 
-    // Culling is the WORLD's, not the item's, for the same reason the
-    // ordering is: an item that had to remember would eventually
-    // forget, and the one that forgot would be the one drawn wrong.
-    // An item with no bounds is drawn — see WorldItemOps::bounds.
+    // The WORLD's, not the item's: an item that had to remember
+    // would eventually forget.
     w.cmds.clear();
     for (impl::WorldItem &it : w.items) {
         if (!it.ops || !it.ops->submit || !it.visible)
@@ -263,10 +244,8 @@ void world_draw_into(impl::WorldState &w, impl::Platform &pl,
     for (std::size_t i = 0; i < w.cmds.size(); ++i)
         w.cmds[i].seq = std::uint32_t(i);
 
-    // One sort over everything, pass included: a pass is then a
-    // contiguous range and the loop below never filters. The sequence
-    // number is the tail that makes ties deterministic without asking
-    // for a stable sort.
+    // One sort, pass included, so a pass is a contiguous range. The
+    // sequence number is the tie-break that makes it deterministic.
     std::sort(w.cmds.begin(), w.cmds.end(),
               [](const DrawCmd &a, const DrawCmd &b) {
                   if (a.pass != b.pass)
@@ -291,10 +270,8 @@ void world_draw_into(impl::WorldState &w, impl::Platform &pl,
         while (j < w.cmds.size() && w.cmds[j].pass == id)
             ++j;
         if (pd.enabled && j > i) {
-            // A pass is a timing section as well as a marker. The
-            // marker names it in a capture; the section is what puts a
-            // number beside the name, which is the only way a claim
-            // about what a pass costs can be checked.
+            // A section as well as a marker: the number beside the
+            // name is how a claim about a pass's cost is checked.
             cl->beginMarker(pd.name);
             timing_begin(pl, cl, pd.name);
             for (std::size_t k = i; k < j; ++k) {

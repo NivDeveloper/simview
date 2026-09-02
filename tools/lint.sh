@@ -20,6 +20,8 @@
 #       its LICENSE (third_party/README.md is the contract)
 #   (i) an example's controls all DO something: a value bound to a
 #       slider and read nowhere is a control that decorates
+#   (k) src/ carries no comment PARAGRAPHS — code is what a reader
+#       reads, and anything longer than a note is documentation
 set -eu
 cd "$(dirname "$0")/.."
 fail=0
@@ -155,6 +157,15 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 else
     echo "SKIP: python3 not found - dead-control gate not run"
+fi
+
+# (k)
+if command -v python3 >/dev/null 2>&1; then
+    if ! python3 tools/comments.py src; then
+        echo "LINT: a comment paragraph in src/ - say it in a line or"
+        echo "      put it in docs/"
+        fail=1
+    fi
 fi
 
 # (e)

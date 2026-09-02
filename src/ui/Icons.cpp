@@ -140,10 +140,8 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.line(0.50f, 0.50f, 0.50f, 0.91f);
         return;
 
-    // The pair is one contrast and nothing else: rails that converge
-    // toward a horizon, and the same rails that do not. A frustum
-    // drawn side-on reads as a loudspeaker, which is how these two
-    // started out.
+    // One contrast: rails that converge, and rails that do not. A
+    // frustum drawn side-on reads as a loudspeaker.
     case Icon::Perspective:
         p.line(0.13f, 0.90f, 0.41f, 0.14f);
         p.line(0.87f, 0.90f, 0.59f, 0.14f);
@@ -209,10 +207,8 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.line(0.44f, 0.62f, 0.80f, 0.62f);
         return;
 
-    // The three reductions, drawn as what each one PRODUCES. They sit
-    // in a menu beside their names, so the job is to be told apart at
-    // a glance rather than to be readable alone — a distribution, a
-    // field of cells, a line with its uncertainty.
+    // Drawn as what each one PRODUCES: told apart at a glance, not
+    // readable alone.
     case Icon::Histogram:
         p.slab(0.08f, 0.62f, 0.24f, 0.90f);
         p.slab(0.27f, 0.38f, 0.43f, 0.90f);
@@ -241,10 +237,8 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.line(0.82f, 0.40f, 0.98f, 0.40f);
         return;
 
-    // The figure's own LAYOUT: a panel with a margin above it and one
-    // beside it. Drawn as three rectangles because that is what the
-    // reader is choosing — an arrangement — and a miniature of the
-    // contents would be three unreadable pictures at this size.
+    // The LAYOUT, not the contents: a miniature of three pictures is
+    // unreadable at this size.
     case Icon::Joint:
         p.box(0.06f, 0.06f, 0.64f, 0.26f, 0.03f);
         p.box(0.06f, 0.34f, 0.64f, 0.94f, 0.03f);

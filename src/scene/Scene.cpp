@@ -1,10 +1,3 @@
-// The scene: what belongs to every kind rather than to any one of
-// them. Three things live here on purpose — the CLEAR, because an item
-// that cleared would erase whatever the item before it drew; the ONE
-// aspect-fit every item shares, which is what makes a point land on
-// the cell it belongs to; and the prepare-then-draw order, because
-// uploads must not interleave with the pass.
-
 #include "Target.h"
 
 #include <string>
@@ -82,10 +75,8 @@ void scene_range(Scene s, const Range2 &r) {
         sc->range = r;
 }
 
-// Track a Sync for the per-frame flip. The list is the App's, so a Sync
-// drawn in two scenes is tracked once; the registry holds its own
-// reference, so a Sync that dies first leaves a dead gate, not a
-// dangling one.
+// The list is the App's, so a Sync drawn in two scenes is tracked
+// once; the registry holds its own reference.
 void scene_untracked_pull(Scene s) {
     if (SceneState *sc = static_cast<SceneState *>(s.p))
         ++sc->untracked_pulls;
@@ -95,10 +86,8 @@ void scene_track(Scene s, SyncGate g) {
     SceneState *sc = static_cast<SceneState *>(s.p);
     if (!sc || !sc->gates || !g)
         return;
-    // Publishes stamp themselves with the compute device's submitted
-    // ticket — taken on the PRODUCER's thread (submitted() is in
-    // gpud's thread-safe carve-out), so a frame can wait GPU-side for
-    // exactly the work that filled what it shows.
+    // Stamped on the PRODUCER's thread, so the frame can wait
+    // GPU-side for exactly the work behind what it shows.
     if (sc->gpu.gdev)
         sync_gate_set_stamper(
             g,

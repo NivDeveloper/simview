@@ -1,10 +1,5 @@
 #pragma once
 
-// Internal to src/ — the input half of the platform layer: SDL's
-// events and the posted ones, delivered to the same callbacks in the
-// same order, which is what makes a posted event a faithful stand-in
-// for a keypress.
-
 #include "../core/Callbacks.h"
 
 #include <simview/Event.h>

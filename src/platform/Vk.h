@@ -1,12 +1,5 @@
 #pragma once
 
-// Internal to src/ — the app-owned Vulkan objects: one instance, one
-// device, and the two queues the whole design turns on (graphics for
-// the renderer, compute for gpud). Raw C handle typedefs only, spelled
-// as vulkan_core.h spells them, so including this does not drag
-// vulkan.hpp into every TU; Vk.cpp is the one place that speaks the
-// full API and owns the app's single vulkan-hpp dispatcher storage.
-
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -37,26 +30,18 @@ struct VkContext {
     bool shared_queue = false;
     std::mutex queue_m;
     PFN_vkGetInstanceProcAddr gipa{};
-    // SIMVIEW_VVL, parsed once: a comma list of `1`/`core`, `sync`,
-    // `gpuav`, `printf`, `best`, `abort`. `on` also turns on NVRHI's
-    // validation wrapper; the rest are Khronos-layer features carried
-    // by VK_EXT_layer_settings; `abort` makes the first validation
-    // ERROR from either source a std::abort() — the gate's exit code.
+    // SIMVIEW_VVL: a comma list of `1`/`core`, `sync`, `gpuav`,
+    // `printf`, `best`, `abort`. See CLAUDE.md's validation table.
     struct Vvl {
         bool on = false, sync = false, gpuav = false, printf = false,
              best = false, abort = false;
     } vvl;
     bool validation = false; // == vvl.on: instance layer + nvrhi wrapper
-    // SIMVIEW_WAIT_MS, as nanoseconds: the bound on every host wait
-    // for the device — the previous frame, a shot's readback, the
-    // swapchain acquire, the drain at quit, and gpud's own waits
-    // (handed to it at adoption). 0 = unbounded, the default.
+    // SIMVIEW_WAIT_MS as nanoseconds. 0 = unbounded.
     std::uint64_t wait_ns = 0;
-    std::uint64_t messenger = 0; // VkDebugUtilsMessengerEXT, when the
-                                 // Khronos layer is actually present
-    // VK_EXT_debug_utils, enabled whenever the loader offers it: object
-    // names and command-buffer labels are what a capture, a validation
-    // message or a trace shows instead of handles. Cheap, so always.
+    std::uint64_t messenger = 0; // when the Khronos layer is present
+
+    // Object names and labels, what a capture shows instead of handles.
     bool debug_utils = false;
     // The graphics family timestamps (timestampValidBits > 0), and the
     // device's ns per tick — what platform/Timing.h stamps with.
@@ -72,10 +57,8 @@ struct VkContext {
 
 } // namespace impl
 
-// The validation tally, PROCESS-wide on purpose: the Khronos layer's
-// messenger and NVRHI's message callback both feed it, and the tests'
-// shape is one App per process. `vk_validation_error` logs, counts,
-// and honors SIMVIEW_VVL's `abort`.
+// PROCESS-wide on purpose: both messengers feed it, and the tests'
+// shape is one App per process.
 std::size_t vk_validation_errors();
 void vk_validation_error(const char *source, const char *text);
 
@@ -90,16 +73,12 @@ enum class WaitResult { done, timeout, lost };
 WaitResult vk_wait_timeline(impl::VkContext &, std::uint64_t semaphore,
                             std::uint64_t value);
 
-// The end of a process whose GPU never comes back: the sentence is
-// logged and kept for LastError(), then the process exits — nothing
-// below can be freed while the device may still be using it, so the
-// alternative to this exit is the hang it replaces.
+// Nothing below can be freed while the device may still be using it,
+// so the alternative to this exit is undefined behaviour.
 [[noreturn]] void vk_fatal(const std::string &sentence);
 
-// Bring the stack up (windowed adds SDL's surface extensions and
-// KHR_swapchain). False = refusal, by name, in LastError(); the video
-// subsystem must already be initialized. Validation: SIMVIEW_VVL (the
-// table in CLAUDE.md's "The dev surface").
+// False = refusal, by name, in LastError(). The video subsystem must
+// already be initialized.
 bool vk_open(impl::VkContext &, bool windowed);
 void vk_close(impl::VkContext &);
 

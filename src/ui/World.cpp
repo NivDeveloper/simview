@@ -1,11 +1,3 @@
-// A world's registration and its camera controller.
-//
-// Here rather than in world/ for the same reason view_create is here:
-// only ui knows what a panel is, and the camera is driven by a drag on
-// one. This file is the ONE place in the engine that reads a mouse —
-// and it reads ImGui's item state, never SDL's events, so the gesture
-// is answered by whichever panel is under the cursor and nothing else.
-
 #include "../world/World.h"
 #include "../core/App.h"
 #include "Icons.h"
@@ -20,21 +12,15 @@
 
 namespace sv {
 
-// The gesture itself, from two facts the caller establishes: whether
-// the pointer is over this world, and whether a drag on it is under
-// way. A world in a panel gets both from the image item ImGui already
-// latches; the window's world has no item, so the latch below is its.
+// From two facts the caller establishes: whether the pointer is over
+// this world, and whether a drag on it is under way.
 void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
     ImGuiIO &io = ImGui::GetIO();
     const bool left = ImGui::IsMouseDown(ImGuiMouseButton_Left);
     const bool right = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
-    // No latch of our own: whoever the press landed on OWNS the drag
-    // until the release, and both callers get that for free — an item
-    // stays active while it is dragged, and a press that began outside
-    // every panel keeps the pointer uncaptured however far it wanders.
-    // A latch here was written first and removed once a drill proved
-    // nothing could tell it apart.
+    // No latch of our own: whoever the press landed on owns the drag
+    // until the release, and both callers get that for free.
     if (active && (left || right)) {
         // Per-frame deltas, not a remembered cursor: there is no state
         // of ours to seed on the first frame of a drag, so the jump
@@ -52,18 +38,8 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
         w.camera.dolly(io.MouseWheel);
 }
 
-// The scene's own controls: one button in a corner of the picture,
-// and everything behind it.
-//
-// A 3D scene has no chrome to put a panel in — the picture IS the
-// window — so its controls have to sit ON it, and a control sitting on
-// a picture has to cost the picture almost nothing. One button does;
-// a strip of them would be a panel with extra steps.
-//
-// What is behind it is what a reader of a 3D scene actually reaches
-// for: somewhere known to get back to, the four standard directions,
-// and the toggles that change what the picture MEANS rather than
-// how it is arranged.
+// A 3D scene has no chrome to put a panel in, so its controls sit ON
+// the picture and must cost it almost nothing.
 
 constexpr float kDeg = 3.14159265f / 180.0f;
 
@@ -74,11 +50,8 @@ void world_look(impl::WorldState &w, float az_deg, float el_deg) {
     w.camera.look(az_deg * kDeg, el_deg * kDeg);
 }
 
-// The presets as DATA, so the menu is a loop and there is no per-entry
-// code for two of them to end up sharing. A check applies them from
-// this same table, which is what makes "five entries, five views" a
-// property of the table rather than of the check's idea of it. Home
-// is not in it — a caller's opening view is not an angle.
+// DATA, so the menu is a loop and a check applies the same table.
+// Home is not in it: an opening view is not an angle.
 constexpr Preset kViews[] = {{"front", -90.0f, 0.0f},
                              {"side", 0.0f, 0.0f},
                              {"top", -90.0f, 89.0f},
@@ -133,22 +106,13 @@ void world_controls(impl::WorldState &w, ImVec2 at) {
         ImGui::EndPopup();
     }
     ImGui::PopID();
-    // Put the cursor back for whatever the caller draws next, and
-    // submit something after moving it: ImGui warns about a cursor
-    // moved with nothing following, because that is how a window ends
-    // up sized to content it never measured.
+    // ImGui warns about a cursor moved with nothing following.
     ImGui::SetCursorScreenPos(keep);
     ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
-// The window's world steers on whatever the panels did not claim.
-// WantCaptureMouse is the whole test: it is true while a panel is
-// hovered or owns a drag, and false over the scene behind them.
-// A world drawn into the WINDOW has no ImGui window to hang a corner
-// button on — the panels float over a swapchain nobody owns. So it
-// gets one of its own: undecorated, unmoved, unsaved, and exactly the
-// size of the button, which is as close to "drawn on the picture" as
-// an ImGui item gets.
+// WantCaptureMouse is the whole test: true while a panel is hovered
+// or owns a drag.
 void ui_world_overlay(impl::App *a) {
     if (!a || !a->world || !a->world->controls)
         return;
@@ -175,11 +139,8 @@ void ui_world_input(impl::App *a) {
 
 namespace impl {
 
-// A world with no title IS the window: it draws into the swapchain
-// and the panels float over it, which is what a program whose subject
-// is the 3D scene wants. A titled one is a panel among panels, for a
-// layout with several views. The two differ in nothing but the
-// framebuffer they end up in.
+// No title means the world IS the window; a titled one is a panel.
+// They differ in nothing but the framebuffer.
 World world_create(App *a, const WorldDesc &d) {
     if (!a)
         return {};
@@ -288,10 +249,8 @@ void world_ambient(World w, const float rgb[3]) {
             ws->ambient[k] = rgb[k];
 }
 
-// The gate bookkeeping a scene does, for the same reasons: a Publish
-// stamps itself with the compute device's submitted ticket so the
-// frame can wait GPU-side for exactly the work behind what it shows,
-// and a source with no Sync makes the frame wait for everything.
+// A Publish stamps itself with the compute device's submitted ticket;
+// a source with no Sync makes the frame wait for everything.
 void world_track(World w, SyncGate g) {
     WorldState *ws = static_cast<WorldState *>(w.p);
     if (!ws || !ws->gates || !g)

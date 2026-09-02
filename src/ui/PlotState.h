@@ -1,10 +1,5 @@
 #pragma once
 
-// Internal to src/ — the plot and panel state. Confined to ui/: the
-// two files that touch these are Plot.cpp (registration) and
-// PlotDraw.cpp (drawing), and nothing below this layer knows they
-// exist.
-
 struct ImFont;
 
 #include <simview/Panel.h>
@@ -18,10 +13,8 @@ struct ImFont;
 namespace sv {
 namespace impl {
 
-// A series' source is owned here: the sugar handle is a bare pointer
-// like Field's, so nothing on the user's side could keep a closure
-// alive. std::list, because these are non-copyable and their
-// addresses are handed to the ui callbacks.
+// A list, not a vector: these are non-copyable and their addresses
+// are handed to the ui callbacks.
 struct SeriesState {
     std::string name;
     SeriesKind kind = SeriesKind::Line;
@@ -54,12 +47,8 @@ struct PanelState;
 struct PlotState;
 struct App;
 
-// A plot computed FROM another plot's series, recomputed every frame
-// from whatever that series currently holds — so a derived view follows
-// a live source without the caller wiring anything.
-//
-// The parent is held by pointer because plots live in a std::list and
-// are never removed: the address is stable for the App's life.
+// Recomputed every frame from whatever the source series holds. The
+// parent is a pointer: plots live in a list and are never removed.
 struct Derivation {
     const PlotState *from = nullptr;
     const SeriesState *series = nullptr;
@@ -83,17 +72,11 @@ struct PlotState {
     // The plot's own strip of controls, above the canvas. Empty for a
     // plot that asked for none.
     std::unique_ptr<PanelState> controls;
-    // The caller's ICON controls, which ride with the engine's own on
-    // whatever strip the arrangement gives them. Separate from
-    // `controls` because a labelled slider and an icon button want
-    // different rooms, and asking the widget kind at draw time would
-    // put that decision somewhere nobody would look for it.
+    // Icon controls, which ride the engine's own strip. Separate from
+    // `controls` because the two want different rooms.
     std::unique_ptr<PanelState> tools;
     std::unique_ptr<Derivation> derivation;
-    // A derived view is engine-made and closable; closing hides it and
-    // asking the same question again brings this one back rather than
-    // a second copy. Both fit_* are what the LAST toolbar decided, so
-    // a probe reads what was drawn and not a fresh guess.
+    // What the LAST toolbar decided, so a probe reads what was drawn.
     bool open = true;
     bool fit_offered = false;
     bool fit_pending = false;

@@ -1,21 +1,5 @@
 #pragma once
 
-// Internal to src/ — the camera, and the depth convention everything
-// drawn through it agrees on.
-//
-// Not in core/Math.h with the arithmetic, because none of this is
-// arithmetic: a turntable, a reverse-Z projection and a near plane
-// that follows the orbit are DECISIONS about how this engine looks at
-// a scene, and a file of pure functions should not be carrying them.
-// The draw-ordering keys are here for the same reason: they are made
-// of the depth THIS camera writes, under this projection.
-//
-// A class rather than a struct of fields with free functions taking
-// it. The state is one relation — a focus, a distance and a pose —
-// and every question about the camera is derived from it rather than
-// stored beside it, which is only enforceable if the fields are not
-// there to be set independently.
-
 #include "../core/Math.h"
 
 #include <cmath>
@@ -29,10 +13,8 @@ namespace impl {
 // so a caller switches one setting and everything else holds.
 enum class Projection : int { Perspective = 0, Orthographic = 1 };
 
-// Orthographic, reverse-Z: the near plane maps to 1 and the FAR one to
-// 0. Linear in view depth, so unlike the perspective form it cannot
-// run to infinity — the far plane is a real number and the precision
-// is spread evenly between the two.
+// Reverse-Z: near maps to 1, far to 0. Linear in view depth, so it
+// needs a real far plane where the perspective form needs none.
 inline Mat4 proj_ortho_reverse_z(float height, float aspect, float znear,
                                  float zfar) {
     Mat4 r{};
@@ -47,10 +29,8 @@ inline Mat4 proj_ortho_reverse_z(float height, float aspect, float znear,
     return r;
 }
 
-// Infinite-far reverse-Z: the near plane maps to 1 and infinity to 0,
-// which is what makes a float depth buffer precise across the whole
-// range. m[1][1] is POSITIVE — the renderer flips the viewport height
-// itself, and a second flip here would render the world upside down.
+// Near maps to 1, infinity to 0. m[1][1] is POSITIVE: the renderer
+// flips the viewport height, and a second flip renders upside down.
 inline Mat4 proj_reverse_z(float fovy, float aspect, float znear) {
     const float f = 1.0f / std::tan(0.5f * fovy);
     Mat4 r{};
@@ -75,11 +55,8 @@ class Camera3 {
         distance_ = distance > 0.0f ? distance : distance_;
     }
 
-    // The pose that puts the camera at (azimuth, elevation) on a
-    // sphere around the focus, horizon level. Derived rather than
-    // tabulated: the yaw carries world +X to the camera's view-back at
-    // azimuth 0, and the pitch tilts that back vector up out of the XY
-    // plane by elevation.
+    // Derived, not tabulated: the yaw carries world +X to the
+    // view-back at azimuth 0, the pitch lifts it out of the XY plane.
     void look(float azimuth_rad, float elevation_rad) {
         constexpr float kHalfPi = 1.5707963268f;
         pose_ =
@@ -97,10 +74,8 @@ class Camera3 {
     Projection mode() const { return mode_; }
     bool orthographic() const { return mode_ == Projection::Orthographic; }
 
-    // ── where that puts it ───────────────────────────────────────────
-    //
-    // Never stored: two copies of one fact drift, and the pose is the
-    // one that must win.
+    // ── where that puts it ──────────────────────────────────────
+    // Never stored: two copies of one fact drift.
 
     Vec3 position() const {
         return focus_ + pose_ * Vec3{0.0f, 0.0f, 1.0f} * distance_;
@@ -111,10 +86,8 @@ class Camera3 {
 
     // ── what a gesture does to it ────────────────────────────────────
 
-    // Yaw about the WORLD up axis, pitch about the camera's OWN right:
-    // the first keeps the horizon level however far the view has
-    // tilted, and the second is what makes dragging up feel like
-    // lifting the camera.
+    // Yaw about the WORLD up, pitch about the camera's OWN right:
+    // the first is what keeps the horizon level.
     void orbit(float dx, float dy) {
         pose_ = normalize(axis_angle({0.0f, 0.0f, 1.0f}, -dx * kOrbit) * pose_ *
                           axis_angle({1.0f, 0.0f, 0.0f}, -dy * kOrbit));
@@ -146,23 +119,15 @@ class Camera3 {
         return mat_from_quat(conjugate(pose_)) * mat_translate(-position());
     }
 
-    // The near plane follows the orbit scale. Depth precision is
-    // governed by the NEAR distance, not the far one, so a fixed 0.01
-    // would throw away resolution at every scale but one; there is no
-    // far plane at all.
+    // Follows the orbit scale: precision is governed by the NEAR
+    // distance. There is no far plane at all.
     float znear() const {
         const float n = distance_ * 1e-3f;
         return n > 1e-4f ? n : 1e-4f;
     }
 
-    // Told what is actually out there, it only ever moves CLOSER than
-    // that default, never further: items are free to report no bounds
-    // at all, and geometry an item did not account for must not be
-    // sliced away by a plane derived from geometry it did.
-    //
-    // The default alone is a real failure at range — orbiting a
-    // thousand units out puts the near plane a whole unit from the
-    // eye, and a subject panned close to the camera is simply gone.
+    // Only ever CLOSER than the default: an item may report no
+    // bounds, and geometry it did not account for must not be sliced.
     float znear(const Aabb &scene) const {
         const float base = znear();
         if (!scene.valid)
@@ -175,17 +140,11 @@ class Camera3 {
         return want > 1e-5f ? want : 1e-5f;
     }
 
-    // Orthographic depth is LINEAR, so it needs a far plane where the
-    // perspective one needs none, and the range is what its precision
-    // is spent on. Twenty orbits past the camera covers a scene
-    // arranged around the focus without spending the buffer on empty
-    // distance.
+    // Orthographic depth is LINEAR and needs a far plane.
     float zfar() const { return distance_ * 20.0f; }
 
-    // The world height the view covers at the focus. In perspective
-    // this is what the frustum subtends there; the orthographic box is
-    // built to match it, so switching projections holds the subject the
-    // same size and only changes the convergence.
+    // The orthographic box is built to match it, so switching
+    // projections holds the subject the same size.
     float view_height() const {
         return 2.0f * distance_ * std::tan(0.5f * fovy_);
     }
@@ -199,10 +158,7 @@ class Camera3 {
                    : proj_reverse_z(fovy_, aspect, near_plane);
     }
 
-    // How many pixels one world unit covers at one unit of view depth.
-    // Perspective divides this by the depth; orthographic does not,
-    // which is the whole difference between the two and the reason this
-    // is a number and a flag rather than two functions.
+    // Perspective divides this by the depth; orthographic does not.
     float focal_px(std::uint32_t th) const {
         if (mode_ == Projection::Orthographic) {
             const float h = view_height();
@@ -229,11 +185,8 @@ class Camera3 {
     Projection mode_ = Projection::Perspective;
 };
 
-// The depth a point WOULD be written at, quantized — the sort key's
-// only ingredient. Taken through the REAL projection rather than a
-// formula of its own, so it is the number the depth buffer will hold
-// under either one, and the order the sort produces is the order the
-// test enforces.
+// Taken through the REAL projection, so it is the number the depth
+// buffer will hold under either one.
 inline std::uint16_t depth_key(const Mat4 &world_to_clip, Vec3 p) {
     float w = 0.0f;
     const Vec3 c = transform_point(world_to_clip, p, &w);
@@ -249,12 +202,8 @@ inline std::uint16_t depth_key(const Mat4 &world_to_clip, Vec3 p) {
     return static_cast<std::uint16_t>(d * 65535.0f);
 }
 
-// Ordering, per pass. The pass is the outer loop and never enters the
-// key: encoding it would make the top bits a constant.
-//
-// Opaque leads with the pipeline, because a state change costs more
-// than the overdraw the depth test would have saved, and only breaks
-// ties by nearness. Transparent leads with depth, because there the
+// The pass is the outer loop and never enters the key. Opaque leads
+// with the pipeline, transparent with depth.
 
 // order IS the result.
 inline std::uint64_t opaque_key(std::uint32_t pipeline, std::uint32_t item,

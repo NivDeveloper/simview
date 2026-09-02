@@ -1,20 +1,5 @@
 #pragma once
 
-// Internal to src/ — where the GPU time goes, on ONE clock.
-//
-// A frame's graphics work is stamped by section (views, scene, ui,
-// readback) with timestamp queries on the frame's own command buffer;
-// gpud stamps every compute batch it submits (Options::profile). Both
-// read the device clock, so the two queues lay out on one timeline —
-// the picture that says whether compute is saturated, whether the
-// frame waits on it, and what a frame's milliseconds are spent on.
-//
-// Three sinks, one mechanism: the periodic line SIMVIEW_TIMINGS=1
-// logs, the probe a check reads, and — in a SIMVIEW_TRACE build —
-// Tracy's GPU zones, where the flame graph is. Off unless asked: a
-// stamp pair per section is cheap, but nothing runs that nobody
-// wanted.
-
 #include <gpud/Device.h>
 #include <nvrhi/nvrhi.h>
 
@@ -42,13 +27,8 @@ struct Timing {
     std::uint64_t pool = 0; // VkQueryPool: kRings x two stamps per section
     float period = 1.0f;    // ns per tick on the graphics family
 
-    // The frame being recorded: which ring it stamps into, the sections
-    // stamped so far, and whether one is open. A ring per frame in
-    // flight plus one: a driver may publish a completed frame's stamps
-    // AFTER the semaphore the wait returned on (MoltenVK does, from the
-    // completion handler), so a ring is read at the collect after the
-    // one that found it unready, and reset only when the next frame
-    // needs it back.
+    // A ring per frame in flight PLUS ONE: a driver may publish a
+    // completed frame's stamps after the semaphore the wait returned on.
     struct Ring {
         std::uint32_t written = 0;
         const char *names[kMaxSections]{};

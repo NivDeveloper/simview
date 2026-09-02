@@ -1,13 +1,5 @@
 #pragma once
 
-// Internal to src/ — the App, composed. Each member's type is declared
-// in its own layer's header, so a layer includes only what is below
-// it; this file is the ONE place that sees all of them, and the probe
-// and the frame are the only things that include it.
-//
-// The order of members is load-bearing once: Platform holds the
-// device everything else borrows, and destruction is reverse order.
-
 #include "../platform/Device.h"
 #include "../platform/Input.h"
 #include "../scene/Scene.h"
@@ -41,13 +33,9 @@ struct App {
     // the one a 3D program wants by default.
     std::unique_ptr<WorldState> world;
     UiState ui;
-    // The look, and the one a frame is about to switch to. A theme set
-    // from a panel callback is set MID-FRAME, where a style change
-    // would resize controls already drawn — so it lands at the top of
-    // the next frame instead.
-    // How a window that has never been placed finds a spot. Only ever
-    // a FIRST-USE default: a layout somebody dragged into place is
-    // saved and wins from then on, whichever of these put it there.
+    // A theme set from a panel callback is set MID-FRAME, where a
+    // style change would resize controls already drawn, so it lands at
+    // the top of the next frame.
     sv::Layout layout = sv::Layout::Cascade;
     Theme theme{};
     Theme pending{};

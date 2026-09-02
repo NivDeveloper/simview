@@ -1,13 +1,3 @@
-// Drawing a plot and a panel. Both are ImGui windows, so both dock,
-// tab and tear out; the plot's canvas is ImPlot's.
-//
-// Two asymmetries here are easy to get wrong and are written once:
-// ImGui::Begin returning false STILL requires End(), while BeginPlot
-// returning false must NOT be followed by EndPlot(). And ImPlot's
-// setup is a PHASE — every Setup* must precede the first item, so the
-// axes are configured, SetupFinish draws the line, and only then are
-// the sources asked.
-
 #include "Icons.h"
 #include "PlotState.h"
 
@@ -77,10 +67,8 @@ ImPlotSpec spec_of(const SeriesStyle &st, const Theme &t) {
     return spec;
 }
 
-// The scalar is erased ONCE, here — so a new series kind is one enum
-// value, one case, and one method on the builder, whatever the element
-// type. A kind casts only the slots it reads, at the point it reads
-// them; the slots are positional BY KIND and the case says which.
+// The scalar is erased ONCE: a kind casts only the slots it reads,
+// which are positional BY KIND and the case says which.
 template <class T>
 double emit_series(const impl::SeriesState &s, const impl::SeriesData &d,
                    const ImPlotSpec &spec) {
@@ -197,11 +185,7 @@ void apply_flags(ImPlotSpec &spec, impl::SeriesKind k, const SeriesStyle &st) {
     }
 }
 
-// The 3D twins. Same shape as their 2D counterparts, against the
-// other library: the axis setup lifts Fit unchanged (the Cond and the
-// AutoFit/Invert flags mirror ImPlot's), and AxisScale is a no-op —
-// ImPlot3D has no log axis, so a 3D axis asked for one gets linear,
-// which is said here rather than left to be discovered.
+// The 3D twins. ImPlot3D has no log scale and no SetupFinish.
 void setup_axis3(ImAxis3D ax, const impl::AxisState &a) {
     ImPlot3DAxisFlags flags = ImPlot3DAxisFlags_None;
     if (a.desc.fit == Fit::Stream)
@@ -284,11 +268,8 @@ const impl::SeriesState *colourbar_of(const impl::PlotState &p) {
     return nullptr;
 }
 
-// Which colormap a plot draws with. `Auto` is the caller delegating the
-// decision, not asking for the default: a CONTINUOUS field read through
-// a qualitative set is a picture with no order in it, so a plot holding
-// a heatmap or a surface takes a perceptually uniform map instead. An
-// explicit palette always wins.
+// `Auto` delegates rather than asking for the default: a continuous
+// field read through a qualitative set has no order in it.
 ImPlotColormap colormap_of(const impl::PlotState &p) {
     if (p.palette != Palette::Auto)
         return ImPlotColormap(int(p.palette));
@@ -300,36 +281,15 @@ ImPlotColormap colormap_of(const impl::PlotState &p) {
 }
 
 // The CHROME: everything in a plot's window that is not the data.
-//
-// One function draws it for every plot, so a control the engine offers
-// is in the same place on all of them and a caller who adds controls
-// gets them arranged rather than appended. What varies is the
-// ARRANGEMENT, and that is a theme's decision — the same design system
-// that says how round a button is says whether a plot wears its
-// controls as a strip, a rail, or one button.
-//
-//   Bar   a row above the canvas. Cheapest to read, costs height.
-//   Rail  a column beside it. Costs width, which a wide plot has and
-//         a short one does not.
-//   Menu  one gear, everything behind it. Costs nothing but a click,
-//         which is what a figure meant to be LOOKED at wants.
-//
-// Every arrangement offers the same things, so which one is in force
-// changes where a reader looks and never what is there.
+// Bar spends height, Rail spends width, Menu spends a click; all
+// three offer the same things.
 
-// Refitting is worth a control only where it would change something:
-// a fixed axis ignores it, and a streaming one has already refitted
-// this frame. That leaves the two that fit ONCE and are then the
-// reader's — which is exactly when a reader who has panned away wants
-// the data back.
+// Only where a refit would change something: a fixed axis ignores
+// one, a streaming axis has already refitted this frame.
 bool fittable(const impl::AxisState &a) {
     return a.desc.fit == Fit::Data || a.desc.fit == Fit::Start;
 }
 
-// What this plot can BECOME. A reduction offered where the data is
-// costs one click; the same reduction written out costs an afternoon,
-// which is the difference between a question you ask and one you do
-// not bother to.
 Icon derived_icon(Derived k) {
     switch (k) {
     case Derived::Histogram:
@@ -344,10 +304,7 @@ Icon derived_icon(Derived k) {
     return Icon::Chart;
 }
 
-// Each entry drawn as what it would GIVE you. A menu of three
-// reductions is three lines of prose to read; the same three with
-// their shapes beside them is a glance, and the shape is the thing a
-// reader is choosing between.
+// Each entry drawn as what it would give you.
 void reduce_menu(impl::PlotState &p, const std::vector<DeriveOption> &options) {
     const float h = ImGui::GetTextLineHeight();
     for (const DeriveOption &o : options) {
@@ -361,14 +318,9 @@ void reduce_menu(impl::PlotState &p, const std::vector<DeriveOption> &options) {
     }
 }
 
-// The engine's own tools, and then the caller's. Both are ICONS, so
-// both fit a row and a column without either knowing which it is in.
-// `column` stacks them.
-//
-// Legend and grid are here rather than behind the gear because they
-// are the two a reader reaches for while looking, and a look-and-click
-// is not a look-and-two-clicks. What is left behind a gear is the
-// caller's full controls, which do not fit a strip of buttons.
+// Engine tools then the caller's, both ICONS so both fit a row and
+// a column. Legend and grid are here rather than behind the gear:
+// a look-and-click is not a look-and-two-clicks.
 void chrome_tools(impl::PlotState &p, const std::vector<DeriveOption> &options,
                   bool column) {
     const auto step = [column] {
@@ -411,17 +363,9 @@ void chrome_tools(impl::PlotState &p, const std::vector<DeriveOption> &options,
     }
 }
 
-// The joint view: one field with a distribution along each axis.
-//
-// Four cells of a 2x2, and the two link flags are what make it a
-// FIGURE rather than three plots side by side — LinkCols ties the x of
-// the column (the field and the strip above it) and LinkRows ties the
-// y of the row (the field and the strip beside it), so panning the
-// field moves both margins with it and they cannot come to disagree.
-//
-// The empty corner is drawn rather than skipped: a subplot iterates
-// its cells in order and a cell that does not open its plot puts every
-// later one in the wrong place.
+// LinkCols ties the column's x, LinkRows the row's y, which is what
+// makes this a figure rather than three plots. The empty corner is
+// DRAWN: a subplot iterates its cells in order.
 void joint_draw(impl::PlotState &p, ImVec2 canvas) {
     auto it = p.series.begin();
     impl::SeriesState &field = *it;
@@ -437,10 +381,8 @@ void joint_draw(impl::PlotState &p, ImVec2 canvas) {
     if (!ImPlot::BeginSubplots("##joint", 2, 2, canvas, flags, kRows, kCols))
         return;
 
-    // The margins take the CHROME's accent and the contours its text.
-    // Left alone they would pick the next colour out of the field's
-    // colormap, which is a colour that means a density in the panel
-    // beside them and means nothing here.
+    // Left alone they take the next colour out of the field's
+    // colormap, which means a density there and nothing here.
     const Theme &t = theme_of(p);
     const ImVec4 accent(t.accent[0], t.accent[1], t.accent[2], 1.0f);
     const ImVec4 ink(t.text[0], t.text[1], t.text[2], 0.85f);
@@ -475,10 +417,8 @@ void joint_draw(impl::PlotState &p, ImVec2 canvas) {
     if (ImPlot::BeginPlot("##field", ImVec2(), ImPlotFlags_NoLegend)) {
         setup_axis(ImAxis_X1, p.x, p.grid);
         setup_axis(ImAxis_Y1, p.y, p.grid);
-        // From the field's OWN rect, once. A heatmap does not offer its
-        // extent to an autofit — it is drawn into a rectangle it was
-        // given — so without this the axes stay on ImPlot's 0..1 and
-        // the picture is a corner of the data at ten times the size.
+        // A heatmap does not offer its extent to an autofit, so
+        // without this the axes stay on ImPlot's 0..1.
         ImPlot::SetupAxisLimits(ImAxis_X1, field.bounds.x0, field.bounds.x1,
                                 ImPlotCond_Once);
         ImPlot::SetupAxisLimits(ImAxis_Y1, field.bounds.y0, field.bounds.y1,
@@ -511,10 +451,8 @@ void joint_draw(impl::PlotState &p, ImVec2 canvas) {
     ImPlot::EndSubplots();
 }
 
-// Draws the chrome and returns what is left for the canvas. Every arm
-// ends with the cursor where the plot begins, and the size it returns
-// is the size the plot is given — so the trade each arrangement makes
-// is one number a check can read.
+// Returns what is left for the canvas — the trade each arrangement
+// makes, as one number a check can read.
 ImVec2 plot_chrome(impl::PlotState &p, float bar_w) {
     const std::vector<DeriveOption> options = derive_options(p);
     const bool has_controls = p.controls && !p.controls->widgets.empty();
@@ -542,10 +480,8 @@ ImVec2 plot_chrome(impl::PlotState &p, float bar_w) {
     }
 
     if (how == PlotChrome::Rail) {
-        // Icons only, so the rail is one button wide whatever the
-        // theme's text size — a column holding a word is a panel that
-        // has not admitted it yet. What does not fit a button goes
-        // behind the gear at its foot.
+        // Icons only: a column holding a word is a panel that has
+        // not admitted it yet.
         const float w =
             ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.x * 2.0f;
         ImGui::BeginChild("##rail", ImVec2(w, -1), ImGuiChildFlags_None);
@@ -605,10 +541,8 @@ void plot_draw(impl::PlotState &p) {
 
     const ImVec2 canvas = plot_chrome(p, bar_w);
 
-    // ONE function, ONE place the family is switched: the bracket.
-    // The window, the title namespace, the source pull, the dtype
-    // erasure and the list addressing are shared; only the library
-    // that opens the plot and draws the items differs.
+    // ONE place the family is switched: the bracket. Only the
+    // library that opens the plot differs.
     if (p.family == impl::Family::Plot3D) {
         if (mapped)
             ImPlot3D::PushColormap(map);
@@ -658,15 +592,8 @@ void plot_draw(impl::PlotState &p) {
                           p.legend ? 0 : ImPlotFlags_NoLegend)) {
         setup_axis(ImAxis_X1, p.x, p.grid);
         setup_axis(ImAxis_Y1, p.y, p.grid);
-        // A key ABOVE the axes, not floating on the data: an inside
-        // legend covers whatever it lands on, and the one place it can
-        // never be in the way is outside the frame.
-        //
-        // The FLAG on BeginPlot is what removes it, and this call only
-        // says where it goes when there is one. Guarding this call
-        // instead also works — both were measured — but that route
-        // reads as "do not configure it" where the flag reads as "there
-        // is none", and one of those is the thing being asked for.
+        // Above the axes, where it cannot cover the data. The FLAG on
+        // BeginPlot is what removes it; this only says where it goes.
         ImPlot::SetupLegend(ImPlotLocation_North,
                             ImPlotLegendFlags_Outside |
                                 ImPlotLegendFlags_Horizontal);

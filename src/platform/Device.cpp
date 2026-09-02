@@ -205,10 +205,8 @@ void app_quit(App *a) {
     if (!a)
         return;
     Platform &pl = a->platform;
-    // The drain, bounded, BEFORE the device-wide idle (which cannot be
-    // bounded and is where a hung queue would turn quit into a freeze):
-    // compute first — gpud's wait carries the same bound and throws its
-    // own sentence — then the graphics queue.
+    // Bounded, BEFORE the device-wide idle, which cannot be bounded
+    // and is where a hung queue would turn quit into a freeze.
     try {
         pl.gdev->submit();
         pl.gdev->wait(pl.gdev->submitted());

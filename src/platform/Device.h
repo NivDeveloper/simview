@@ -30,11 +30,8 @@ struct Platform {
     nvrhi::DeviceHandle ndev;           // nraw, or the validation wrapper
     std::unique_ptr<gpud::Device> gdev; // adopted; idles only its queue
     nvrhi::CommandListHandle cl;        // the frame's list, reused
-    // Frames-in-flight = 1: the last frame's graphics submission
-    // instance, waited at the top of the NEXT iteration, BEFORE the
-    // flips — what makes a slot leaving Shown safe for the producer to
-    // reuse, and what retires design.md's in-place-writer question.
-    // 0 = nothing in flight.
+    // Waited at the top of the NEXT iteration, BEFORE the flips: what
+    // makes a slot leaving Shown safe for the producer to reuse.
     std::uint64_t frame_instance = 0;
     std::uint64_t gfx_last = 0;       // the newest graphics submission
     std::uint64_t compute_waited = 0; // the compute-timeline value the
@@ -53,18 +50,12 @@ struct Platform {
 
 } // namespace impl
 
-// Every graphics-queue submit the frame makes goes through here: on a
-// one-queue driver the VkQueue is gpud's too, and vkQueueSubmit wants
-// external synchronization — the bracket is VkContext::queue_m, the
-// same lock gpud's AdoptDesc takes. Records the submission instance in
-// gfx_last, which is what the waits below name.
+// On a one-queue driver the VkQueue is gpud's too and vkQueueSubmit
+// wants external synchronization; the bracket is gpud's own lock.
 void platform_execute(impl::Platform &, nvrhi::ICommandList *);
 
-// Every host wait for the graphics queue: on NVRHI's own tracking
-// semaphore, bounded by SIMVIEW_WAIT_MS when set (unbounded otherwise).
-// Past the bound, or on a lost device, the sentence names `what` and
-// where both timelines stood, and the process ends (vk_fatal) — a hang
-// becomes a report.
+// Bounded by SIMVIEW_WAIT_MS when set, unbounded otherwise. Past the
+// bound, or on a lost device, the sentence names `what`.
 void platform_wait_graphics(impl::Platform &, std::uint64_t instance,
                             const char *what);
 

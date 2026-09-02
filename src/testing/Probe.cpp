@@ -1,16 +1,6 @@
-// The test surface, and nothing else.
-//
-// Everything here exists so a check can ask a question a consumer has
-// no business asking. It is compiled into its OWN archive
-// (simview_probe), built only under SIMVIEW_BUILD_TESTS and never
-// installed — so the boundary is a link boundary, not a naming
-// convention, and "is any of this in a release build?" is answered by
-// looking for a file rather than by trusting a header not to declare
-// it.
-//
-// The rule that keeps it honest: test-only exports live in sv::probe,
-// never sv::impl. One grep answers what exists only for tests, and
-// tools/lint.sh refuses the namespace anywhere but here and tests/.
+// Compiled into its OWN archive, built only under
+// SIMVIEW_BUILD_TESTS and never installed: the boundary is a LINK
+// boundary, not a naming convention.
 
 #include "../core/App.h"
 

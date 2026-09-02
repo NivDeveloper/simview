@@ -1,10 +1,5 @@
 #pragma once
 
-// Internal to src/ — a view: a scene rendered into a target, shown by
-// a panel that docks and tears out like any other. The target is
-// scene's; the title and the panel are ui's. This is the split that
-// lets the scene layer never learn what a panel is.
-
 #include "../scene/Target.h"
 #include "../world/World.h"
 

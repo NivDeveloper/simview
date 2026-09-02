@@ -1,12 +1,5 @@
 #pragma once
 
-// Internal to src/ — the window's images: an app-managed
-// VkSwapchainKHR whose images NVRHI wraps once and whose pacing is
-// IMMEDIATE when the driver offers it (FIFO otherwise) — the sim is
-// decoupled by design, so this choice paces only the frame loop.
-// Binary acquire/present semaphores ride NVRHI's queue wait/signal
-// lists, the donut-proven pattern.
-
 #include "Vk.h"
 
 #include <nvrhi/nvrhi.h>
@@ -52,10 +45,8 @@ bool swapchain_open(impl::Swapchain &, impl::VkContext &, nvrhi::IDevice *,
 // after the window is already up amounts to.
 bool swapchain_rebuild(impl::Swapchain &, nvrhi::IDevice *);
 
-// Acquire the next image and register its wait on NVRHI's graphics
-// queue. False = nothing to draw to this frame (minimized, or the
-// chain was just rebuilt after a resize) — benign, like a failed
-// Presenter::acquire always was.
+// False = nothing to draw to this frame (minimized, or just rebuilt
+// after a resize). Benign.
 bool swapchain_acquire(impl::Swapchain &, nvrhi::IDevice *,
                        void (*gfx_idle)(void *), void *user);
 

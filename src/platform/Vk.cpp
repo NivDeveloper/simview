@@ -1,9 +1,3 @@
-// The one TU that speaks the full Vulkan API. It owns the app's single
-// vulkan-hpp dynamic-dispatcher storage: NVRHI's static libraries
-// dispatch through this very global, which is why it must exist
-// exactly once in the app and be initialized before any NVRHI call
-// (measured the hard way in the adoption spike).
-
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -37,9 +31,7 @@ vvl_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     if (data->pMessageIdName &&
         std::strstr(data->pMessageIdName, "Loader Message"))
         return VK_FALSE;
-    // What the layer says about ITSELF is logged, never counted — the
-    // same one id the layer-settings filter names (Vk.cpp below), kept
-    // here too because 1.3.275 (Ubuntu 24.04) ignores that filter and
+    // Logged, never counted: 1.3.275 ignores the id filter and
     // aborted CI on its own "most likely a validation bug".
     const bool self_diagnosed =
         data->pMessageIdName &&
@@ -154,27 +146,14 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         flags |= vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
     }
 
-    // MoltenVK 1.3 turned Metal argument buffers on by default, and with
-    // a device-address compute ABI every dispatch then re-binds every
-    // addressable buffer: examples/ising fell from 9126 sweeps/s (1.2.11)
-    // to 2876 (1.3.0, 1.4.2 alike) and came back to 9798 with them off.
-    // The standard VK_EXT_layer_settings extension carries the setting
-    // (layer name "MoltenVK"); a driver that is not MoltenVK ignores a
-    // setting it does not own, and one without the extension never sees
-    // it. The renderer's own binding sets are small enough not to care;
-    // bindless (descriptorIndexing) would want them back ON.
-    // The settings and their payloads live to the end of this function:
-    // createInstance reads them through pointers.
+    // MoltenVK 1.3 defaults Metal argument buffers ON, and with a
+    // device-address compute ABI every dispatch then re-binds every
+    // addressable buffer — measured 4x on gpud's path.
     static const VkBool32 kFalse = VK_FALSE, kTrue = VK_TRUE;
     static const char *const kCallbackOnly = "VK_DBG_LAYER_ACTION_CALLBACK";
-    // Messages the layer emits about ITSELF, filtered by id with the
-    // reason on record — never a weaker gate. One entry:
-    // UNASSIGNED-VkSemaphore-state-timeout, VVL 1.3.275 (Ubuntu 24.04)
-    // on lavapipe: "Timeout waiting for timeline semaphore state to
-    // update. This is most likely a validation bug." with its own
-    // completed value already past the awaited one; not seen on
-    // 1.4.304. It still costs the layer's 10 s internal timeout when
-    // it happens.
+    // One entry: UNASSIGNED-VkSemaphore-state-timeout, VVL 1.3.275 on
+    // lavapipe, whose own completed value is already past the awaited
+    // one. Not seen on 1.4.304; costs the layer's 10 s timeout.
     static const char *const kSelfDiagnosed =
         "UNASSIGNED-VkSemaphore-state-timeout";
     std::vector<vk::LayerSettingEXT> settings;
@@ -190,10 +169,8 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     };
     setting("MoltenVK", "MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", kFalse);
 
-    // The Khronos validation layer, by SIMVIEW_VVL. Its features ride
-    // the same layer-settings chain; its messages come through OUR
-    // messenger (debug_action = callback), which is what makes an error
-    // an exit code rather than a line on stdout.
+    // Its messages come through OUR messenger, so the tally and the
+    // abort behave the same however they were turned on.
     c.vvl = parse_vvl(std::getenv("SIMVIEW_VVL"));
     c.validation = c.vvl.on;
     if (const char *w = std::getenv("SIMVIEW_WAIT_MS"); w && *w)
@@ -280,10 +257,8 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
     const auto devs = vk::Instance(c.instance).enumeratePhysicalDevices();
     if (devs.empty())
         return set_error("no Vulkan device"), false;
-    // Two ICDs for one GPU (a stale SDK beside homebrew) enumerate the
-    // same silicon twice at different API versions — rank rather than
-    // take devs[0]: meets-the-floor first, then discrete, then the
-    // highest apiVersion.
+    // Two ICDs for one GPU enumerate the same silicon twice at
+    // different API versions, so rank rather than take devs[0].
     vk::PhysicalDevice phys = devs[0];
     auto rank = [](vk::PhysicalDevice d) {
         const auto pr = d.getProperties();
@@ -347,10 +322,8 @@ bool vk_open_inner(impl::VkContext &c, bool windowed) {
         return set_error("no graphics queue family"), false;
     c.timestamps = fams[c.gfx_family].timestampValidBits > 0;
     c.timestamp_period = props.limits.timestampPeriod;
-    // Four samples is the one step worth taking: it removes the
-    // staircase on a silhouette, and beyond it the cost climbs faster
-    // than the picture improves. Both attachments must agree, so the
-    // two limits are intersected.
+    // Four samples: beyond it the cost climbs faster than the picture
+    // improves.
     const auto counts = props.limits.framebufferColorSampleCounts &
                         props.limits.framebufferDepthSampleCounts;
     c.samples = (counts & vk::SampleCountFlagBits::e4) ? 4u : 1u;

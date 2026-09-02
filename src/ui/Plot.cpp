@@ -1,11 +1,3 @@
-// The exported plot and panel functions. They share a file because
-// they share a machinery: each registers a ui callback that draws one
-// ImGui window, so both dock, tab and tear out for free.
-//
-// Every label crossing this wall is COPIED. A const char* from a
-// temporary std::string would otherwise be a dangling read at draw
-// time, days later, in a different thread of the frame.
-
 #include "PlotState.h"
 
 #include "../core/App.h"
@@ -111,10 +103,7 @@ Plot plot3d_create(App *a, const Plot3DDesc &d) {
     return Plot{&st};
 }
 
-// The family a kind belongs to. The family is on the PLOT, the kind
-// on the SERIES, and the two must agree — a 3D kind never reaches the
-// 2D emitter and vice versa, which is what lets each emitter cast its
-// slots without a second check.
+// Family is on the PLOT, kind on the SERIES, and the two must agree.
 Family family_of(SeriesKind k) {
     switch (k) {
     case SeriesKind::Line3:
@@ -147,12 +136,8 @@ bool plot_series(Plot p, const SeriesDesc &d) {
                                "kind — use app.Plot3D for three coordinates"),
                false;
     }
-    // Identity is the name — with ONE exception, and it is ImPlot's own
-    // idiom: ErrorBars DECORATE a series, and are bound to it by
-    // sharing its name, so the whiskers take the host's colour and
-    // legend entry. The exception is narrow on purpose: only ErrorBars
-    // may reuse a name, only a name that exists, and only on a kind
-    // whiskers can sit on.
+    // Identity is the name, except ErrorBars, which DECORATE a series
+    // by sharing its name and so take its colour and legend entry.
     for (const SeriesState &s : st->series)
         if (s.name == d.name) {
             const bool decorates =

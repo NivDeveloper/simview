@@ -1,14 +1,3 @@
-// The Cloud item, whole: state, push block, shaders, three ops rows,
-// and the exported functions. Same shape as the 2D Particles kind,
-// because it answers the same three doors — a caller's Update, a Sync
-// it pulls from, or a device buffer it re-resolves every frame.
-//
-// What differs is only what 3D forces: positions are xyz triples, the
-// radius is in world units, the mode picks which pass the item draws
-// in, and a cloud may carry a SECOND channel of per-point values for a
-// colormap to read. Both channels are one `Channel` with one set of
-// doors, because they are the same problem twice.
-
 #include "World.h"
 
 #include "../core/Error.h"
@@ -47,10 +36,7 @@ struct CloudState {
     Channel pos;
     Channel val; // the colour source; idle until a map wants one
     nvrhi::BindingSetHandle bset;
-    // What the set was built against. It is rebuilt when a buffer's
-    // IDENTITY changes and never on a schedule: a producer may hand
-    // over a different buffer at any frame, and a set built on the old
-    // one samples memory that has moved on.
+    // Rebuilt when a buffer's IDENTITY changes, never on a schedule.
     nvrhi::IBuffer *bound_pos = nullptr, *bound_val = nullptr;
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     float radius = 0.05f;
@@ -66,13 +52,8 @@ struct CloudState {
     // The centroid the sort keys on. One number for the whole cloud:
     // a cloud is one draw, so it takes one place in the order.
     impl::Vec3 centre{};
-    // Where the points are, in the units they were given in — the
-    // radius is added when the box is handed out, so changing the
-    // radius cannot leave a stale box behind.
-    //
-    // `known` is false for a cloud whose points live on the device and
-    // were never declared: the host has nothing to walk, and a box it
-    // invented would cull geometry it cannot see.
+    // The radius is added when the box is handed out, so changing it
+    // cannot leave a stale bound.
     impl::Vec3 lo{}, hi{};
     bool known = false;
     bool declared = false; // by the caller, for data the host never sees
@@ -222,10 +203,8 @@ void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
     channel_resolve(cs.pos, it.gpu, "cloud positions (external)");
     channel_resolve(cs.val, it.gpu, "cloud values (external)");
 
-    // Both tiers of the shape, because WHICH one is a question about
-    // the camera and the camera is not resolved yet. Making a mesh
-    // needs this command list; picking one needs the view; so the
-    // making happens here and the picking in submit.
+    // Both tiers: which one is a question about the camera, and
+    // making a mesh needs a command list only prepare has.
     if (cs.shape != 0 && it.owner) {
         cs.mesh = world_mesh(*it.owner, cs.shape, 0, cl);
         if (cs.shape != 2)
@@ -233,21 +212,7 @@ void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
     }
 }
 
-// A sphere is worth its triangles when it is big enough on screen for
-// them to show, and worth nothing when it is a speck — so the tier is
-// chosen from the projected RADIUS, not from how many there are. The
-// count still gets a say through a triangle budget, because the two
-// guard different failures: screen size alone would hand a fine mesh
-// to a crowd that cannot afford one, and a count alone gives a cheap
-// mesh to a dozen spheres filling the frame.
-//
-// The budget is measured (bench/instances.cpp: the fine tier runs at
-// about half a millisecond per million triangles here, so twenty
-// million is a frame's worth and the tier stops at some twenty
-// thousand large spheres). The pixel threshold is read off the mesh
-// instead: the cheap sphere carries twelve segments around its
-// silhouette, so at six pixels of radius a segment is about three
-// pixels — right where a facet starts to read as a facet.
+// The tier is chosen from SCREEN size, not from the count.
 constexpr float kFineRadiusPx = 6.0f;
 constexpr std::size_t kTriangleBudget = 20u << 20;
 
@@ -343,10 +308,7 @@ void draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     it.stats->triangles += it.triangles;
 }
 
-// The same item, drawn as geometry: one instance of a built-in shape
-// per point, in one indexed draw. Everything before the draw call is
-// the billboard path's — the same channels, the same colours, the
-// same lights — which is why a shape is a field and not a kind.
+// One instance of a built-in shape per point, in one indexed draw.
 void draw_mesh(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
                nvrhi::IFramebuffer *fb, const WorldView &view) {
     CloudState &cs = state_of(it);
@@ -413,10 +375,8 @@ void release(impl::WorldItem &it) {
     it.state = nullptr;
 }
 
-// One shader pair, three rows: the mode decides which pass a cloud
-// draws in and how it blends, and a row is where that decision lives
-// so the pipeline cache sees one (ops, pass) pair per appearance.
-// clang-format off: the tables read as tables
+// Three rows: the mode decides the pass and the blend, and a row is
+// where that decision lives so the pipeline cache keys on it.
 const nvrhi::BlendState::RenderTarget kOpaqueBlend =
     nvrhi::BlendState::RenderTarget();
 const nvrhi::BlendState::RenderTarget kAdditiveBlend =

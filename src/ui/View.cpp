@@ -1,8 +1,3 @@
-// A view: a scene whose target is a texture, shown by a panel. The
-// panel's draw lives in Context.cpp beside the other ImGui code; what
-// is here is the registration, which is what makes a view an item in
-// the UI's title namespace like a plot or a panel.
-
 #include "View.h"
 
 #include "../core/App.h"

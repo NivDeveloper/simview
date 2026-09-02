@@ -1,13 +1,7 @@
 #pragma once
 
-// Internal to src/ — the scene's state and its five functions. The
-// public Scene.h is the builder; this is what it drives.
-//
-// An item carries the GPU PAIR and a COUNTER BLOCK, never the App.
-// That is what lets a kind's file include nothing above this layer:
-// the upload needs the renderer device, the pull-model resolve needs
-// the compute device, the draw bumps a counter — and those are the
-// whole of what a kind asks of the world outside its own state.
+// An item carries the GPU PAIR and a COUNTER BLOCK, never the App,
+// which is what lets a kind's file include nothing above this layer.
 
 #include "../core/Error.h"
 #include "../render/Gpu.h"

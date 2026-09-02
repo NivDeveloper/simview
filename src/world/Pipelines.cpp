@@ -1,16 +1,3 @@
-// The world's pipeline cache. It knows nothing about any item: the
-// shaders, the binding shape, the blend and the topology arrive as
-// data on the WorldItemOps, and the depth state arrives from the pass
-// row. Keyed on (ops, pass, colour format, depth format) — the same
-// item drawn in two passes wants two depth states, and a target with a
-// depth attachment is not pipeline-compatible with one without.
-//
-// Separate from the 2D cache on purpose. That one is keyed (kind,
-// format) and says so, because every 2D target is one colour
-// attachment with no depth; widening it to carry a pass and a depth
-// format would spend that exactness for nothing, since the renderer
-// keys pipelines on the framebuffer anyway.
-
 #include "../core/Error.h"
 #include "Items.h"
 
@@ -27,10 +14,8 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
     const nvrhi::Format df = fbd.depthAttachment.texture
                                  ? fbd.depthAttachment.texture->getDesc().format
                                  : nvrhi::Format::UNKNOWN;
-    // The sample count is part of the key: a pipeline is compiled
-    // against a framebuffer's sample count and cannot be used with
-    // another, and two targets can agree on every format and differ
-    // only here.
+    // Part of the key: a pipeline compiled against one sample count
+    // cannot be used with another.
     const std::uint32_t ms = fb->getFramebufferInfo().sampleCount;
     for (const auto &e : cache)
         if (e.ops == ops && e.pass == pass && e.color == cf && e.depth == df &&
@@ -51,10 +36,8 @@ world_pipeline_for(const impl::Gpu &gpu, std::vector<WorldPipelineEntry> &cache,
                          ops->name),
                nullptr;
 
-    // One set, visible to both stages: the view block at binding 0, the
-    // item's own storage at binding 1 when it has any. The two cannot
-    // share a slot — the binding offsets are zeroed, so a constant
-    // buffer and a buffer view at 0 would land on the same descriptor.
+    // The two cannot share a slot: one set, view block at binding 0,
+    // the item's storage at binding 1.
     auto ld = nvrhi::BindingLayoutDesc()
                   .setVisibility(nvrhi::ShaderType::All)
                   .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0))

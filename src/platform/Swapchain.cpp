@@ -163,14 +163,9 @@ bool swapchain_open(impl::Swapchain &sc, impl::VkContext &vk,
                         ? nvrhi::Format::BGRA8_UNORM
                         : nvrhi::Format::RGBA8_UNORM;
 
-        // IMMEDIATE first — vklib's policy: the frame loop uncapped,
-        // tearing accepted in a sim viewer — EXCEPT on a portability
-        // driver. Measured on MoltenVK 1.3 (examples/ising, M4 Pro):
-        // IMMEDIATE spins in [CAMetalLayer nextDrawable] inside
-        // vkQueueSubmit and the compute queue starves — 629 sweeps/s
-        // against 3367 under FIFO, at 60 frames/s either way. FIFO is
-        // the mandated fallback everywhere. SIMVIEW_PRESENT=fifo|immediate
-        // overrides, for measuring.
+        // IMMEDIATE except on a portability driver: measured on
+        // MoltenVK 1.3 it spins in nextDrawable and starves compute,
+        // 629 sweeps/s against 3367 under FIFO. SIMVIEW_PRESENT overrides.
         bool want_immediate = true;
         for (const auto &e : vk.device_extensions)
             if (e == "VK_KHR_portability_subset")
