@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -299,7 +300,7 @@ ImPlotColormap colormap_of(const impl::PlotState &p) {
 // every eighth window leaves every title bar reachable, which is all a
 // default has to do — the layout the user drags into place is saved and
 // wins from then on.
-void place_window(int slot, float width, float height) {
+void place_cascade(int slot, float width, float height) {
     const int col = slot / 6, row = slot % 6;
     // The column step follows the window's own width, or the second
     // column lands on the first and the cascade has bought nothing.
@@ -308,6 +309,53 @@ void place_window(int slot, float width, float height) {
                26.0f + float(row) * 30.0f),
         ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_FirstUseEver);
+}
+
+// A tile per window, sized from how many there ARE and how the viewport
+// is shaped. The column count is chosen so a tile comes out near
+// square: a grid of 15 laid 1x15 is worse than the cascade it replaced.
+//
+// Nothing about this is clever and it does not need to be — it is a
+// first-use default, and the first thing a reader does with a layout
+// they dislike is drag it.
+void place_grid(int slot, int total, float min_h) {
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    const float pad = 12.0f;
+    const float w = vp->WorkSize.x - pad, h = vp->WorkSize.y - pad;
+    if (total < 1 || w < 100.0f || h < 100.0f)
+        return;
+
+    int cols = int(std::ceil(std::sqrt(double(total) * double(w) / double(h))));
+    cols = std::clamp(cols, 1, total);
+    int rows = (total + cols - 1) / cols;
+    // Then narrowed while it costs no row: nine tiles want 3x3 and not
+    // 4x3 with a column of one, and the aspect that chose 4 does not
+    // know that a ragged row is the thing a reader notices.
+    while (cols > 1 && (total + cols - 2) / (cols - 1) == rows)
+        --cols;
+
+    const float tw = w / float(cols) - pad;
+    const float th = std::max(min_h, h / float(rows) - pad);
+    const int col = slot % cols, row = slot / cols;
+
+    ImGui::SetNextWindowPos(
+        ImVec2(vp->WorkPos.x + pad + float(col) * (tw + pad),
+               vp->WorkPos.y + pad + float(row) * (th + pad)),
+        ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(tw, th), ImGuiCond_FirstUseEver);
+}
+
+// Where a window lands before the layout file has an opinion. ImGui
+// puts every new window in the same place, so an app that opens nine
+// plots opens one plot with eight underneath it.
+void place_window(impl::App *app, int slot, float width, float height) {
+    if (app && app->layout == Layout::Grid)
+        // A FLOOR, not the window's preferred size: passing 360 for a
+        // plot forces three rows of 360 into a 720-tall viewport and
+        // the last row lands off screen.
+        place_grid(slot, app->windows, 140.0f);
+    else
+        place_cascade(slot, width, height);
 }
 
 // The CHROME: everything in a plot's window that is not the data.
@@ -492,7 +540,7 @@ void plot_draw(impl::PlotState &p) {
     if (closable && !p.open)
         return;
 
-    place_window(p.slot, 520.0f, 360.0f);
+    place_window(p.app, p.slot, 520.0f, 360.0f);
     // A collapsed panel asks its sources nothing.
     bool keep = true;
     if (!ImGui::Begin(p.title.c_str(), closable ? &keep : nullptr)) {
@@ -904,7 +952,7 @@ void panel_draw(impl::PanelState &p) {
     // Width only: a label sits to the RIGHT of its control, so an
     // auto-fitted panel sizes itself to the widest CONTROL and clips
     // every name. The height stays auto.
-    place_window(p.slot, 400.0f, 0.0f);
+    place_window(p.app, p.slot, 400.0f, 0.0f);
     if (!ImGui::Begin(p.title.c_str())) {
         ImGui::End();
         return;

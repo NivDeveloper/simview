@@ -202,6 +202,7 @@ Panel panel_create(App *a, const char *title) {
     st.title = title;
     st.mono = a->ui.mono;
     st.slot = a->windows++;
+    st.app = a;
     a->ui.cbs.push_front(
         {[](void *u) { panel_draw(*static_cast<PanelState *>(u)); }, &st});
     return Panel{&st};

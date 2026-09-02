@@ -143,6 +143,7 @@ struct PanelState {
     std::list<WidgetState> widgets;
     std::vector<Group> open;
     int ids = 0;
+    App *app = nullptr;
 };
 
 } // namespace impl

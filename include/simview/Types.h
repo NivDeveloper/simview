@@ -15,6 +15,8 @@ enum class Scale : std::uint8_t { Linear, Log };
 
 enum class PlotChrome : std::uint8_t { Bar, Rail, Menu };
 
+enum class Layout : std::uint8_t { Cascade, Grid };
+
 enum class Icon : std::uint8_t {
     Home,
     Fit,

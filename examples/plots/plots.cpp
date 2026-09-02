@@ -22,6 +22,11 @@ int main() {
     if (!app)
         return 1;
 
+    // Fifteen plots cascaded is one plot with fourteen underneath it.
+    // Only a FIRST-USE default: drag one anywhere and the layout file
+    // wins from then on.
+    app.Layout(sv::Layout::Grid);
+
     // A shared x axis, a sine, its envelope band, and a noisy copy.
     std::vector<float> x(N), s(N), lo(N), hi(N), noisy(N), err(N), bits(N);
     for (std::size_t i = 0; i < N; ++i) {

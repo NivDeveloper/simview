@@ -45,6 +45,10 @@ struct App {
     // from a panel callback is set MID-FRAME, where a style change
     // would resize controls already drawn — so it lands at the top of
     // the next frame instead.
+    // How a window that has never been placed finds a spot. Only ever
+    // a FIRST-USE default: a layout somebody dragged into place is
+    // saved and wins from then on, whichever of these put it there.
+    sv::Layout layout = sv::Layout::Cascade;
     Theme theme{};
     Theme pending{};
     bool theme_changed = false;
