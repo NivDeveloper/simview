@@ -21,7 +21,7 @@ set(GPUD_BUILD_TESTS OFF)
 add_subdirectory(${SIMVIEW_ROOT} simview)
 FetchContent_Declare(tensor
     GIT_REPOSITORY https://github.com/NivDeveloper/tensor-dev.git
-    GIT_TAG        d21d639cb375fea170a432b47cec8f5befa0cf57)
+    GIT_TAG        4a27a3c3e5971c393759363ae5ac8d45b6912397)
 FetchContent_MakeAvailable(tensor)
 
 add_executable(bgk bgk.cpp)

@@ -57,62 +57,72 @@ namespace {
 // every expression below goes through it.
 gpud::Device *device = nullptr;
 
-auto go(const auto &e) { return eval(*device, e); }
+// Every declaration whose type is Dest<…> evaluates on the ambient device
+// (use_device, armed per thread). One alias switches the whole example.
+template <typename T> using Dest = Gpu<T>;
+
+using Ones = Tensor<f32, N>;
 
 // The conserved quantities per cell, and the equilibrium they imply.
 struct Cell {
-    Grid pop, inv, E, T, mu;
-    GridV p;
+    Dest<Grid> pop, inv, E, T, mu;
+    Dest<GridV> p;
 };
 
-Cells cells(const Vecs &pos) {
+Dest<Cells> cells(const Vecs &pos) {
     auto a = Fmin(Fmax(bins<C>(pos, -0.5f, 0.5f), 0.0f), f32(C - 1));
-    return go((a[i, 0_c] * f32(C) + a[i, 1_c]) * f32(C) + a[i, 2_c]);
+    Dest<Cells> out = (a[i, 0_c] * f32(C) + a[i, 1_c]) * f32(C) + a[i, 2_c];
+    return out;
 }
 
 Cell measure(const auto &at, const Vecs &mom) {
-    auto sq = go(fold<1>(mom * mom));
-    auto count = go(scatter<Sum, i>(at, 1.0f));
-    auto inv = go(1.0f / Fmax(count, 1.0f));
-    auto p = go(scatter<Sum, i>(at, mom[i, n]));
-    auto E = go(scatter<Sum, i>(at, sq[i]));
-    auto p2 = go(fold<1>(p * p));
+    const Dest<Ones> sq = fold<1>(mom * mom);
+    Dest<Grid> count = scatter<Sum, i>(at, 1.0f);
+    Dest<Grid> inv = 1.0f / Fmax(count, 1.0f);
+    Dest<GridV> p = scatter<Sum, i>(at, mom[i, n]);
+    Dest<Grid> E = scatter<Sum, i>(at, sq[i]);
+    const Dest<Grid> p2 = fold<1>(p * p);
 
-    auto T = go(Fmax((E - p2 * inv) * inv * (1.0f / 3.0f), 1e-9f));
-    auto mu = go(T * Log(Fmax(count, 1.0f) * f32(CC) / Pow(tpi * T, 1.5f)));
+    Dest<Grid> T = Fmax((E - p2 * inv) * inv * (1.0f / 3.0f), 1e-9f);
+    Dest<Grid> mu = T * Log(Fmax(count, 1.0f) * f32(CC) / Pow(tpi * T, 1.5f));
 
     return {std::move(count), std::move(inv), std::move(E),
             std::move(T),     std::move(mu),  std::move(p)};
 }
 
-Vecs resample(const auto &at, const Cell &c, const Vecs &mom,
-              const Tensor<f32, B> &centre, f32 alpha) {
+Dest<Vecs> resample(const auto &at, const Cell &c, const Vecs &mom,
+                    const Tensor<f32, B> &centre, f32 alpha) {
     // Momenta per cell
-    auto hist = go(scatter<i>(at, clamp(bins<B>(mom[i, n], -vmax, vmax)), 1u));
+    const Dest<Tensor<unsigned, CC, B, 3>> hist =
+        scatter<i>(at, clamp(bins<B>(mom[i, n], -vmax, vmax)), 1u);
 
     // The Maxwellian for these cell parameters, centred on the drift.
     // The cell index leads: free indices take first-appearance order.
-    auto off = go(c.p[j, n] * -c.inv[j] + centre[m]);
-    auto heat = go(Exp(off[j, n, m] * off[j, n, m] * -0.5f / c.T[j]));
-    auto nrm = go(fold<2>(heat));
+    const Dest<Tensor<f32, CC, 3, B>> off = c.p[j, n] * -c.inv[j] + centre[m];
+    const Dest<Tensor<f32, CC, 3, B>> heat =
+        Exp(off[j, n, m] * off[j, n, m] * -0.5f / c.T[j]);
+    const Dest<Tensor<f32, CC, 3>> nrm = fold<2>(heat);
 
     // f(t+dt) = f_eq + (f - f_eq)·exp(-dt/tau)
-    auto relaxed = go((1.0f - alpha) * c.pop[j] * heat[j, n, m] / nrm[j, n] +
-                      hist[j, m, n] * alpha);
+    const Dest<Tensor<f32, CC, 3, B>> relaxed =
+        (1.0f - alpha) * c.pop[j] * heat[j, n, m] / nrm[j, n] +
+        hist[j, m, n] * alpha;
 
     // The CDF is the running sum of the relaxed histogram along its bins.
-    auto cdf = go(scan<ops::Add, m>(relaxed[j, n, m]) * c.inv[j]);
+    const Dest<Tensor<f32, CC, 3, B>> cdf =
+        scan<ops::Add, m>(relaxed[j, n, m]) * c.inv[j];
 
-    auto u1 = go(rng::Uniform<f32, N, 3>());
-    auto hit = go(fold<m>(1.0f * (u1[i, n] > cdf[at, n, m])));
-    return go(-vmax + (hit + rng::Uniform<f32, N, 3>()) * dv);
+    const Dest<Vecs> u1 = rng::Uniform<f32, N, 3>();
+    const Dest<Vecs> hit = fold<m>(1.0f * (u1[i, n] > cdf[at, n, m]));
+    Dest<Vecs> out = -vmax + (hit + rng::Uniform<f32, N, 3>()) * dv;
+    return out;
 }
 
-void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
-          f32 alpha) {
-    auto moved = go(Pos + Mom * dt);
+void step(Dest<Vecs> &Pos, Dest<Vecs> &Mom, const Tensor<f32, B> &centre,
+          f32 dt, f32 alpha) {
+    const Dest<Vecs> moved = Pos + Mom * dt;
     // periodic boundary conditions
-    Pos = go(moved - Floor(moved + 0.5f));
+    Pos = moved - Floor(moved + 0.5f);
 
     auto cid = cells(Pos);
     // The cell each particle deposits into and reads back from: built
@@ -124,26 +134,29 @@ void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
 
     // Shift and scale q -> b·q + a, fixed by the cell's own totals:
     // a = (p - b·Q)/n, b = sqrt((E - |p|²/n) / (Q2 - |Q|²/n)).
-    auto qsq = go(fold<1>(q * q));
-    auto Q = go(scatter<Sum, i>(at, q[i, n]));
-    auto Q2 = go(scatter<Sum, i>(at, qsq[i]));
-    auto p2 = go(fold<1>(c.p * c.p));
-    auto q2 = go(fold<1>(Q * Q));
-    auto b =
-        go(Sqrt(Fmax(c.E - p2 * c.inv, 0.0f) / Fmax(Q2 - q2 * c.inv, 1e-9f)));
-    auto shift = go((c.p[j, n] - b[j] * Q[j, n]) * c.inv[j]);
+    const Dest<Ones> qsq = fold<1>(q * q);
+    const Dest<GridV> Q = scatter<Sum, i>(at, q[i, n]);
+    const Dest<Grid> Q2 = scatter<Sum, i>(at, qsq[i]);
+    const Dest<Grid> p2 = fold<1>(c.p * c.p);
+    const Dest<Grid> q2 = fold<1>(Q * Q);
+    const Dest<Grid> b =
+        Sqrt(Fmax(c.E - p2 * c.inv, 0.0f) / Fmax(Q2 - q2 * c.inv, 1e-9f));
+    const Dest<GridV> shift = (c.p[j, n] - b[j] * Q[j, n]) * c.inv[j];
 
     // Under two particles there is nothing to resample from.
-    auto live = go(1.0f * (c.pop[at] >= 2.0f));
-    auto next = go(b[at] * q[i, n] + shift[at, n]);
-    Mom = go(Mom[i, n] + live[i] * (next[i, n] - Mom[i, n]));
+    const Dest<Ones> live = 1.0f * (c.pop[at] >= 2.0f);
+    const Dest<Vecs> next = b[at] * q[i, n] + shift[at, n];
+    Mom = Mom[i, n] + live[i] * (next[i, n] - Mom[i, n]);
 }
 
 // The bin centres the histogram and the Maxwellian share.
-Tensor<f32, B> bin_centres() { return eval(stats::Centres<B>(-vmax, vmax)); }
+Tensor<f32, B> bin_centres() {
+    Tensor<f32, B> out = stats::Centres<B>(-vmax, vmax);
+    return out;
+}
 
 struct State {
-    Vecs Pos, Mom;
+    Dest<Vecs> Pos, Mom;
 };
 
 // What a restart is built from. `offset` is how far off-axis the
@@ -159,19 +172,19 @@ struct Setup {
 // the caller seeds first if it wants a particular run.
 State initial_state(const Setup &su) {
     constexpr size_t half = N / 2;
-    auto beam = eval(1.0f * (gen::Iota<N>(0.0f) < f32(half)));
-    auto sign = eval(2.0f * beam - 1.0f);
-    auto rad = eval(su.radius * Sqrt(rng::Uniform<f32, N>())); // by area
-    auto ang = eval(tpi * rng::Uniform<f32, N>());
+    const Ones beam = 1.0f * (gen::Iota<N>(0.0f) < f32(half));
+    const Ones sign = 2.0f * beam - 1.0f;
+    const Ones rad = su.radius * Sqrt(rng::Uniform<f32, N>()); // by area
+    const Ones ang = tpi * rng::Uniform<f32, N>();
 
-    auto x = eval(-0.25f * sign + 0.002f * rng::Normal<f32, N>());
-    auto y = eval(su.offset * (1.0f - beam) + rad * Cos(ang));
-    auto z = eval(rad * Sin(ang));
-    auto vx = eval(su.speed * sign + su.spread * rng::Normal<f32, N>());
-    auto vy = eval(su.spread * rng::Normal<f32, N>());
-    auto vz = eval(su.spread * rng::Normal<f32, N>());
+    const Ones x = -0.25f * sign + 0.002f * rng::Normal<f32, N>();
+    const Ones y = su.offset * (1.0f - beam) + rad * Cos(ang);
+    const Ones z = rad * Sin(ang);
+    const Ones vx = su.speed * sign + su.spread * rng::Normal<f32, N>();
+    const Ones vy = su.spread * rng::Normal<f32, N>();
+    const Ones vz = su.spread * rng::Normal<f32, N>();
 
-    return {.Pos = Vecs([&](idx q, idx d) {
+    return {.Pos = Dest<Vecs>([&](idx q, idx d) {
                 switch (d) {
                 case 0:
                     return x[q];
@@ -181,7 +194,7 @@ State initial_state(const Setup &su) {
                     return z[q];
                 }
             }),
-            .Mom = Vecs([&](idx q, idx d) {
+            .Mom = Dest<Vecs>([&](idx q, idx d) {
                 switch (d) {
                 case 0:
                     return vx[q];
@@ -209,7 +222,7 @@ struct Plane {
 void measure_plane(Plane &plane, const Vecs &mom) {
     auto bx = clamp(bins<PB>(mom[i, 0_c], -vmax, vmax));
     auto by = clamp(bins<PB>(mom[i, 1_c], -vmax, vmax));
-    const auto counted = go(scatter<Sum, i>(bx, by, 1.0f));
+    const Dest<Tensor<f32, PB, PB>> counted = scatter<Sum, i>(bx, by, 1.0f);
 
     std::lock_guard lk(plane.m);
     for (idx py = 0; py < PB; ++py)
@@ -217,8 +230,10 @@ void measure_plane(Plane &plane, const Vecs &mom) {
             plane.f[py * PB + px] = counted[px, py] * (1.0f / f32(N));
 }
 
+// Sync holds HOST buffers the cloud draws, so this is a real
+// device-to-host crossing and stays an explicit eval.
 void publish(sv::Sync<Vecs> &s, const Vecs &v) {
-    s.Next() = go(v[i, n]);
+    s.Next() = eval(*device, v[i, n]);
     s.Publish();
 }
 
@@ -231,6 +246,10 @@ int main() {
         return 1;
 
     device = &sv::Device(app);
+    // The ambient device is per THREAD. This one builds the start state;
+    // the executor's arms itself on its first tick. Every Dest<…> must be
+    // destroyed before app, which owns the device.
+    use_device(*device);
 
     rng::Seed(20260814);
     auto centre = bin_centres();
@@ -249,7 +268,7 @@ int main() {
     };
 
     auto start = initial_state(setup_now());
-    Vecs Pos = std::move(start.Pos), Mom = std::move(start.Mom);
+    Dest<Vecs> Pos = std::move(start.Pos), Mom = std::move(start.Mom);
 
     // Positions place the particles; momenta colour them, so the gas
     // reads as fast and slow rather than as a shape. Both resident.
@@ -289,6 +308,9 @@ int main() {
     std::uint64_t since = 0;
 
     sv::Executor sim([&](const sv::Tick &t) {
+        static thread_local const bool armed = (use_device(*device), true);
+        (void)armed;
+
         const f32 tau = tau_now.load(std::memory_order_relaxed);
         const f32 h = dt_now.load(std::memory_order_relaxed);
         step(Pos, Mom, centre, h, std::exp(-h / tau));
@@ -297,7 +319,8 @@ int main() {
 
         if (++since >= 20) {
             since = 0;
-            auto sp = go(fold<ops::Welford, 0>(Mom));
+            const Dest<Tensor<ops::Welford::result<f32>, 3>> sp =
+                fold<ops::Welford, 0>(Mom);
             sig_x.store(std::sqrt(sp[0].var), std::memory_order_relaxed);
             sig_y.store(std::sqrt(sp[1].var), std::memory_order_relaxed);
             sig_z.store(std::sqrt(sp[2].var), std::memory_order_relaxed);
@@ -360,7 +383,7 @@ int main() {
     std::vector<float> plane_x(PB * PB), plane_y(PB * PB);
     std::vector<float> plane_z(PB * PB, 0.0f);
 
-    const auto edge = eval(stats::Centres<PB>(-vmax, vmax));
+    const Tensor<f32, PB> edge = stats::Centres<PB>(-vmax, vmax);
     for (idx py = 0; py < PB; ++py)
         for (idx px = 0; px < PB; ++px) {
             plane_x[py * PB + px] = edge[px];

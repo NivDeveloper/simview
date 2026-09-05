@@ -54,7 +54,10 @@ using Ones = Tensor<f32, N>;
 namespace {
 
 gpud::Device *device = nullptr;
-auto go(const auto &e) { return eval(*device, e); }
+
+// Every declaration whose type is Dest<…> evaluates on the ambient device
+// (use_device, armed per thread below).
+template <typename T> using Dest = Gpu<T>;
 
 // The three unit vectors, so a per-component formula can be written as
 // a sum rather than a branch on the component index.
@@ -75,26 +78,32 @@ struct Basis {
 // One expression means one pass and one dispatch for the whole
 // velocity field; a stage that evaluated the six trig terms separately
 // would be ten.
-Vecs velocity(const Vecs &P, const Basis &e, f32 A, f32 B, f32 C) {
-    return go((A * Sin(P[i, 2_c]) + C * Cos(P[i, 1_c])) * e.x[n] +
-              (B * Sin(P[i, 0_c]) + A * Cos(P[i, 2_c])) * e.y[n] +
-              (C * Sin(P[i, 1_c]) + B * Cos(P[i, 0_c])) * e.z[n]);
+Dest<Vecs> velocity(const Vecs &P, const Basis &e, f32 A, f32 B, f32 C) {
+    Dest<Vecs> out = (A * Sin(P[i, 2_c]) + C * Cos(P[i, 1_c])) * e.x[n] +
+                     (B * Sin(P[i, 0_c]) + A * Cos(P[i, 2_c])) * e.y[n] +
+                     (C * Sin(P[i, 1_c]) + B * Cos(P[i, 0_c])) * e.z[n];
+    return out;
 }
 
 // Classical RK4. The flow is smooth and the step is well inside its
 // stability limit, so the integrator is not the interesting part — it
 // is here so the mixing shown is the flow's and not the scheme's.
-Vecs advance(const Vecs &P, const Basis &e, f32 h, f32 A, f32 B, f32 C) {
-    auto k1 = velocity(P, e, A, B, C);
-    auto k2 = velocity(go(P[i, n] + (0.5f * h) * k1[i, n]), e, A, B, C);
-    auto k3 = velocity(go(P[i, n] + (0.5f * h) * k2[i, n]), e, A, B, C);
-    auto k4 = velocity(go(P[i, n] + h * k3[i, n]), e, A, B, C);
+Dest<Vecs> advance(const Vecs &P, const Basis &e, f32 h, f32 A, f32 B, f32 C) {
+    const Dest<Vecs> k1 = velocity(P, e, A, B, C);
+    const Dest<Vecs> p2 = P[i, n] + (0.5f * h) * k1[i, n];
+    const Dest<Vecs> k2 = velocity(p2, e, A, B, C);
+    const Dest<Vecs> p3 = P[i, n] + (0.5f * h) * k2[i, n];
+    const Dest<Vecs> k3 = velocity(p3, e, A, B, C);
+    const Dest<Vecs> p4 = P[i, n] + h * k3[i, n];
+    const Dest<Vecs> k4 = velocity(p4, e, A, B, C);
 
-    auto moved = go(P[i, n] + (h / 6.0f) * (k1[i, n] + 2.0f * k2[i, n] +
-                                            2.0f * k3[i, n] + k4[i, n]));
+    const Dest<Vecs> moved =
+        P[i, n] +
+        (h / 6.0f) * (k1[i, n] + 2.0f * k2[i, n] + 2.0f * k3[i, n] + k4[i, n]);
     // Periodic: the flow repeats every 2*pi, so a tracer leaving one
     // face is the same tracer entering the opposite one.
-    return go(moved - box * Floor(moved / box));
+    Dest<Vecs> out = moved - box * Floor(moved / box);
+    return out;
 }
 
 } // namespace
@@ -105,6 +114,10 @@ int main() {
     if (!app)
         return 1;
     device = &sv::Device(app);
+    // The ambient device is per THREAD. This one publishes the initial
+    // frames; the executor's thread arms itself on its first tick. Every
+    // Dest<…> must be destroyed before app, which owns the device.
+    use_device(*device);
     rng::Seed(20260901);
     const Basis basis;
 
@@ -114,20 +127,22 @@ int main() {
     // is the whole picture. Uniform by VOLUME — cbrt of a uniform, not
     // a uniform radius, or the middle is far denser than the shell.
     constexpr f32 R = 1.15f;
-    auto dir = eval(rng::Normal<f32, N, 3>());
-    auto len = eval(Sqrt(Fmax(fold<1>(dir * dir), 1e-20f)));
-    auto rad = eval(R * Pow(rng::Uniform<f32, N>(), 1.0f / 3.0f));
-    Vecs offset = eval(dir[i, n] / len[i] * rad[i]);
-    Vecs P = eval(0.5f * box + offset[i, n]);
+    const Vecs dir = rng::Normal<f32, N, 3>();
+    const Ones len = Sqrt(Fmax(fold<1>(dir * dir), 1e-20f));
+    const Ones rad = R * Pow(rng::Uniform<f32, N>(), 1.0f / 3.0f);
+    const Vecs offset = dir[i, n] / len[i] * rad[i];
+    Vecs P = 0.5f * box + offset[i, n];
 
     // The material tag: where in the ball each tracer began. It never
     // changes, so folding is visible as the colours laminate.
-    Vecs origin = eval(offset[i, n] * (1.0f / R));
+    const Vecs origin = offset[i, n] * (1.0f / R);
 
     sv::Sync<Vecs> pos, tag;
-    pos.Next() = go(P[i, n]);
+    // Sync holds HOST buffers the cloud draws, so publishing a frame is a
+    // real device-to-host crossing and stays an explicit eval.
+    pos.Next() = eval(*device, P[i, n]);
     pos.Publish();
-    tag.Next() = go(origin[i, n]);
+    tag.Next() = eval(*device, origin[i, n]);
     tag.Publish();
 
     // One const read to sync: the compute backend batches eagerly, so
@@ -156,16 +171,20 @@ int main() {
     std::atomic<float> A_now{A}, B_now{B}, C_now{C}, h_now{h};
 
     sv::Executor sim([&](const sv::Tick &) {
+        // The ambient device is per THREAD: the executor's arms itself once.
+        static thread_local const bool armed = (use_device(*device), true);
+        (void)armed;
+
         P = advance(P, basis, h_now.load(std::memory_order_relaxed),
                     A_now.load(std::memory_order_relaxed),
                     B_now.load(std::memory_order_relaxed),
                     C_now.load(std::memory_order_relaxed));
-        pos.Next() = go(P[i, n]);
+        pos.Next() = eval(*device, P[i, n]);
         pos.Publish();
     });
     sim.OnRestart([&] {
-        P = eval(0.5f * box + offset[i, n]);
-        pos.Next() = go(P[i, n]);
+        P = 0.5f * box + offset[i, n];
+        pos.Next() = eval(*device, P[i, n]);
         pos.Publish();
     });
     sim.SetDt(double(h));

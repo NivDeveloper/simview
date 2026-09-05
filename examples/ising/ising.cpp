@@ -34,46 +34,49 @@ constexpr int side = L;
 using Spins = tensor::Tensor<float, L, L>;
 using Mask = tensor::Tensor<int, L, L>;
 
-Mask checkerboard(gpud::Device &sdev) {
+tensor::Gpu<Mask> checkerboard() {
     using namespace tensor;
     auto k = gen::Iota<L, L>(0);
-    return eval(sdev, (k / side + k % side) % 2);
+    Gpu<Mask> out = (k / side + k % side) % 2;
+    return out;
 }
 
 // A random +-1 lattice: a fresh uniform draw, thresholded.
-Spins random_spins(gpud::Device &sdev) {
+tensor::Gpu<Spins> random_spins() {
     using namespace tensor;
     using namespace tensor::indices;
-    auto u = eval(sdev, rng::Uniform<float, L, L>());
-    return eval(sdev, where(u[i, j] < 0.5f, -1.0f, 1.0f));
+    const Gpu<Spins> u = rng::Uniform<float, L, L>();
+    Gpu<Spins> out = where(u[i, j] < 0.5f, -1.0f, 1.0f);
+    return out;
 }
 
 // The neighbour sum, materialized: each mention of a leaf is a slot in
 // the emitted program, and the fully fused update would overflow the
 // budget — the same reason xy-gpu materializes its stencils.
-Spins neighbours(gpud::Device &sdev, const Spins &s) {
+tensor::Gpu<Spins> neighbours(const Spins &s) {
     using namespace tensor;
     using namespace tensor::indices;
-    return eval(sdev, s[wrap(i + 1_c), j] + s[wrap(i - 1_c), j] +
-                          s[i, wrap(j + 1_c)] + s[i, wrap(j - 1_c)]);
+    Gpu<Spins> out = s[wrap(i + 1_c), j] + s[wrap(i - 1_c), j] +
+                     s[i, wrap(j + 1_c)] + s[i, wrap(j - 1_c)];
+    return out;
 }
 
 // One colour of a Metropolis sweep: a fused accept-or-keep over the
 // whole lattice, reading one lattice and producing the next.
-Spins pass(gpud::Device &sdev, const Spins &s, const Mask &colour, int col,
-           float T) {
+tensor::Gpu<Spins> pass(const Spins &s, const Mask &colour, int col, float T) {
     using namespace tensor;
     using namespace tensor::indices;
-    auto u = eval(sdev, rng::Uniform<float, L, L>());
-    auto nn = neighbours(sdev, s);
+    const Gpu<Spins> u = rng::Uniform<float, L, L>();
+    const Gpu<Spins> nn = neighbours(s);
     auto de = 2.0f * s[i, j] * nn[i, j];
     auto acc = (colour[i, j] == col) && (u[i, j] < math::Exp(de * (-1.0f / T)));
-    return eval(sdev, where(acc, -s[i, j], s[i, j]));
+    Gpu<Spins> out = where(acc, -s[i, j], s[i, j]);
+    return out;
 }
 
 // One checkerboard sweep: both colours.
-Spins sweep(gpud::Device &sdev, const Spins &s, const Mask &colour, float T) {
-    return pass(sdev, pass(sdev, s, colour, 0, T), colour, 1, T);
+tensor::Gpu<Spins> sweep(const Spins &s, const Mask &colour, float T) {
+    return pass(pass(s, colour, 0, T), colour, 1, T);
 }
 
 int main() {
@@ -82,13 +85,16 @@ int main() {
     if (!app)
         return 1;
 
-    gpud::Device &sdev = sv::Device(app);
-    Mask colour = checkerboard(sdev);
+    // The device is BORROWED and ambient per thread: this one builds the
+    // colour mask and the initial lattice, and the sim thread arms itself
+    // below. Every Gpu<…> must be destroyed before app, which owns it.
+    tensor::use_device(sv::Device(app));
+    const tensor::Gpu<Mask> colour = checkerboard();
 
     // The state: three resident lattices the sim and the frame share
     // by role. Publish the initial condition before anyone reads.
     sv::Sync<Spins> spins;
-    spins.Publish(random_spins(sdev));
+    spins.Publish(random_spins());
 
     // The slider moves a plain float on the main thread; the frame
     // publishes it to the atomic the sim thread reads.
@@ -105,12 +111,18 @@ int main() {
     // tick is one sweep, evaluated on the device from the lattice the
     // sim published last.
     sv::Executor sim([&](const sv::Tick &) {
-        spins.Publish(sweep(sdev, spins.Current(), colour,
-                            T.load(std::memory_order_relaxed)));
+        // The ambient device is per THREAD, so the executor's arms itself
+        // once, on its first tick.
+        static thread_local const bool armed =
+            (tensor::use_device(sv::Device(app)), true);
+        (void)armed;
+
+        spins.Publish(
+            sweep(spins.Current(), colour, T.load(std::memory_order_relaxed)));
     });
     // Restart re-randomises on the worker, between ticks — it can never
     // overlap a sweep.
-    sim.OnRestart([&] { spins.Publish(random_spins(sdev)); });
+    sim.OnRestart([&] { spins.Publish(random_spins()); });
     sim.Play();
 
     app.Controls(sim).Slider("temperature", temperature, 0.05f, 4.5f);
