@@ -59,10 +59,15 @@ constexpr idx CX = 24, CY = G, CZ = 15, PPC = 8;
 constexpr idx N = CX * CY * CZ * PPC;
 constexpr f32 rest = f32(PPC);
 
-using Vecs = Tensor<f32, N, 3>;
-using Grid = Tensor<f32, GS, GS, GS>;
-using Faces = Tensor<f32, GS, GS, GS, 3>;
-using Weights = Tensor<f32, N, 3, 8>;
+// A tensor that lives on the ambient device (use_device, set once in
+// main and once on the sim's thread): every declaration of one evaluates
+// there. The plain Tensor<…> spellings that remain are host constants.
+template <typename T, idx... Es> using Tsr = Gpu<Tensor<T, Es...>>;
+
+using Vecs = Tsr<f32, N, 3>;
+using Grid = Tsr<f32, GS, GS, GS>;
+using Faces = Tsr<f32, GS, GS, GS, 3>;
+using Weights = Tsr<f32, N, 3, 8>;
 
 // Deposits are exact: each lands in a 64-bit fixed-point carrier, so the
 // grid does not depend on the order particles arrive in — and the device
@@ -73,11 +78,6 @@ using Sum = ops::Fixed<4096>;
 namespace {
 
 gpud::Device *device = nullptr;
-
-// Every declaration below whose type is Dest<…> evaluates on the ambient
-// device (use_device, set once in main). One alias names that, so an
-// expression and where it lands stay separate things.
-template <typename T> using Dest = Gpu<T>;
 
 // Everything about the tank that never changes, and the small constant
 // tables the per-step expressions read.
@@ -92,8 +92,8 @@ struct Tank {
     Tensor<f32, 8, 3> corner; // bit d of corner m, for the trilinear weight
     Tensor<f32, 3, 3> axis;   // the Kronecker delta
     Grid inside;              // 1 on the G^3 real cells
-    Dest<Faces> open;         // 1 on faces between two real cells
-    Dest<Grid> neighbours;    // non-solid neighbours per cell
+    Faces open;               // 1 on faces between two real cells
+    Grid neighbours;          // non-solid neighbours per cell
     Grid red, black;          // the checkerboard the relaxation alternates
 };
 
@@ -108,11 +108,10 @@ Tank tank_of() {
     Grid red([](idx a, idx b, idx c) { return f32((a + b + c) % 2 == 0); });
     Grid black([](idx a, idx b, idx c) { return f32((a + b + c) % 2 == 1); });
 
-    Dest<Faces> open =
-        inside[i, j, k] * (inside[zero(i - 1_c), j, k] * axis[0_c, n] +
-                           inside[i, zero(j - 1_c), k] * axis[1_c, n] +
-                           inside[i, j, zero(k - 1_c)] * axis[2_c, n]);
-    Dest<Grid> neighbours =
+    Faces open = inside[i, j, k] * (inside[zero(i - 1_c), j, k] * axis[0_c, n] +
+                                    inside[i, zero(j - 1_c), k] * axis[1_c, n] +
+                                    inside[i, j, zero(k - 1_c)] * axis[2_c, n]);
+    Grid neighbours =
         inside[zero(i + 1_c), j, k] + inside[zero(i - 1_c), j, k] +
         inside[i, zero(j + 1_c), k] + inside[i, zero(j - 1_c), k] +
         inside[i, j, zero(k + 1_c)] + inside[i, j, zero(k - 1_c)];
@@ -127,15 +126,15 @@ Tank tank_of() {
 // both coordinates are computed once and `axis` picks between them.
 // Laid out [particle][axis][component].
 struct Stencil {
-    Dest<Tensor<f32, N, 3, 3>> base, frac;
+    Tsr<f32, N, 3, 3> base, frac;
 };
 
 Stencil stencil_of(const Tank &t, const Vecs &X) {
-    const Dest<Vecs> face = Floor(X[i, n] * (1.0f / h));
-    const Dest<Vecs> cell = Floor(X[i, n] * (1.0f / h) - 0.5f);
-    Dest<Tensor<f32, N, 3, 3>> base =
+    const Vecs face = Floor(X[i, n] * (1.0f / h));
+    const Vecs cell = Floor(X[i, n] * (1.0f / h) - 0.5f);
+    Tsr<f32, N, 3, 3> base =
         face[i, l] * t.axis[l, n] + cell[i, l] * (1.0f - t.axis[l, n]);
-    Dest<Tensor<f32, N, 3, 3>> frac =
+    Tsr<f32, N, 3, 3> frac =
         (X[i, l] * (1.0f / h) - face[i, l]) * t.axis[l, n] +
         (X[i, l] * (1.0f / h) - 0.5f - cell[i, l]) * (1.0f - t.axis[l, n]);
     return {std::move(base), std::move(frac)};
@@ -163,9 +162,9 @@ auto weight_of(const Tank &t, const Stencil &s) {
 // around it, in all three staggerings at once — the component index is
 // the one free index the scatter does not consume, so it survives as the
 // result's last axis and one dispatch does the whole field.
-Dest<Faces> deposit(const Tank &t, const Stencil &s, const Weights &w,
-                    const auto &value) {
-    Dest<Faces> out = scatter<Sum, i, m>(
+Faces deposit(const Tank &t, const Stencil &s, const Weights &w,
+              const auto &value) {
+    Faces out = scatter<Sum, i, m>(
         clamp<GS>(node_at(t, s, 0_c)), clamp<GS>(node_at(t, s, 1_c)),
         clamp<GS>(node_at(t, s, 2_c)), w[i, n, m] * value);
     return out;
@@ -181,9 +180,9 @@ auto sample(const Tank &t, const Stencil &s, const Weights &w, const Faces &F) {
 
 // Particles per cell, cell-centred rather than staggered: this says
 // which cells hold water, and by how much they are over-full.
-Dest<Grid> count_of(const Vecs &X) {
+Grid count_of(const Vecs &X) {
     auto at = [&](auto d) { return clamp<GS>(Floor(X[i, d] * (1.0f / h))); };
-    Dest<Grid> out = scatter<Sum, i>(at(0_c), at(1_c), at(2_c), 1.0f);
+    Grid out = scatter<Sum, i>(at(0_c), at(1_c), at(2_c), 1.0f);
     return out;
 }
 
@@ -195,15 +194,14 @@ Dest<Grid> count_of(const Vecs &X) {
 // excess back out over `rest * dt / drift` seconds. Under-full cells are
 // left alone — pulling water INTO a thin region would fight the free
 // surface, which is exactly where cells are legitimately half empty.
-Dest<Grid> rhs_of(const Faces &U, const Grid &fluid, const Grid &cnt, f32 dt,
-                  f32 drift) {
+Grid rhs_of(const Faces &U, const Grid &fluid, const Grid &cnt, f32 dt,
+            f32 drift) {
     auto div = (U[clamp(i + 1_c), j, k, 0_c] - U[i, j, k, 0_c] +
                 U[i, clamp(j + 1_c), k, 1_c] - U[i, j, k, 1_c] +
                 U[i, j, clamp(k + 1_c), 2_c] - U[i, j, k, 2_c]) *
                (1.0f / h);
-    Dest<Grid> out =
-        fluid[i, j, k] * (h * h / dt) *
-        (div - (drift / (dt * rest)) * Fmax(cnt[i, j, k] - rest, 0.0f));
+    Grid out = fluid[i, j, k] * (h * h / dt) *
+               (div - (drift / (dt * rest)) * Fmax(cnt[i, j, k] - rest, 0.0f));
     return out;
 }
 
@@ -221,9 +219,8 @@ Dest<Grid> rhs_of(const Faces &U, const Grid &fluid, const Grid &cnt, f32 dt,
 // Sweeping the two colours in turn lets each use the values just
 // written, and over-relaxing past them turns the O(cells^2) sweep count
 // into O(cells).
-Dest<Grid> pressure_of(Dest<Grid> p, const Tank &t, const Grid &fluid,
-                       const Grid &rhs, const Grid &winv, int sweeps,
-                       f32 omega) {
+Grid pressure_of(Grid p, const Tank &t, const Grid &fluid, const Grid &rhs,
+                 const Grid &winv, int sweeps, f32 omega) {
     // A cell that has just drained must restart from zero, or
     // over-relaxing an air cell towards zero overshoots and grows.
     p = fluid[i, j, k] * p[i, j, k];
@@ -241,11 +238,11 @@ Dest<Grid> pressure_of(Dest<Grid> p, const Tank &t, const Grid &fluid,
     return p;
 }
 
-Dest<Faces> projected(const Tank &t, const Faces &U, const Grid &p, f32 dt) {
+Faces projected(const Tank &t, const Faces &U, const Grid &p, f32 dt) {
     auto grad = (p[i, j, k] - p[zero(i - 1_c), j, k]) * t.axis[0_c, n] +
                 (p[i, j, k] - p[i, zero(j - 1_c), k]) * t.axis[1_c, n] +
                 (p[i, j, k] - p[i, j, zero(k - 1_c)]) * t.axis[2_c, n];
-    Dest<Faces> out = t.open[i, j, k, n] * (U[i, j, k, n] - (dt / h) * grad);
+    Faces out = t.open[i, j, k, n] * (U[i, j, k, n] - (dt / h) * grad);
     return out;
 }
 
@@ -257,8 +254,8 @@ struct Params {
 };
 
 struct State {
-    Dest<Vecs> X, V;
-    Dest<Grid> p;
+    Vecs X, V;
+    Grid p;
 };
 
 // One step. The FLIP and PIC readings are combined before they are
@@ -268,36 +265,34 @@ void advance(State &s, const Tank &tank, const Params &prm) {
     const Tensor<f32, 3> accel{prm.gravity[0] + prm.sway * Sin(prm.phase),
                                prm.gravity[1], prm.gravity[2]};
     const Stencil st = stencil_of(tank, s.X);
-    const Dest<Weights> w = weight_of(tank, st);
+    const Weights w = weight_of(tank, st);
 
-    const Dest<Faces> wsum = deposit(tank, st, w, 1.0f);
-    const Dest<Faces> mom = deposit(tank, st, w, s.V[i, n]);
-    const Dest<Grid> cnt = count_of(s.X);
-    const Dest<Grid> fluid =
-        tank.inside[i, j, k] * (1.0f * (cnt[i, j, k] > 0.5f));
+    const Faces wsum = deposit(tank, st, w, 1.0f);
+    const Faces mom = deposit(tank, st, w, s.V[i, n]);
+    const Grid cnt = count_of(s.X);
+    const Grid fluid = tank.inside[i, j, k] * (1.0f * (cnt[i, j, k] > 0.5f));
 
     // U0 is the transfer ALONE. Gravity belongs to the grid's CHANGE and
     // not to its starting point: fold it in here and the FLIP delta no
     // longer spans it, so only the (1 - flip) PIC share of gravity ever
     // reaches a particle — at flip = 0.95, a twentieth of g.
-    const Dest<Faces> U0 =
+    const Faces U0 =
         tank.open[i, j, k, n] * mom[i, j, k, n] / Fmax(wsum[i, j, k, n], 1e-8f);
-    const Dest<Faces> Ustar =
+    const Faces Ustar =
         tank.open[i, j, k, n] * (U0[i, j, k, n] + prm.dt * accel[n]);
 
-    const Dest<Grid> winv =
-        fluid[i, j, k] / Fmax(tank.neighbours[i, j, k], 1.0f);
+    const Grid winv = fluid[i, j, k] / Fmax(tank.neighbours[i, j, k], 1.0f);
     s.p = pressure_of(std::move(s.p), tank, fluid,
                       rhs_of(Ustar, fluid, cnt, prm.dt, prm.drift), winv,
                       prm.sweeps, prm.omega);
-    const Dest<Faces> U1 = projected(tank, Ustar, s.p, prm.dt);
+    const Faces U1 = projected(tank, Ustar, s.p, prm.dt);
 
-    const Dest<Faces> blend = U1[i, j, k, n] - prm.flip * U0[i, j, k, n];
+    const Faces blend = U1[i, j, k, n] - prm.flip * U0[i, j, k, n];
     s.V = prm.flip * s.V[i, n] + sample(tank, st, w, blend);
 
     // The wall stops the particle and kills only the component that hit
     // it, so water slides along a wall instead of sticking to it.
-    const Dest<Vecs> moved = s.X[i, n] + prm.dt * s.V[i, n];
+    const Vecs moved = s.X[i, n] + prm.dt * s.V[i, n];
     s.X = Fmin(Fmax(moved[i, n], margin), L - margin);
     s.V = s.V[i, n] * (1.0f - 1.0f * (moved[i, n] < margin) -
                        1.0f * (moved[i, n] > L - margin));
@@ -327,7 +322,7 @@ constexpr Box kStarts[8] = {
 // Eight particles per cell on a half-cell lattice, then jittered — a
 // uniform random fill would start with 35% density noise per cell, and
 // the first steps would be spent expelling it instead of collapsing.
-Dest<Vecs> seed(int start) {
+Vecs seed(int start) {
     const Box a = kStarts[2 * start], b = kStarts[2 * start + 1];
     const bool split = b.nx != 0;
     const Vecs lattice([a, b, split](idx p, idx d) {
@@ -341,7 +336,7 @@ Dest<Vecs> seed(int start) {
         return h *
                (f32(origin[d] + cell[d]) + 0.25f + 0.5f * f32((s >> d) & 1u));
     });
-    Dest<Vecs> out =
+    Vecs out =
         Fmin(Fmax(lattice[i, n] +
                       (0.15f * h) * (rng::Uniform<f32, N, 3>()[i, n] - 0.5f),
                   margin),
@@ -352,18 +347,17 @@ Dest<Vecs> seed(int start) {
 // A poke: an upward jet under a point of the tank, or a swirl about
 // it. Both fall off over a disc about a third of the tank wide, so
 // what they do is visible without being a teleport.
-Dest<Vecs> poked(const Vecs &V, const Vecs &X, f32 kick, bool swirl, f32 cx,
-                 f32 cy) {
+Vecs poked(const Vecs &V, const Vecs &X, f32 kick, bool swirl, f32 cx, f32 cy) {
     const Tensor<f32, 3> ex{1.0f, 0.0f, 0.0f}, ey{0.0f, 1.0f, 0.0f},
         ez{0.0f, 0.0f, 1.0f};
     auto dx = X[i, 0_c] - cx;
     auto dy = X[i, 1_c] - cy;
     auto fall = Exp(-8.0f * (dx * dx + dy * dy) / (L * L));
     if (swirl) {
-        Dest<Vecs> out = V[i, n] + (kick * fall) * (ey[n] * dx - ex[n] * dy);
+        Vecs out = V[i, n] + (kick * fall) * (ey[n] * dx - ex[n] * dy);
         return out;
     }
-    Dest<Vecs> out = V[i, n] + (kick * fall) * ez[n];
+    Vecs out = V[i, n] + (kick * fall) * ez[n];
     return out;
 }
 
@@ -372,20 +366,19 @@ Dest<Vecs> poked(const Vecs &V, const Vecs &X, f32 kick, bool swirl, f32 cx,
 // is mapped onto [0.17, 1] instead: the low end is a water blue and the
 // high end red. Magnitude is all the cloud reads, so any vector of the
 // right length will do.
-Dest<Vecs> tone_of(const Vecs &X, const Vecs &V, const Vecs &start, int source,
-                   f32 top) {
+Vecs tone_of(const Vecs &X, const Vecs &V, const Vecs &start, int source,
+             f32 top) {
     const Tensor<f32, 3> unit{1.0f, 0.0f, 0.0f};
     if (source == 1) {
-        Dest<Vecs> out = (0.17f + (0.83f / L) * X[i, 2_c]) * unit[n];
+        Vecs out = (0.17f + (0.83f / L) * X[i, 2_c]) * unit[n];
         return out;
     }
     if (source == 2) {
-        Dest<Vecs> out = (0.17f + (0.83f / L) * start[i, 0_c]) * unit[n];
+        Vecs out = (0.17f + (0.83f / L) * start[i, 0_c]) * unit[n];
         return out;
     }
-    const Dest<Tensor<f32, N>> speed = Sqrt(fold<1>(V * V));
-    Dest<Vecs> out =
-        (0.17f + 0.83f * Fmin(speed[i] * (1.0f / top), 1.0f)) * unit[n];
+    const Tsr<f32, N> speed = Sqrt(fold<1>(V * V));
+    Vecs out = (0.17f + 0.83f * Fmin(speed[i] * (1.0f / top), 1.0f)) * unit[n];
     return out;
 }
 
@@ -398,17 +391,16 @@ int main() {
         return 1;
     device = &sv::Device(app);
     // The ambient device is per THREAD, so every thread that evaluates a
-    // Dest<…> arms itself. This one builds the tank and the start state;
-    // the executor's thread does the same below. Every Dest<…> must be
+    // Tsr<…> arms itself. This one builds the tank and the start state;
+    // the executor's thread does the same below. Every Tsr<…> must be
     // destroyed before the app that owns the device is.
     use_device(*device);
     rng::Seed(20260901);
 
     const Tank tank = tank_of();
     int start = 0;
-    State state{seed(start), Dest<Vecs>(gen::Fill(0.0f)),
-                Dest<Grid>(gen::Fill(0.0f))};
-    Dest<Vecs> origin = state.X[i, n];
+    State state{seed(start), Vecs(gen::Fill(0.0f)), Grid(gen::Fill(0.0f))};
+    Vecs origin = state.X[i, n];
 
     // The tank is modelled in [0, L]^3 and drawn centred on the grid
     // origin, so the floor of the tank is the floor of the world.
@@ -418,9 +410,11 @@ int main() {
     std::atomic<float> top_now{6.0f};
     std::atomic<float> energy{0.0f};
 
+    // The slots are device tensors: a publish is a copy on the device
+    // into the slot's own buffer, and the frame pulls that buffer.
     sv::Sync<Vecs> pos, tone;
     const auto publish = [&] {
-        pos.Next() = eval(*device, state.X[i, n] + centre[n]);
+        pos.Next() = state.X[i, n] + centre[n];
         pos.Publish();
         tone.Next() = tone_of(state.X, state.V, origin,
                               colour_now.load(std::memory_order_relaxed),
@@ -505,15 +499,14 @@ int main() {
                      .omega = o_now.load(std::memory_order_relaxed),
                      .sweeps = sw_now.load(std::memory_order_relaxed)});
         }
-        const Dest<Tensor<f32, 3>> ke = fold<0>(state.V * state.V);
+        const Tsr<f32, 3> ke = fold<0>(state.V * state.V);
         energy.store((float(ke[0]) + float(ke[1]) + float(ke[2])) / float(N),
                      std::memory_order_relaxed);
         publish();
     });
     sim.OnRestart([&] {
         clock = 0.0f;
-        state = {seed(start), Dest<Vecs>(gen::Fill(0.0f)),
-                 Dest<Grid>(gen::Fill(0.0f))};
+        state = {seed(start), Vecs(gen::Fill(0.0f)), Grid(gen::Fill(0.0f))};
         origin = state.X[i, n];
         publish();
     });

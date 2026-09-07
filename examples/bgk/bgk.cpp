@@ -46,10 +46,16 @@ constexpr idx round_up_pow2(idx v) {
 constexpr idx kDeposit = round_up_pow2(N * (idx(3.0f * vmax * vmax) + 1));
 using Sum = ops::Fixed<kDeposit>;
 
-using Vecs = Tensor<f32, N, 3>;
-using Cells = Tensor<f32, N>; // each particle's cell, as one number
-using Grid = Tensor<f32, CC>;
-using GridV = Tensor<f32, CC, 3>;
+// A tensor that lives on the ambient device (use_device, armed per
+// thread): every declaration of one evaluates there. The plain
+// Tensor<…> spellings that remain are the few host constants.
+template <typename T, idx... Es> using Tsr = Gpu<Tensor<T, Es...>>;
+
+using Vecs = Tsr<f32, N, 3>;
+using Cells = Tsr<f32, N>; // each particle's cell, as one number
+using Grid = Tsr<f32, CC>;
+using GridV = Tsr<f32, CC, 3>;
+using Ones = Tsr<f32, N>;
 
 namespace {
 
@@ -57,70 +63,62 @@ namespace {
 // every expression below goes through it.
 gpud::Device *device = nullptr;
 
-// Every declaration whose type is Dest<…> evaluates on the ambient device
-// (use_device, armed per thread). One alias switches the whole example.
-template <typename T> using Dest = Gpu<T>;
-
-using Ones = Tensor<f32, N>;
-
 // The conserved quantities per cell, and the equilibrium they imply.
 struct Cell {
-    Dest<Grid> pop, inv, E, T, mu;
-    Dest<GridV> p;
+    Grid pop, inv, E, T, mu;
+    GridV p;
 };
 
-Dest<Cells> cells(const Vecs &pos) {
+Cells cells(const Vecs &pos) {
     auto a = Fmin(Fmax(bins<C>(pos, -0.5f, 0.5f), 0.0f), f32(C - 1));
-    Dest<Cells> out = (a[i, 0_c] * f32(C) + a[i, 1_c]) * f32(C) + a[i, 2_c];
+    Cells out = (a[i, 0_c] * f32(C) + a[i, 1_c]) * f32(C) + a[i, 2_c];
     return out;
 }
 
 Cell measure(const auto &at, const Vecs &mom) {
-    const Dest<Ones> sq = fold<1>(mom * mom);
-    Dest<Grid> count = scatter<Sum, i>(at, 1.0f);
-    Dest<Grid> inv = 1.0f / Fmax(count, 1.0f);
-    Dest<GridV> p = scatter<Sum, i>(at, mom[i, n]);
-    Dest<Grid> E = scatter<Sum, i>(at, sq[i]);
-    const Dest<Grid> p2 = fold<1>(p * p);
+    Ones sq = fold<1>(mom * mom);
+    Grid count = scatter<Sum, i>(at, 1.0f);
+    Grid inv = 1.0f / Fmax(count, 1.0f);
+    GridV p = scatter<Sum, i>(at, mom[i, n]);
+    Grid E = scatter<Sum, i>(at, sq[i]);
+    Grid p2 = fold<1>(p * p);
 
-    Dest<Grid> T = Fmax((E - p2 * inv) * inv * (1.0f / 3.0f), 1e-9f);
-    Dest<Grid> mu = T * Log(Fmax(count, 1.0f) * f32(CC) / Pow(tpi * T, 1.5f));
+    Grid T = Fmax((E - p2 * inv) * inv * (1.0f / 3.0f), 1e-9f);
+    Grid mu = T * Log(Fmax(count, 1.0f) * f32(CC) / Pow(tpi * T, 1.5f));
 
     return {std::move(count), std::move(inv), std::move(E),
             std::move(T),     std::move(mu),  std::move(p)};
 }
 
-Dest<Vecs> resample(const auto &at, const Cell &c, const Vecs &mom,
-                    const Tensor<f32, B> &centre, f32 alpha) {
+Vecs resample(const auto &at, const Cell &c, const Vecs &mom,
+              const Tensor<f32, B> &centre, f32 alpha) {
     // Momenta per cell
-    const Dest<Tensor<unsigned, CC, B, 3>> hist =
+    Tsr<unsigned, CC, B, 3> hist =
         scatter<i>(at, clamp(bins<B>(mom[i, n], -vmax, vmax)), 1u);
 
     // The Maxwellian for these cell parameters, centred on the drift.
     // The cell index leads: free indices take first-appearance order.
-    const Dest<Tensor<f32, CC, 3, B>> off = c.p[j, n] * -c.inv[j] + centre[m];
-    const Dest<Tensor<f32, CC, 3, B>> heat =
-        Exp(off[j, n, m] * off[j, n, m] * -0.5f / c.T[j]);
-    const Dest<Tensor<f32, CC, 3>> nrm = fold<2>(heat);
+    Tsr<f32, CC, 3, B> off = c.p[j, n] * -c.inv[j] + centre[m];
+    Tsr<f32, CC, 3, B> heat = Exp(off[j, n, m] * off[j, n, m] * -0.5f / c.T[j]);
+    Tsr<f32, CC, 3> nrm = fold<2>(heat);
 
     // f(t+dt) = f_eq + (f - f_eq)·exp(-dt/tau)
-    const Dest<Tensor<f32, CC, 3, B>> relaxed =
+    Tsr<f32, CC, 3, B> relaxed =
         (1.0f - alpha) * c.pop[j] * heat[j, n, m] / nrm[j, n] +
         hist[j, m, n] * alpha;
 
     // The CDF is the running sum of the relaxed histogram along its bins.
-    const Dest<Tensor<f32, CC, 3, B>> cdf =
-        scan<ops::Add, m>(relaxed[j, n, m]) * c.inv[j];
+    Tsr<f32, CC, 3, B> cdf = scan<ops::Add, m>(relaxed[j, n, m]) * c.inv[j];
 
-    const Dest<Vecs> u1 = rng::Uniform<f32, N, 3>();
-    const Dest<Vecs> hit = fold<m>(1.0f * (u1[i, n] > cdf[at, n, m]));
-    Dest<Vecs> out = -vmax + (hit + rng::Uniform<f32, N, 3>()) * dv;
+    Vecs u1 = rng::Uniform<f32, N, 3>();
+    Vecs hit = fold<m>(1.0f * (u1[i, n] > cdf[at, n, m]));
+    Vecs out = -vmax + (hit + rng::Uniform<f32, N, 3>()) * dv;
     return out;
 }
 
-void step(Dest<Vecs> &Pos, Dest<Vecs> &Mom, const Tensor<f32, B> &centre,
-          f32 dt, f32 alpha) {
-    const Dest<Vecs> moved = Pos + Mom * dt;
+void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
+          f32 alpha) {
+    Vecs moved = Pos + Mom * dt;
     // periodic boundary conditions
     Pos = moved - Floor(moved + 0.5f);
 
@@ -134,18 +132,17 @@ void step(Dest<Vecs> &Pos, Dest<Vecs> &Mom, const Tensor<f32, B> &centre,
 
     // Shift and scale q -> b·q + a, fixed by the cell's own totals:
     // a = (p - b·Q)/n, b = sqrt((E - |p|²/n) / (Q2 - |Q|²/n)).
-    const Dest<Ones> qsq = fold<1>(q * q);
-    const Dest<GridV> Q = scatter<Sum, i>(at, q[i, n]);
-    const Dest<Grid> Q2 = scatter<Sum, i>(at, qsq[i]);
-    const Dest<Grid> p2 = fold<1>(c.p * c.p);
-    const Dest<Grid> q2 = fold<1>(Q * Q);
-    const Dest<Grid> b =
-        Sqrt(Fmax(c.E - p2 * c.inv, 0.0f) / Fmax(Q2 - q2 * c.inv, 1e-9f));
-    const Dest<GridV> shift = (c.p[j, n] - b[j] * Q[j, n]) * c.inv[j];
+    Ones qsq = fold<1>(q * q);
+    GridV Q = scatter<Sum, i>(at, q[i, n]);
+    Grid Q2 = scatter<Sum, i>(at, qsq[i]);
+    Grid p2 = fold<1>(c.p * c.p);
+    Grid q2 = fold<1>(Q * Q);
+    Grid b = Sqrt(Fmax(c.E - p2 * c.inv, 0.0f) / Fmax(Q2 - q2 * c.inv, 1e-9f));
+    GridV shift = (c.p[j, n] - b[j] * Q[j, n]) * c.inv[j];
 
     // Under two particles there is nothing to resample from.
-    const Dest<Ones> live = 1.0f * (c.pop[at] >= 2.0f);
-    const Dest<Vecs> next = b[at] * q[i, n] + shift[at, n];
+    Ones live = 1.0f * (c.pop[at] >= 2.0f);
+    Vecs next = b[at] * q[i, n] + shift[at, n];
     Mom = Mom[i, n] + live[i] * (next[i, n] - Mom[i, n]);
 }
 
@@ -156,7 +153,7 @@ Tensor<f32, B> bin_centres() {
 }
 
 struct State {
-    Dest<Vecs> Pos, Mom;
+    Vecs Pos, Mom;
 };
 
 // What a restart is built from. `offset` is how far off-axis the
@@ -172,19 +169,19 @@ struct Setup {
 // the caller seeds first if it wants a particular run.
 State initial_state(const Setup &su) {
     constexpr size_t half = N / 2;
-    const Ones beam = 1.0f * (gen::Iota<N>(0.0f) < f32(half));
-    const Ones sign = 2.0f * beam - 1.0f;
-    const Ones rad = su.radius * Sqrt(rng::Uniform<f32, N>()); // by area
-    const Ones ang = tpi * rng::Uniform<f32, N>();
+    Ones beam = 1.0f * (gen::Iota<N>(0.0f) < f32(half));
+    Ones sign = 2.0f * beam - 1.0f;
+    Ones rad = su.radius * Sqrt(rng::Uniform<f32, N>()); // by area
+    Ones ang = tpi * rng::Uniform<f32, N>();
 
-    const Ones x = -0.25f * sign + 0.002f * rng::Normal<f32, N>();
-    const Ones y = su.offset * (1.0f - beam) + rad * Cos(ang);
-    const Ones z = rad * Sin(ang);
-    const Ones vx = su.speed * sign + su.spread * rng::Normal<f32, N>();
-    const Ones vy = su.spread * rng::Normal<f32, N>();
-    const Ones vz = su.spread * rng::Normal<f32, N>();
+    Ones x = -0.25f * sign + 0.002f * rng::Normal<f32, N>();
+    Ones y = su.offset * (1.0f - beam) + rad * Cos(ang);
+    Ones z = rad * Sin(ang);
+    Ones vx = su.speed * sign + su.spread * rng::Normal<f32, N>();
+    Ones vy = su.spread * rng::Normal<f32, N>();
+    Ones vz = su.spread * rng::Normal<f32, N>();
 
-    return {.Pos = Dest<Vecs>([&](idx q, idx d) {
+    return {.Pos = Vecs([&](idx q, idx d) {
                 switch (d) {
                 case 0:
                     return x[q];
@@ -194,7 +191,7 @@ State initial_state(const Setup &su) {
                     return z[q];
                 }
             }),
-            .Mom = Dest<Vecs>([&](idx q, idx d) {
+            .Mom = Vecs([&](idx q, idx d) {
                 switch (d) {
                 case 0:
                     return vx[q];
@@ -222,19 +219,12 @@ struct Plane {
 void measure_plane(Plane &plane, const Vecs &mom) {
     auto bx = clamp(bins<PB>(mom[i, 0_c], -vmax, vmax));
     auto by = clamp(bins<PB>(mom[i, 1_c], -vmax, vmax));
-    const Dest<Tensor<f32, PB, PB>> counted = scatter<Sum, i>(bx, by, 1.0f);
+    Tsr<f32, PB, PB> counted = scatter<Sum, i>(bx, by, 1.0f);
 
     std::lock_guard lk(plane.m);
     for (idx py = 0; py < PB; ++py)
         for (idx px = 0; px < PB; ++px)
             plane.f[py * PB + px] = counted[px, py] * (1.0f / f32(N));
-}
-
-// Sync holds HOST buffers the cloud draws, so this is a real
-// device-to-host crossing and stays an explicit eval.
-void publish(sv::Sync<Vecs> &s, const Vecs &v) {
-    s.Next() = eval(*device, v[i, n]);
-    s.Publish();
 }
 
 } // namespace
@@ -247,7 +237,7 @@ int main() {
 
     device = &sv::Device(app);
     // The ambient device is per THREAD. This one builds the start state;
-    // the executor's arms itself on its first tick. Every Dest<…> must be
+    // the executor's arms itself on its first tick. Every Tsr<…> must be
     // destroyed before app, which owns the device.
     use_device(*device);
 
@@ -268,13 +258,20 @@ int main() {
     };
 
     auto start = initial_state(setup_now());
-    Dest<Vecs> Pos = std::move(start.Pos), Mom = std::move(start.Mom);
+    Vecs Pos = std::move(start.Pos), Mom = std::move(start.Mom);
 
     // Positions place the particles; momenta colour them, so the gas
-    // reads as fast and slow rather than as a shape. Both resident.
+    // reads as fast and slow rather than as a shape. The slots are
+    // device tensors: a publish is a copy on the device into the slot's
+    // own buffer, and the frame pulls that buffer.
     sv::Sync<Vecs> pos, mom;
-    publish(pos, Pos);
-    publish(mom, Mom);
+    const auto publish = [&] {
+        pos.Next() = +Pos;
+        pos.Publish();
+        mom.Next() = +Mom;
+        mom.Publish();
+    };
+    publish();
 
     (void)pos.Current()[0, 0];
     (void)mom.Current()[0, 0];
@@ -300,11 +297,15 @@ int main() {
 
     // A click tags one particle: the camera follows it and its momentum
     // joins the plot — one molecule's relaxation inside the ensemble's.
+    // The index crosses to the sim's thread, which measures it there.
     int tagged = -1;
+    std::atomic<int> tag_wanted{-1}, tag_measured{-1};
+    std::atomic<float> tag_speed{0.0f};
     world.OnPick([&](const sv::Pick &p) {
         if (!p.On(gas))
             return;
         tagged = p.index;
+        tag_wanted.store(tagged, std::memory_order_relaxed);
         world.Follow(p);
     });
 
@@ -324,17 +325,27 @@ int main() {
         const f32 tau = tau_now.load(std::memory_order_relaxed);
         const f32 h = dt_now.load(std::memory_order_relaxed);
         step(Pos, Mom, centre, h, std::exp(-h / tau));
-        publish(pos, Pos);
-        publish(mom, Mom);
+        publish();
 
         if (++since >= 20) {
             since = 0;
-            const Dest<Tensor<ops::Welford::result<f32>, 3>> sp =
-                fold<ops::Welford, 0>(Mom);
+            Tsr<ops::Welford::result<f32>, 3> sp = fold<ops::Welford, 0>(Mom);
             sig_x.store(std::sqrt(sp[0].var), std::memory_order_relaxed);
             sig_y.store(std::sqrt(sp[1].var), std::memory_order_relaxed);
             sig_z.store(std::sqrt(sp[2].var), std::memory_order_relaxed);
             measure_plane(plane, Mom);
+            // The tagged particle's momentum, read HERE: a host read of a
+            // device tensor is a call on the device, and this thread
+            // owns it. Three reads, one download.
+            const int k = tag_wanted.load(std::memory_order_relaxed);
+            if (k >= 0) {
+                const idx q = idx(k);
+                tag_speed.store(std::sqrt(Mom[q, 0] * Mom[q, 0] +
+                                          Mom[q, 1] * Mom[q, 1] +
+                                          Mom[q, 2] * Mom[q, 2]),
+                                std::memory_order_relaxed);
+            }
+            tag_measured.store(k, std::memory_order_relaxed);
             measured.store(t.n, std::memory_order_release);
         }
     });
@@ -343,8 +354,7 @@ int main() {
         auto s = initial_state(setup_now());
         Pos = std::move(s.Pos);
         Mom = std::move(s.Mom);
-        publish(pos, Pos);
-        publish(mom, Mom);
+        publish();
     });
 
     sim.SetDt(double(dt_now.load()));
@@ -399,7 +409,7 @@ int main() {
     std::vector<float> plane_x(PB * PB), plane_y(PB * PB);
     std::vector<float> plane_z(PB * PB, 0.0f);
 
-    const Tensor<f32, PB> edge = stats::Centres<PB>(-vmax, vmax);
+    Tensor<f32, PB> edge = stats::Centres<PB>(-vmax, vmax);
     for (idx py = 0; py < PB; ++py)
         for (idx px = 0; px < PB; ++px) {
             plane_x[py * PB + px] = edge[px];
@@ -481,14 +491,12 @@ int main() {
             // cell's energy, so the spread they must share is the rms
             // of the three they currently have.
             thermal.push_back(std::sqrt((sx * sx + sy * sy + sz * sz) / 3.0f));
-            // The tagged particle's momentum, read off the frame's own
-            // copy of what the cloud is coloured by.
-            if (tagged >= 0 && mom.Generation()) {
-                const Vecs &M = mom.Shown();
-                const idx k = idx(tagged);
+            // The tagged particle's momentum, as the sim measured it —
+            // and only once it is about the particle tagged now.
+            if (tagged >= 0 &&
+                tag_measured.load(std::memory_order_relaxed) == tagged) {
                 tag_step.push_back(float(n));
-                tag_p.push_back(std::sqrt(
-                    M[k, 0] * M[k, 0] + M[k, 1] * M[k, 1] + M[k, 2] * M[k, 2]));
+                tag_p.push_back(tag_speed.load(std::memory_order_relaxed));
             }
         }
         sampled = n;

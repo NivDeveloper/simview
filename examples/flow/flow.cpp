@@ -48,16 +48,17 @@ constexpr idx N = 262144; // tracers
 constexpr f32 tau = 6.283185307179586f;
 constexpr f32 box = tau; // the flow is 2*pi periodic in every axis
 
-using Vecs = Tensor<f32, N, 3>;
-using Ones = Tensor<f32, N>;
+// A tensor that lives on the ambient device (use_device, armed per
+// thread below): every declaration of one evaluates there. The plain
+// Tensor<…> spellings that remain are the few host constants.
+template <typename T, idx... Es> using Tsr = Gpu<Tensor<T, Es...>>;
+
+using Vecs = Tsr<f32, N, 3>;
+using Ones = Tsr<f32, N>;
 
 namespace {
 
 gpud::Device *device = nullptr;
-
-// Every declaration whose type is Dest<…> evaluates on the ambient device
-// (use_device, armed per thread below).
-template <typename T> using Dest = Gpu<T>;
 
 // The three unit vectors, so a per-component formula can be written as
 // a sum rather than a branch on the component index.
@@ -78,31 +79,30 @@ struct Basis {
 // One expression means one pass and one dispatch for the whole
 // velocity field; a stage that evaluated the six trig terms separately
 // would be ten.
-Dest<Vecs> velocity(const Vecs &P, const Basis &e, f32 A, f32 B, f32 C) {
-    Dest<Vecs> out = (A * Sin(P[i, 2_c]) + C * Cos(P[i, 1_c])) * e.x[n] +
-                     (B * Sin(P[i, 0_c]) + A * Cos(P[i, 2_c])) * e.y[n] +
-                     (C * Sin(P[i, 1_c]) + B * Cos(P[i, 0_c])) * e.z[n];
+Vecs velocity(const Vecs &P, const Basis &e, f32 A, f32 B, f32 C) {
+    Vecs out = (A * Sin(P[i, 2_c]) + C * Cos(P[i, 1_c])) * e.x[n] +
+               (B * Sin(P[i, 0_c]) + A * Cos(P[i, 2_c])) * e.y[n] +
+               (C * Sin(P[i, 1_c]) + B * Cos(P[i, 0_c])) * e.z[n];
     return out;
 }
 
 // Classical RK4. The flow is smooth and the step is well inside its
 // stability limit, so the integrator is not the interesting part — it
 // is here so the mixing shown is the flow's and not the scheme's.
-Dest<Vecs> advance(const Vecs &P, const Basis &e, f32 h, f32 A, f32 B, f32 C) {
-    const Dest<Vecs> k1 = velocity(P, e, A, B, C);
-    const Dest<Vecs> p2 = P[i, n] + (0.5f * h) * k1[i, n];
-    const Dest<Vecs> k2 = velocity(p2, e, A, B, C);
-    const Dest<Vecs> p3 = P[i, n] + (0.5f * h) * k2[i, n];
-    const Dest<Vecs> k3 = velocity(p3, e, A, B, C);
-    const Dest<Vecs> p4 = P[i, n] + h * k3[i, n];
-    const Dest<Vecs> k4 = velocity(p4, e, A, B, C);
+Vecs advance(const Vecs &P, const Basis &e, f32 h, f32 A, f32 B, f32 C) {
+    const Vecs k1 = velocity(P, e, A, B, C);
+    const Vecs p2 = P[i, n] + (0.5f * h) * k1[i, n];
+    const Vecs k2 = velocity(p2, e, A, B, C);
+    const Vecs p3 = P[i, n] + (0.5f * h) * k2[i, n];
+    const Vecs k3 = velocity(p3, e, A, B, C);
+    const Vecs p4 = P[i, n] + h * k3[i, n];
+    const Vecs k4 = velocity(p4, e, A, B, C);
 
-    const Dest<Vecs> moved =
-        P[i, n] +
-        (h / 6.0f) * (k1[i, n] + 2.0f * k2[i, n] + 2.0f * k3[i, n] + k4[i, n]);
+    const Vecs moved = P[i, n] + (h / 6.0f) * (k1[i, n] + 2.0f * k2[i, n] +
+                                               2.0f * k3[i, n] + k4[i, n]);
     // Periodic: the flow repeats every 2*pi, so a tracer leaving one
     // face is the same tracer entering the opposite one.
-    Dest<Vecs> out = moved - box * Floor(moved / box);
+    Vecs out = moved - box * Floor(moved / box);
     return out;
 }
 
@@ -116,7 +116,7 @@ int main() {
     device = &sv::Device(app);
     // The ambient device is per THREAD. This one publishes the initial
     // frames; the executor's thread arms itself on its first tick. Every
-    // Dest<…> must be destroyed before app, which owns the device.
+    // Tsr<…> must be destroyed before app, which owns the device.
     use_device(*device);
     rng::Seed(20260901);
     const Basis basis;
@@ -137,12 +137,12 @@ int main() {
     // changes, so folding is visible as the colours laminate.
     const Vecs origin = offset[i, n] * (1.0f / R);
 
+    // The slots are device tensors: a publish is a copy on the device
+    // into the slot's own buffer, and the frame pulls that buffer.
     sv::Sync<Vecs> pos, tag;
-    // Sync holds HOST buffers the cloud draws, so publishing a frame is a
-    // real device-to-host crossing and stays an explicit eval.
-    pos.Next() = eval(*device, P[i, n]);
+    pos.Next() = +P;
     pos.Publish();
-    tag.Next() = eval(*device, origin[i, n]);
+    tag.Next() = +origin;
     tag.Publish();
 
     // One const read to sync: the compute backend batches eagerly, so
@@ -179,12 +179,12 @@ int main() {
                     A_now.load(std::memory_order_relaxed),
                     B_now.load(std::memory_order_relaxed),
                     C_now.load(std::memory_order_relaxed));
-        pos.Next() = eval(*device, P[i, n]);
+        pos.Next() = +P;
         pos.Publish();
     });
     sim.OnRestart([&] {
         P = 0.5f * box + offset[i, n];
-        pos.Next() = eval(*device, P[i, n]);
+        pos.Next() = +P;
         pos.Publish();
     });
     sim.SetDt(double(h));
