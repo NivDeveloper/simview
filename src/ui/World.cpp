@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -28,14 +29,138 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
         const ImVec2 d = io.MouseDelta;
         const bool pan = io.KeyShift || right;
         if (d.x != 0.0f || d.y != 0.0f) {
-            if (pan)
+            if (pan) {
+                w.followed = nullptr; // the reader took the focus back
                 w.camera.pan(d.x, d.y);
-            else
+            } else {
                 w.camera.orbit(d.x, d.y);
+            }
         }
     }
     if (hovered && io.MouseWheel != 0.0f)
         w.camera.dolly(io.MouseWheel);
+
+    // What the pointer is over, every frame it is over the world with
+    // no button down: the highlight the picture shows.
+    w.hovered_now = hovered;
+    w.hovered = nullptr;
+    if (hovered && !left && !right) {
+        Pick p{};
+        if (world_pick(w, io.MousePos.x, io.MousePos.y, &p) && !p.Ground()) {
+            w.hovered = static_cast<impl::WorldItem *>(p.cloud.p);
+            w.hover_index = std::uint32_t(p.index);
+        }
+    }
+
+    // A click is a release that never dragged, and ImGui keeps the
+    // distance; a double-click makes the point the pivot, distance
+    // and pose untouched.
+    if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        const ImVec2 dragged = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+        Pick p{};
+        if (dragged.x == 0.0f && dragged.y == 0.0f &&
+            world_pick(w, io.MousePos.x, io.MousePos.y, &p))
+            world_picked(w, p);
+    }
+    if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        Pick p{};
+        if (world_pick(w, io.MousePos.x, io.MousePos.y, &p)) {
+            w.followed = nullptr;
+            w.camera.frame({p.point[0], p.point[1], p.point[2]},
+                           w.camera.distance());
+        }
+    }
+}
+
+namespace {
+
+constexpr float kFlyPerSecond = 1.0f; // orbit distances, before the multiplier
+constexpr float kFlyShift = 4.0f;
+constexpr float kFlyWheel = 0.25f; // e-folds of speed per wheel notch
+constexpr float kPadTurn = 500.0f; // pixels a second at full deflection
+
+// The keys, the captured pointer and the pad, once a frame. The keys
+// and the pointer are a flight's; the pad steers without one. The step
+// scales with the orbit distance as a pan does.
+void world_camera_steer(impl::WorldState &w, impl::Input &in, float dt,
+                        bool flying) {
+    const auto down = [&](Key k) {
+        return flying && in.held.test(std::size_t(k));
+    };
+    const impl::Gamepad &g = in.pad;
+    if (in.wheel != 0.0f)
+        w.fly_speed = std::clamp(w.fly_speed * std::exp(in.wheel * kFlyWheel),
+                                 0.05f, 20.0f);
+
+    // Both devices at once, and a key plus a stick is still ONE full
+    // deflection: swapping hands mid-move must not double the speed.
+    const auto axis = [](float x) { return std::clamp(x, -1.0f, 1.0f); };
+    const float v = kFlyPerSecond * w.camera.distance() * w.fly_speed *
+                    (down(Key::LeftShift) || g.fast ? kFlyShift : 1.0f) * dt;
+    const float ahead = axis((down(Key::W) ? 1.0f : 0.0f) -
+                             (down(Key::S) ? 1.0f : 0.0f) - g.ly);
+    const float right = axis((down(Key::D) ? 1.0f : 0.0f) -
+                             (down(Key::A) ? 1.0f : 0.0f) + g.lx);
+    const float up = axis((down(Key::E) ? 1.0f : 0.0f) -
+                          (down(Key::Q) ? 1.0f : 0.0f) + g.rt - g.lt);
+    if (ahead != 0.0f || right != 0.0f || up != 0.0f)
+        w.camera.move(right * v, up * v, ahead * v);
+
+    const float dx = (flying ? in.look_dx : 0.0f) + g.rx * kPadTurn * dt;
+    const float dy = (flying ? in.look_dy : 0.0f) + g.ry * kPadTurn * dt;
+    if (dx != 0.0f || dy != 0.0f)
+        w.camera.turn(dx, dy);
+    in.look_dx = in.look_dy = in.wheel = 0.0f;
+}
+
+// Forgotten at take-off: a release can land in another window, and a
+// press remembered from before the flight would move it forever.
+void forget_keys(impl::App *a) {
+    a->input.held.reset();
+    a->input.look_dx = a->input.look_dy = a->input.wheel = 0.0f;
+}
+
+} // namespace
+
+void world_fly_begin(impl::App *a, impl::WorldState &w) {
+    if (!a || a->flying)
+        return;
+    a->flying = &w;
+    w.followed = nullptr; // a flight moves the focus itself
+    forget_keys(a);
+    if (a->ui.ctx) {
+        ImGui::SetCurrentContext(a->ui.ctx);
+        ImGui::GetIO().ConfigFlags |=
+            ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoKeyboard;
+    }
+    if (a->platform.win)
+        SDL_SetWindowRelativeMouseMode(a->platform.win, true);
+}
+
+void world_fly_end(impl::App *a) {
+    if (!a || !a->flying)
+        return;
+    if (a->platform.win)
+        SDL_SetWindowRelativeMouseMode(a->platform.win, false);
+    if (a->ui.ctx) {
+        ImGui::SetCurrentContext(a->ui.ctx);
+        ImGui::GetIO().ConfigFlags &=
+            ~(ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoKeyboard);
+    }
+    a->flying = nullptr;
+}
+
+bool ui_fly_begin(impl::App *a) {
+    if (!a)
+        return false;
+    bool any = bool(a->world);
+    for (const impl::View &v : a->views)
+        any = any || bool(v.world);
+    if (!any)
+        return false;
+    if (impl::WorldState *w = a->pointed ? a->pointed : a->world.get())
+        world_fly_begin(a, *w);
+    return true;
 }
 
 // A 3D scene has no chrome to put a panel in, so its controls sit ON
@@ -63,7 +188,7 @@ const Preset *world_presets(std::size_t *count) {
     return kViews;
 }
 
-void world_menu(impl::WorldState &w) {
+void world_menu(impl::App *a, impl::WorldState &w) {
     ImGui::SeparatorText("view");
     // Home is not a preset: it is whatever the caller composed, and no
     // angle in a table can stand for that.
@@ -88,22 +213,37 @@ void world_menu(impl::WorldState &w) {
         if (w.axes)
             ImGui::Checkbox("axes", &w.axes->visible);
     }
+
+    ImGui::SeparatorText("navigate");
+    if (ImGui::Selectable("fly  (Tab)"))
+        world_fly_begin(a, w);
 }
 
 // Drawn at `at`, which is the top-left of the picture. The caller owns
 // the window; this only knows where the corner is.
-void world_controls(impl::WorldState &w, ImVec2 at) {
+void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
     if (!w.controls)
         return;
     const ImVec2 keep = ImGui::GetCursorScreenPos();
     const float pad = ImGui::GetStyle().WindowPadding.x;
     ImGui::SetCursorScreenPos(ImVec2(at.x + pad, at.y + pad));
     ImGui::PushID(&w);
-    if (impl::icon_button(Icon::Cube, "view", "camera and what is drawn"))
-        ImGui::OpenPopup("##world_menu");
-    if (ImGui::BeginPopup("##world_menu")) {
-        world_menu(w);
-        ImGui::EndPopup();
+    if (a->flying == &w) {
+        // No pointer to press a button with: the hint IS the control,
+        // and it names the device in the reader's hands.
+        ImGui::TextDisabled(
+            a->input.last_pad
+                ? "B  release    left stick  move    right stick  look    "
+                  "triggers  down / up    L3  faster"
+                : "Esc  release    W A S D  move    Q E  down / up    "
+                  "Shift  faster    wheel  speed");
+    } else {
+        if (impl::icon_button(Icon::Cube, "view", "camera and what is drawn"))
+            ImGui::OpenPopup("##world_menu");
+        if (ImGui::BeginPopup("##world_menu")) {
+            world_menu(a, w);
+            ImGui::EndPopup();
+        }
     }
     ImGui::PopID();
     // ImGui warns about a cursor moved with nothing following.
@@ -126,15 +266,37 @@ void ui_world_overlay(impl::App *a) {
                          ImGuiWindowFlags_NoFocusOnAppearing |
                          ImGuiWindowFlags_NoNav |
                          ImGuiWindowFlags_NoBringToFrontOnFocus))
-        world_controls(*a->world, vp->WorkPos);
+        world_controls(a, *a->world, vp->WorkPos);
     ImGui::End();
 }
 
 void ui_world_input(impl::App *a) {
-    if (!a || !a->world)
+    if (!a)
         return;
-    const bool free = !ImGui::GetIO().WantCaptureMouse;
-    world_camera_gesture(*a->world, free, free);
+    const float dt = ImGui::GetIO().DeltaTime;
+    if (a->flying) {
+        world_camera_steer(*a->flying, a->input, dt, true);
+        return;
+    }
+    if (a->world) {
+        const ImGuiIO &io = ImGui::GetIO();
+        const bool free = !io.WantCaptureMouse;
+        if (free)
+            a->pointed = a->world.get();
+        // SCREEN coordinates, as the pointer is once viewports are on:
+        // a window is rarely at the screen's origin.
+        const ImGuiViewport *vp = ImGui::GetMainViewport();
+        a->world->rect[0] = vp->Pos.x;
+        a->world->rect[1] = vp->Pos.y;
+        a->world->rect[2] = vp->Size.x;
+        a->world->rect[3] = vp->Size.y;
+        world_camera_gesture(*a->world, free, free);
+    }
+    // A pad needs no flight: it has no hotkeys to collide with and no
+    // pointer to hide. It steers the world under the pointer, else the
+    // window's.
+    if (impl::WorldState *t = a->pointed ? a->pointed : a->world.get())
+        world_camera_steer(*t, a->input, dt, false);
 }
 
 namespace impl {
@@ -218,6 +380,34 @@ void world_camera(World w, const CameraDesc &d) {
     // Remembered whole, because "home" is the view the caller composed
     // and every preset is a departure from it.
     ws->home = d;
+    ws->followed = nullptr;
+}
+
+void world_on_pick(World w, void (*fn)(const Pick &, void *), void *user,
+                   void (*free)(void *)) {
+    WorldState *ws = static_cast<WorldState *>(w.p);
+    if (!ws) {
+        if (free)
+            free(user);
+        return;
+    }
+    ws->picks.push_back({fn, user, free});
+}
+
+void world_follow(World w, Cloud c, std::int32_t index) {
+    WorldState *ws = static_cast<WorldState *>(w.p);
+    if (!ws)
+        return;
+    WorldItem *it = static_cast<WorldItem *>(c.p);
+    if (!it || index < 0) {
+        ws->followed = nullptr;
+        return;
+    }
+    if (it->owner != ws)
+        return set_error("a world follows only its own items — this pick "
+                         "came from another world");
+    ws->followed = it;
+    ws->follow_index = std::uint32_t(index);
 }
 
 bool world_light(World w, const LightDesc &d) {

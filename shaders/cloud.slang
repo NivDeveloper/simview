@@ -23,7 +23,8 @@ struct CParams {
     uint mode;  // 0 = solid impostor, 1 = flat disc
     uint map;   // 0 uniform, 1 magnitude, 2 direction, 3 components
     float map_scale;
-    float pad0, pad1, pad2;
+    uint highlight; // the point drawn brighter: hovered or followed, else ~0
+    float pad1, pad2;
 };
 
 [[vk::binding(1, 0)]] StructuredBuffer<float> positions; // xyz per point
@@ -104,6 +105,8 @@ C2F vsmain(uint vI : SV_VertexID) {
     o.pos = mul(vp.view_to_clip, pv);
     o.local = corner;
     o.color = mapped_color(i);
+    if (i == cp.highlight)
+        o.color = float4(lerp(o.color.rgb, float3(1.0f, 1.0f, 1.0f), 0.55f), 1.0f);
     o.mode = float(cp.mode);
     return o;
 }

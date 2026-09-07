@@ -52,6 +52,23 @@ struct DrawCmd {
     std::uint32_t part = 0; // which draw of the item's own, if it has several
 };
 
+// What a pick is asked with: the ray, and what a pixel is worth along
+// it, so a point drawn smaller than a click can still be clicked.
+struct PickQuery {
+    impl::Ray ray;
+    float focal_px = 0.0f; // pixels per world unit at unit depth
+    bool orthographic = false;
+    float slop_px = 0.0f; // a click's own uncertainty, in pixels
+};
+
+// What an item's pick answers with: where along the ray, and which of
+// its elements. The world turns the nearest into the caller's Pick.
+struct PickHit {
+    impl::Vec3 point{};
+    float t = 0.0f;
+    std::int32_t index = -1;
+};
+
 struct WorldPipelineEntry {
     const struct WorldItemOps *ops;
     PassId pass;
@@ -85,6 +102,15 @@ struct WorldItemOps {
     // cannot walk its data, and the answer is to draw it.
     bool (*bounds)(const impl::WorldItem &, impl::Vec3 *lo,
                    impl::Vec3 *hi) = nullptr;
+
+    // The nearest hit along a ray, or false — "I do not know" for data
+    // the host cannot walk, exactly as bounds says it.
+    bool (*pick)(const impl::WorldItem &, const PickQuery &,
+                 PickHit *) = nullptr;
+
+    // Where element `index` is now, for a camera that follows it.
+    bool (*locate)(const impl::WorldItem &, std::uint32_t index,
+                   impl::Vec3 *) = nullptr;
 
     Shader vs, fs;
     nvrhi::BlendState::RenderTarget blend;

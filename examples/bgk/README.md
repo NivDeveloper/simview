@@ -12,6 +12,9 @@ make          # configures and builds; needs g++-16 for -freflection
 
 Space toggles, Up/Down move the relaxation time, R restarts, Esc
 quits.
+Hover a particle and it brightens; click it to tag it: the camera follows it
+and its momentum joins the thermalization plot. Double-click re-centres on a
+point.
 
 ## What it is showing
 

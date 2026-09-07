@@ -61,10 +61,41 @@ inline void drag(sv::App &app, float x0, float y0, float x1, float y1,
     release(app, b);
 }
 
+// A click: the pointer arrives, the button goes down and comes up with
+// no motion between. A double-click is two, within ImGui's time.
+inline void click(sv::App &app, float x, float y, Button b = Left) {
+    move(app, x, y);
+    press(app, b);
+    release(app, b);
+}
+
+inline void double_click(sv::App &app, float x, float y) {
+    click(app, x, y);
+    press(app);
+    release(app);
+}
+
 // The wheel turns where the pointer already is.
 inline void wheel(sv::App &app, float x, float y, float dy) {
     move(app, x, y);
     sv::probe::mouse_wheel(app.Raw(), dy);
+    app.Step();
+}
+
+// A key, posted: it lands where SDL's own do, and a frame sees it.
+inline void key(sv::App &app, sv::Key k, bool down) {
+    app.PostEvent(down ? sv::KeyDown(k) : sv::KeyUp(k));
+    app.Step();
+}
+
+inline void tap(sv::App &app, sv::Key k) {
+    key(app, k, true);
+    key(app, k, false);
+}
+
+// The captured pointer moves. Only a flight reads it.
+inline void look(sv::App &app, float dx, float dy) {
+    sv::probe::look(app.Raw(), dx, dy);
     app.Step();
 }
 

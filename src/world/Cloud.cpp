@@ -8,6 +8,8 @@
 
 #include <gpud/Vulkan.h>
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,12 @@ struct Channel {
     gpud::BufferSource src{};
     HostSource host{};
     std::uint64_t host_gen = 0;
+    // A device buffer's host copy comes through here, one frame late:
+    // a shader reads it into `scratch`, which is copied into `staging`.
+    nvrhi::BufferHandle scratch, staging;
+    std::size_t staging_bytes = 0;
+    std::size_t staged_count = 0;
+    bool staged = false;
 
     bool live() const { return external || host || count; }
     nvrhi::IBuffer *bound() const {
@@ -68,8 +76,23 @@ struct CloudParams {
     std::uint32_t mode;
     std::uint32_t map;
     float map_scale;
-    float pad0, pad1, pad2;
+    std::uint32_t highlight;
+    float pad1, pad2;
 };
+
+constexpr std::uint32_t kNoHighlight = ~std::uint32_t(0);
+
+// The hovered point, else the followed one: what the picture brightens.
+std::uint32_t highlight_of(const impl::WorldItem &it) {
+    const impl::WorldState *w = it.owner;
+    if (!w)
+        return kNoHighlight;
+    if (w->hovered == &it)
+        return w->hover_index;
+    if (w->followed == &it)
+        return w->follow_index;
+    return kNoHighlight;
+}
 
 CloudState &state_of(impl::WorldItem &it) {
     return *static_cast<CloudState *>(it.state);
@@ -152,6 +175,73 @@ void channel_resolve(Channel &ch, const impl::Gpu &gpu, const char *name) {
             .setDebugName(name));
 }
 
+// Matches readback.slang's RParams.
+struct ReadbackParams {
+    std::uint32_t count;
+    std::uint32_t pad0, pad1, pad2;
+};
+
+// A device buffer's host copy, ONE FRAME LATE: recorded now, mapped at
+// the next prepare once its frame has been waited for, so the map never
+// blocks. The producer's buffer has no transfer usage: a shader reads it.
+void channel_readback(Channel &ch, impl::WorldItem &it, nvrhi::ICommandList *cl,
+                      const char *name) {
+    const impl::Gpu &gpu = it.gpu;
+    if (!ch.external || !ch.wrapped || !ch.count || !it.owner)
+        return;
+    if (ch.staged && ch.staging) {
+        if (const void *p =
+                gpu.dev->mapBuffer(ch.staging, nvrhi::CpuAccessMode::Read)) {
+            const float *f = static_cast<const float *>(p);
+            ch.shadow.assign(f, f + ch.staged_count * 3);
+            gpu.dev->unmapBuffer(ch.staging);
+        }
+        ch.staged = false;
+    }
+
+    nvrhi::IComputePipeline *pipe = world_readback(*it.owner);
+    if (!pipe)
+        return;
+    const std::size_t bytes = ch.count * 12;
+    if (!ch.staging || ch.staging_bytes < bytes) {
+        ch.scratch = gpu.dev->createBuffer(
+            nvrhi::BufferDesc()
+                .setByteSize(bytes)
+                .setStructStride(4)
+                .setCanHaveUAVs(true)
+                .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
+                .setKeepInitialState(true)
+                .setDebugName(name));
+        ch.staging =
+            gpu.dev->createBuffer(nvrhi::BufferDesc()
+                                      .setByteSize(bytes)
+                                      .setCpuAccess(nvrhi::CpuAccessMode::Read)
+                                      .setDebugName(name));
+        ch.staging_bytes = bytes;
+        if (!ch.scratch || !ch.staging)
+            return set_error(std::string(name) + ": buffer creation failed");
+    }
+
+    // The wrapped handle is this frame's, so the set is too.
+    nvrhi::BindingSetHandle bset = gpu.dev->createBindingSet(
+        nvrhi::BindingSetDesc()
+            .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, ch.wrapped))
+            .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(1, ch.scratch))
+            .addItem(nvrhi::BindingSetItem::PushConstants(
+                2, sizeof(ReadbackParams))),
+        it.owner->readback_layout);
+    if (!bset)
+        return;
+    const ReadbackParams rp{std::uint32_t(ch.count * 3), 0, 0, 0};
+    cl->setComputeState(
+        nvrhi::ComputeState().setPipeline(pipe).addBindingSet(bset));
+    cl->setPushConstants(&rp, sizeof rp);
+    cl->dispatch(std::uint32_t((ch.count * 3 + 255) / 256));
+    cl->copyBuffer(ch.staging, 0, ch.scratch, 0, bytes);
+    ch.staged = true;
+    ch.staged_count = ch.count;
+}
+
 // One walk, both summaries. The centroid places the cloud in the draw
 // order and the box decides whether it is drawn at all, and walking
 // the points twice to learn two things about them would be silly.
@@ -190,6 +280,49 @@ bool bounds(const impl::WorldItem &it, impl::Vec3 *lo, impl::Vec3 *hi) {
     return true;
 }
 
+// The nearest point whose sphere the ray enters, over the host's copy,
+// the sphere no smaller than the click's slop at that depth. Data that
+// never reached the host has no copy and cannot answer.
+bool pick(const impl::WorldItem &it, const PickQuery &pq, PickHit *out) {
+    const CloudState &cs = *static_cast<const CloudState *>(it.state);
+    const impl::Ray &ray = pq.ray;
+    const std::vector<float> &s = cs.pos.shadow;
+    const std::size_t n = std::min(cs.pos.count, s.size() / 3);
+    const float per_px = pq.focal_px > 0.0f ? pq.slop_px / pq.focal_px : 0.0f;
+    bool any = false;
+    for (std::size_t k = 0; k < n; ++k) {
+        const impl::Vec3 q =
+            impl::Vec3{s[k * 3], s[k * 3 + 1], s[k * 3 + 2]} - ray.o;
+        const float t = impl::dot(q, ray.d);
+        if (t <= 0.0f)
+            continue;
+        const float r =
+            std::max(cs.radius, per_px * (pq.orthographic ? 1.0f : t));
+        const float r2 = r * r;
+        const impl::Vec3 c = q - ray.d * t;
+        const float c2 = impl::dot(c, c);
+        if (c2 > r2)
+            continue;
+        const float hit = std::max(0.0f, t - std::sqrt(r2 - c2));
+        if (!any || hit < out->t) {
+            out->t = hit;
+            out->index = std::int32_t(k);
+            out->point = ray.o + ray.d * hit;
+            any = true;
+        }
+    }
+    return any;
+}
+
+bool locate(const impl::WorldItem &it, std::uint32_t k, impl::Vec3 *p) {
+    const CloudState &cs = *static_cast<const CloudState *>(it.state);
+    const std::vector<float> &s = cs.pos.shadow;
+    if (k >= cs.pos.count || std::size_t(k) * 3 + 2 >= s.size())
+        return false;
+    *p = {s[k * 3], s[k * 3 + 1], s[k * 3 + 2]};
+    return true;
+}
+
 // Everything that touches memory happens here, with the frame's list
 // open and no pass on it: the host's uploads, the producer's current
 // buffer, and the shape this item will need. Draw only binds.
@@ -202,6 +335,10 @@ void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
         resummarize(cs);
     channel_resolve(cs.pos, it.gpu, "cloud positions (external)");
     channel_resolve(cs.val, it.gpu, "cloud values (external)");
+    // Only while the world is being asked what is where: a pick, a
+    // hover or a following. Idle, a device cloud costs the host nothing.
+    if (it.owner && it.owner->want_host)
+        channel_readback(cs.pos, it, cl, "cloud positions (readback)");
 
     // Both tiers: which one is a question about the camera, and
     // making a mesh needs a command list only prepare has.
@@ -291,6 +428,7 @@ void draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     // shader reading whatever follows.
     p.map = mapped ? cs.map : 0u;
     p.map_scale = cs.map_scale;
+    p.highlight = highlight_of(it);
     cl->setGraphicsState(
         nvrhi::GraphicsState()
             .setPipeline(pe->pipeline)
@@ -353,6 +491,7 @@ void draw_mesh(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     p.mode = cs.mode;
     p.map = mapped ? cs.map : 0u;
     p.map_scale = cs.map_scale;
+    p.highlight = highlight_of(it);
     cl->setGraphicsState(
         nvrhi::GraphicsState()
             .setPipeline(pe->pipeline)
@@ -402,6 +541,8 @@ const WorldItemOps kCloudSolidOps{
     .draw = draw,
     .release = release,
     .bounds = bounds,
+    .pick = pick,
+    .locate = locate,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
     .blend = kOpaqueBlend,
@@ -418,6 +559,8 @@ const WorldItemOps kCloudAdditiveOps{
     .draw = draw,
     .release = release,
     .bounds = bounds,
+    .pick = pick,
+    .locate = locate,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
     .blend = kAdditiveBlend,
@@ -434,6 +577,8 @@ const WorldItemOps kCloudAlphaOps{
     .draw = draw,
     .release = release,
     .bounds = bounds,
+    .pick = pick,
+    .locate = locate,
     .vs = {cloud_vsmain_spirv, cloud_vsmain_spirv_len, "vsmain"},
     .fs = {cloud_fsmain_spirv, cloud_fsmain_spirv_len, "fsmain"},
     .blend = kAlphaBlend,
@@ -452,6 +597,8 @@ const WorldItemOps kMeshSolidOps{
     .draw = draw_mesh,
     .release = release,
     .bounds = bounds,
+    .pick = pick,
+    .locate = locate,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
     .blend = kOpaqueBlend,
@@ -468,6 +615,8 @@ const WorldItemOps kMeshAdditiveOps{
     .draw = draw_mesh,
     .release = release,
     .bounds = bounds,
+    .pick = pick,
+    .locate = locate,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
     .blend = kAdditiveBlend,
@@ -484,6 +633,8 @@ const WorldItemOps kMeshAlphaOps{
     .draw = draw_mesh,
     .release = release,
     .bounds = bounds,
+    .pick = pick,
+    .locate = locate,
     .vs = {mesh_vsmain_spirv, mesh_vsmain_spirv_len, "vsmain"},
     .fs = {mesh_fsmain_spirv, mesh_fsmain_spirv_len, "fsmain"},
     .blend = kAlphaBlend,

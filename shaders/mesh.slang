@@ -30,7 +30,8 @@ struct MParams {
     uint mode;  // cloud.slang's; unused here
     uint map;   // 0 uniform, 1 magnitude, 2 direction, 3 components
     float map_scale;
-    float pad0, pad1, pad2;
+    uint highlight; // the instance drawn brighter: hovered or followed, else ~0
+    float pad1, pad2;
 };
 
 [[vk::binding(1, 0)]] StructuredBuffer<float> positions; // xyz per instance
@@ -94,6 +95,8 @@ M2F vsmain(uint vI : SV_VertexID, uint iI : SV_InstanceID) {
     o.pos = mul(vp.world_to_clip, float4(world, 1.0f));
     o.normal = mul(vp.world_to_view, float4(n, 0.0f)).xyz;
     o.color = mapped_color(iI);
+    if (iI == mp.highlight)
+        o.color = float4(lerp(o.color.rgb, float3(1.0f, 1.0f, 1.0f), 0.55f), 1.0f);
     return o;
 }
 

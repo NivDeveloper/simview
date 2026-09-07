@@ -177,7 +177,22 @@ Next: 3-D scene kinds, and more than one window.
   and nothing else changes; a cloud may carry per-point VALUES beside
   its positions for a colormap, through the same three doors; up to
   four directional lights ride the view block, and an unlit world
-  keeps the light at the camera it always had. Four-sample
+  keeps the light at the camera it always had. **Tab flies the world
+  under the pointer** (W A S D, Q E, the mouse to look, Esc back): the
+  mode is ONE fact on the App, begun and ended by one function each,
+  keys are a held set cleared at take-off and read once a frame, never
+  a stored velocity, and in flight the mouse is the
+  platform's because ImGui is made blind. **A gamepad steers the same
+  camera with no mode at all**, both devices live at once and a key
+  on a stick still one full deflection — `docs/3d-plan.md`, "Flight".
+  **A click picks** (`Pick`, `world.OnPick`, `world.Follow`): the
+  WORLD asks each item's `pick` hook and keeps the nearest, a cloud
+  answers from its host copy or not at all, the grid answers as the
+  ground, and the ray is the LAST DRAWN view's. A device-resident
+  cloud gets a host copy one frame late while it is asked — a compute
+  dispatch, since gpud's buffers carry no transfer usage and its
+  `read()` is not thread-safe — and hovering brightens the point under
+  the pointer — `docs/3d-plan.md`, "Picking". Four-sample
   multisampling with a resolve, in the world stratum only. **No
   shadows and no occlusion term**: a directional shadow map shipped
   and was removed — what it tells you is a silhouette FROM THE LIGHT,
@@ -372,8 +387,17 @@ from the developer too.
 
 Editor tooling: `.clangd` reads the exported compile DB, and — plain
 C++20 — its diagnostics are trustworthy here, unlike the tensor repo;
-`examples/xy-gpu/.clangd` is the carve-out (it consumes tensor's
-reflection headers, so it suppresses like tensor does). `.clang-format`
+every standalone example (bgk, flow, ising, water, xy-gpu) carries the
+carve-out `.clangd` (they consume tensor's reflection headers, which
+no released clang parses, so they suppress like tensor does) over a
+`build/compile_commands.json` that lists the example ITSELF — each
+subproject sets the export flag in its own scope, since simview's
+covers only simview's sources, and a DB without the file lends it a
+neighbour's flags. Two editor-side traps, both measured: a global
+`--compile-commands-dir` pins every file to that one DB and makes
+every per-directory `.clangd` dead (bgk was being parsed with gas's
+flags), and Apple's clangd 17 dies in the preamble on tensor's
+headers where Homebrew's 22 does not. `.clang-format`
 is the shared house style (LLVM, 4-space, west const); lint rule (g)
 gates format drift, pinned to clang-format major 20 with a NAMED SKIP
 otherwise, and `include/.clang-format` turns namespace closers off so

@@ -349,14 +349,15 @@ Dest<Vecs> seed(int start) {
     return out;
 }
 
-// A poke: an upward jet under the middle of the tank, or a swirl about
-// its axis. Both fall off over a disc about a third of the tank wide,
-// so what they do is visible without being a teleport.
-Dest<Vecs> poked(const Vecs &V, const Vecs &X, f32 kick, bool swirl) {
+// A poke: an upward jet under a point of the tank, or a swirl about
+// it. Both fall off over a disc about a third of the tank wide, so
+// what they do is visible without being a teleport.
+Dest<Vecs> poked(const Vecs &V, const Vecs &X, f32 kick, bool swirl, f32 cx,
+                 f32 cy) {
     const Tensor<f32, 3> ex{1.0f, 0.0f, 0.0f}, ey{0.0f, 1.0f, 0.0f},
         ez{0.0f, 0.0f, 1.0f};
-    auto dx = X[i, 0_c] - 0.5f * L;
-    auto dy = X[i, 1_c] - 0.5f * L;
+    auto dx = X[i, 0_c] - cx;
+    auto dy = X[i, 1_c] - cy;
     auto fall = Exp(-8.0f * (dx * dx + dy * dy) / (L * L));
     if (swirl) {
         Dest<Vecs> out = V[i, n] + (kick * fall) * (ey[n] * dx - ex[n] * dy);
@@ -464,6 +465,9 @@ int main() {
         kick_now{kick};
     std::atomic<int> sw_now{sweeps}, sub_now{substeps};
     std::atomic<bool> want_jet{false}, want_swirl{false};
+    // Where the next poke lands, in tank coordinates: the middle for
+    // the two buttons, the point under the pointer for a click.
+    std::atomic<float> poke_x{0.5f * L}, poke_y{0.5f * L};
     float clock = 0.0f;
 
     sv::Executor sim([&](const sv::Tick &) {
@@ -473,12 +477,16 @@ int main() {
         (void)armed;
 
         const f32 step = dt_now.load(std::memory_order_relaxed);
+        const f32 px = poke_x.load(std::memory_order_relaxed);
+        const f32 py = poke_y.load(std::memory_order_relaxed);
         if (want_jet.exchange(false, std::memory_order_relaxed))
-            state.V = poked(state.V, state.X,
-                            kick_now.load(std::memory_order_relaxed), false);
+            state.V =
+                poked(state.V, state.X,
+                      kick_now.load(std::memory_order_relaxed), false, px, py);
         if (want_swirl.exchange(false, std::memory_order_relaxed))
-            state.V = poked(state.V, state.X,
-                            kick_now.load(std::memory_order_relaxed), true);
+            state.V =
+                poked(state.V, state.X,
+                      kick_now.load(std::memory_order_relaxed), true, px, py);
 
         const int sub =
             std::clamp(sub_now.load(std::memory_order_relaxed), 1, 4);
@@ -526,18 +534,27 @@ int main() {
                              "particles serve all four. Changing it restarts.")
                          .Row([&](sv::Panel &r) {
                              r.Button("jet", [&] {
+                                  poke_x.store(0.5f * L,
+                                               std::memory_order_relaxed);
+                                  poke_y.store(0.5f * L,
+                                               std::memory_order_relaxed);
                                   want_jet.store(true,
                                                  std::memory_order_relaxed);
                               }).Button("swirl", [&] {
+                                 poke_x.store(0.5f * L,
+                                              std::memory_order_relaxed);
+                                 poke_y.store(0.5f * L,
+                                              std::memory_order_relaxed);
                                  want_swirl.store(true,
                                                   std::memory_order_relaxed);
                              });
                          })
                          .Drag("poke m/s", kick, 0.2f, 0.0f, 0.0f)
                          .Help(
-                             "The impulse the two buttons add, under a disc at "
-                             "the middle of the tank. Unbounded on purpose: "
-                             "there is no principled largest poke.")
+                             "The impulse the two buttons add under a disc at "
+                             "the middle of the tank, and a click adds under "
+                             "the point clicked. Unbounded on purpose: there "
+                             "is no principled largest poke.")
                          .Separator("forces")
                          .Slider("gravity m/s2", gravity, -20.0f, 20.0f)
                          .Help(
@@ -649,6 +666,14 @@ int main() {
     app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
         .OnKey(sv::Key::R, [&] { sim.Restart(); })
         .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+
+    // A click on the water or the floor is a jet there. The pick is a
+    // world point; the tank is that point less the offset it is drawn at.
+    world.OnPick([&](const sv::Pick &p) {
+        poke_x.store(p.point[0] - centre[0], std::memory_order_relaxed);
+        poke_y.store(p.point[1] - centre[1], std::memory_order_relaxed);
+        want_jet.store(true, std::memory_order_relaxed);
+    });
 
     app.Run();
 }

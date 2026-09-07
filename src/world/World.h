@@ -29,6 +29,9 @@ struct WorldState {
     WorldItem *grid = nullptr;
     WorldItem *axes = nullptr;
     bool controls = true;
+    // The flight's speed, in orbit distances a second. The wheel
+    // scales it: in flight there is nothing to dolly toward.
+    float fly_speed = 1.0f;
 
     // At most four: a fixed set keeps every shader's lighting one
     // loop. Empty means one light at the camera.
@@ -47,6 +50,31 @@ struct WorldState {
     // Rebuilt every frame, kept so the allocation is not.
     std::vector<DrawCmd> cmds;
 
+    // What the last draw looked through, for a pick to look back
+    // through: a click lands on the picture the reader saw.
+    WorldView last_view{};
+    bool viewed = false;
+    // The picture's rect in window points, set by whoever draws it.
+    float rect[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    struct PickCb {
+        void (*fn)(const Pick &, void *);
+        void *user;
+        void (*free)(void *);
+    };
+    std::vector<PickCb> picks;
+
+    // The item and element the focus tracks, when it tracks one.
+    WorldItem *followed = nullptr;
+    std::uint32_t follow_index = 0;
+    // What the pointer is over this frame, for the picture to brighten.
+    WorldItem *hovered = nullptr;
+    std::uint32_t hover_index = 0;
+    bool hovered_now = false; // the pointer was over the world at all
+    // Whether a device-resident item should keep a host copy this
+    // frame: only while something asks the world what is where.
+    bool want_host = false;
+
     // A tier is a triangle budget, not a look.
     struct Mesh {
         int shape = 0;
@@ -58,6 +86,11 @@ struct WorldState {
     };
     // A deque: an item keeps the address of the shape it resolved.
     std::deque<Mesh> meshes;
+
+    // The readback: one compute pipeline every device-resident item
+    // shares, made on first use.
+    nvrhi::ComputePipelineHandle readback;
+    nvrhi::BindingLayoutHandle readback_layout;
 
     // Drawn into when the device can multisample, resolved into the
     // caller's target at the end of the frame.
@@ -77,6 +110,18 @@ void world_draw(impl::WorldState &, impl::Platform &, nvrhi::ICommandList *,
                 impl::RenderTarget &);
 
 void world_release(impl::WorldState &);
+
+// A click at window point (x, y), through the last view drawn: the
+// nearest hit over every visible item. False when nothing was hit, or
+// nothing has been drawn yet.
+bool world_pick(impl::WorldState &, float x, float y, Pick *);
+
+// Hand a pick to everyone who asked.
+void world_picked(impl::WorldState &, const Pick &);
+
+// The readback pipeline, made on first use: `src` at binding 0, `dst`
+// at 1, a count in push constants. Null when the device refused.
+nvrhi::IComputePipeline *world_readback(impl::WorldState &);
 
 void world_add_grid(impl::WorldState &);
 void world_add_axes(impl::WorldState &);

@@ -32,6 +32,12 @@ struct App {
     // a panel lives on its View; this is the other arrangement, and
     // the one a 3D program wants by default.
     std::unique_ptr<WorldState> world;
+    // The world being flown, or null. ONE fact: world_fly_begin and
+    // world_fly_end are its only writers, everything else reads it.
+    WorldState *flying = nullptr;
+    // The world under the pointer as of the last UI frame, which is
+    // what Tab captures. Rewritten every frame, remembered past none.
+    WorldState *pointed = nullptr;
     UiState ui;
     // A theme set from a panel callback is set MID-FRAME, where a
     // style change would resize controls already drawn, so it lands at

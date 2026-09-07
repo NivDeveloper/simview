@@ -10,7 +10,7 @@
 // picture barely changes and the cost does, which is the whole reason
 // the tier exists. Zoom in and it comes back.
 //
-// Drag to orbit, shift-drag to pan, wheel to zoom.
+// Drag to orbit, shift-drag to pan, wheel to zoom. Tab to fly.
 #include <simview/simview.h>
 
 #include <cmath>

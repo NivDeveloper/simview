@@ -2,6 +2,7 @@
 
 #include "../core/Error.h"
 #include "../platform/Device.h"
+#include "bytecode/readback_main_spirv.h"
 
 #include <algorithm>
 #include <cstring>
@@ -217,14 +218,28 @@ void world_draw_into(impl::WorldState &w, impl::Platform &pl,
     nvrhi::IFramebuffer *fb = ms ? w.ms_fb.Get() : out;
     nvrhi::ITexture *depth = fb->getDesc().depthAttachment.texture;
 
+    w.want_host = !w.picks.empty() || w.followed || w.hovered_now;
     for (impl::WorldItem &it : w.items)
         if (it.ops && it.ops->prepare)
             it.ops->prepare(it, cl);
+
+    // After prepare, so the element's position is this frame's. An
+    // element that cannot be located any more ends the following.
+    if (w.followed) {
+        impl::Vec3 p{};
+        if (w.followed->ops && w.followed->ops->locate &&
+            w.followed->ops->locate(*w.followed, w.follow_index, &p))
+            w.camera.frame(p, w.camera.distance());
+        else
+            w.followed = nullptr;
+    }
 
     WorldView view = view_of(w, tw, th, scene_bounds(w));
     if (!write_view_cb(w, cl, view))
         return;
     view.view_cb = w.view_cb;
+    w.last_view = view;
+    w.viewed = true;
 
     // The WORLD's, not the item's: an item that had to remember
     // would eventually forget.
@@ -347,7 +362,97 @@ const impl::WorldState::Mesh *world_mesh(impl::WorldState &w, int shape,
     return &w.meshes.back();
 }
 
+bool world_pick(impl::WorldState &w, float x, float y, Pick *out) {
+    if (!out || !w.viewed || w.rect[2] <= 0.0f || w.rect[3] <= 0.0f)
+        return false;
+    const float u = (x - w.rect[0]) / w.rect[2];
+    const float v = (y - w.rect[1]) / w.rect[3];
+    if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f)
+        return false;
+
+    // Two depths unprojected, the near plane and one behind it, so one
+    // arithmetic serves both projections. Reverse-Z: near is 1.
+    const impl::Mat4 inv = impl::mat_inverse(w.last_view.world_to_clip);
+    const float nx = 2.0f * u - 1.0f, ny = 1.0f - 2.0f * v;
+    const impl::Vec3 near = impl::transform_point(inv, {nx, ny, 1.0f});
+    const impl::Vec3 mid = impl::transform_point(inv, {nx, ny, 0.5f});
+    // Six pixels of slop, ImGui's own drag threshold: what a click
+    // cannot resolve, a pick should not demand.
+    const PickQuery q{.ray = {near, impl::normalize(mid - near)},
+                      .focal_px = w.last_view.focal_px,
+                      .orthographic = w.last_view.orthographic,
+                      .slop_px = 6.0f};
+
+    bool any = false;
+    PickHit best{};
+    impl::WorldItem *who = nullptr;
+    for (impl::WorldItem &it : w.items) {
+        PickHit h{};
+        if (!it.visible || !it.ops || !it.ops->pick || !it.ops->pick(it, q, &h))
+            continue;
+        if (!any || h.t < best.t) {
+            best = h;
+            who = &it;
+            any = true;
+        }
+    }
+    if (!any)
+        return false;
+
+    // The grid answers as the GROUND: no item, no index.
+    out->point[0] = best.point.x;
+    out->point[1] = best.point.y;
+    out->point[2] = best.point.z;
+    out->distance = best.t;
+    out->index = who == w.grid ? -1 : best.index;
+    out->cloud = who == w.grid ? impl::Cloud{} : impl::Cloud{who};
+    return true;
+}
+
+void world_picked(impl::WorldState &w, const Pick &p) {
+    for (const impl::WorldState::PickCb &c : w.picks)
+        if (c.fn)
+            c.fn(p, c.user);
+}
+
+nvrhi::IComputePipeline *world_readback(impl::WorldState &w) {
+    if (w.readback)
+        return w.readback.Get();
+    auto cs =
+        w.gpu.dev->createShader(nvrhi::ShaderDesc()
+                                    .setShaderType(nvrhi::ShaderType::Compute)
+                                    .setEntryName("main"),
+                                readback_main_spirv, readback_main_spirv_len);
+    w.readback_layout = w.gpu.dev->createBindingLayout(
+        nvrhi::BindingLayoutDesc()
+            .setVisibility(nvrhi::ShaderType::Compute)
+            .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(0))
+            .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_UAV(1))
+            .addItem(nvrhi::BindingLayoutItem::PushConstants(2, 16))
+            .setBindingOffsets(nvrhi::VulkanBindingOffsets()
+                                   .setShaderResourceOffset(0)
+                                   .setSamplerOffset(0)
+                                   .setConstantBufferOffset(0)
+                                   .setUnorderedAccessViewOffset(0)));
+    if (cs && w.readback_layout)
+        w.readback = w.gpu.dev->createComputePipeline(
+            nvrhi::ComputePipelineDesc().setComputeShader(cs).addBindingLayout(
+                w.readback_layout));
+    if (!w.readback)
+        set_error("world: the readback pipeline failed — device-resident "
+                  "items cannot be picked");
+    return w.readback.Get();
+}
+
 void world_release(impl::WorldState &w) {
+    w.readback = nullptr;
+    w.readback_layout = nullptr;
+    for (impl::WorldState::PickCb &c : w.picks)
+        if (c.free)
+            c.free(c.user);
+    w.picks.clear();
+    w.followed = nullptr;
+    w.hovered = nullptr;
     for (impl::WorldItem &it : w.items)
         if (it.ops && it.ops->release)
             it.ops->release(it);

@@ -91,6 +91,10 @@ namespace impl {
 App *app_init(const Config &c) {
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO))
         return set_error(SDL_GetError()), nullptr;
+    // Optional: a machine that cannot enumerate pads still runs, and
+    // the log names the reason rather than saying nothing.
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD))
+        SDL_Log("simview: no gamepad support — %s", SDL_GetError());
 
     App *a = new App;
     Platform &pl = a->platform;
@@ -105,6 +109,7 @@ App *app_init(const Config &c) {
         pl.ndev = nullptr;
         pl.nraw = nullptr;
         vk_close(pl.vk);
+        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         delete a;
         return nullptr;
@@ -235,6 +240,7 @@ void app_quit(App *a) {
     a->gates.clear();
     pl.cl = nullptr;
     timing_quit(pl);
+    pad_close(a);
     if (pl.win) {
         swapchain_close(pl.sc, pl.ndev);
         SDL_DestroyWindow(pl.win);
@@ -245,6 +251,7 @@ void app_quit(App *a) {
     pl.ndev = nullptr;
     pl.nraw = nullptr;
     vk_close(pl.vk);
+    SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
     delete a;
 }

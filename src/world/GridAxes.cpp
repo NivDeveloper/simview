@@ -5,6 +5,8 @@
 #include "bytecode/grid3_fsmain_spirv.h"
 #include "bytecode/grid3_vsmain_spirv.h"
 
+#include <cmath>
+
 namespace sv {
 namespace {
 
@@ -112,6 +114,21 @@ void axes_draw(impl::WorldItem &it, const DrawCmd &, nvrhi::ICommandList *cl,
     ++it.stats->draws;
 }
 
+// The ground: where the ray meets z = 0, ahead of the eye.
+bool grid_pick(const impl::WorldItem &, const PickQuery &pq, PickHit *out) {
+    const impl::Ray &ray = pq.ray;
+    if (std::fabs(ray.d.z) < 1e-6f)
+        return false;
+    const float t = -ray.o.z / ray.d.z;
+    if (t <= 0.0f)
+        return false;
+    out->t = t;
+    out->index = -1;
+    out->point = ray.o + ray.d * t;
+    out->point.z = 0.0f;
+    return true;
+}
+
 void grid_release(impl::WorldItem &it) {
     delete static_cast<GridState *>(it.state);
     it.state = nullptr;
@@ -133,6 +150,7 @@ const WorldItemOps kGridOps{
     .draw = grid_draw,
     .release = grid_release,
     .bounds = nullptr,
+    .pick = grid_pick,
     .vs = {grid3_vsmain_spirv, grid3_vsmain_spirv_len, "vsmain"},
     .fs = {grid3_fsmain_spirv, grid3_fsmain_spirv_len, "fsmain"},
     .blend = nvrhi::BlendState::RenderTarget()

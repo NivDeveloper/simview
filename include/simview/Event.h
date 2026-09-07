@@ -43,11 +43,13 @@ enum class Key : std::int32_t {
     N9 = 38,
     N0 = 39,
     Escape = 41,
+    Tab = 43,
     Space = 44,
     Right = 79,
     Left = 80,
     Down = 81,
     Up = 82,
+    LeftShift = 225,
 };
 
 struct Event {

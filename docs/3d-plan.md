@@ -137,8 +137,9 @@ stays level however far the view has tilted; pitch is about the
 camera's own right. Pan moves the focus in the screen plane at a rate
 proportional to distance; dolly is multiplicative and clamped.
 
-The controller (`src/ui/World.cpp`) is the only mouse reader in the
-engine, and it reads ImGui's state, never SDL. One gesture function
+The controller (`src/ui/World.cpp`) is the only input reader in the
+engine, and it reads ImGui's state, never SDL — except in flight,
+below, where ImGui is blind by design. One gesture function
 takes the two facts it needs — is the pointer over this world, is a
 drag on it under way — and the caller establishes them: a world in a
 panel from the item ImGui latches, a world in the window from whether
@@ -164,6 +165,210 @@ mouse, and none of them was visible in a picture:
 - **Neither was true when W1 claimed both were.** The gap was named in
   W1 as "the controller has no headless check"; this is what was
   behind it.
+
+## Flight
+
+Tab captures the world under the pointer, or the window's, and the
+camera becomes a first-person one: the pointer's motion turns it about
+the EYE, W A S D move it along its own right and forward, Q and E
+along world up, Shift is faster and the wheel scales the speed. Tab or
+Escape releases it, and so does the window losing focus — a window
+that cannot show its own cursor must not keep it hidden. The world
+menu has a `fly` entry naming the key, and in flight the corner
+button gives way to a one-line hint, since there is no pointer to
+press a button with.
+
+The mode is ONE fact: `App::flying`, the world being flown or null,
+written by `world_fly_begin` and `world_fly_end` and nowhere else.
+Beginning does four things together — relative mouse mode on the SDL
+window, ImGui made blind to mouse and keyboard, the held-key set
+cleared, the pointer set — and ending undoes the three that persist,
+so the mode cannot be half-entered. That is
+where its predecessor spent its bugs: vklib flipped a bool on the
+camera from inside a key callback and patched the cursor, the UI's
+event acceptance and a stored velocity around it, and needed a
+first-frame flag to swallow the jump that computing deltas from
+absolute positions produced across the switch.
+
+Three consequences of that one fact:
+
+- **Keys are a held SET, read once a frame, not a velocity set on
+  press.** A flight begins by clearing it, because a release can land
+  in another window and a press remembered from before take-off would
+  move the camera forever. The step is the state of the set times the
+  frame time; nothing is remembered between frames. Clearing it at
+  landing too was written and removed: nothing reads the set out of
+  flight, and the drill could not tell the two apart.
+- **In flight the mouse is the platform's, not ImGui's.** SDL's
+  relative motion and wheel are summed in `poll` into `Input`. ImGui's
+  own delta cannot serve: SDL3's relative mode still moves the reported
+  position inside the window, and ImGui would keep hovering panels
+  under a hidden cursor. `NoMouse` and `NoKeyboard` are what stop that,
+  and the orbit gesture is gated besides — a press latched before the
+  flight would otherwise still be active under it.
+- **The flight keeps exactly its own keys.** W A S D Q E Shift Tab
+  Escape stop at the engine; Space and R still reach the sim, so a
+  pause or a restart works in the air. Out of flight the engine
+  consumes one key, Tab, and only while the app has a world. One
+  dispatch function serves SDL's events and `PostEvent`'s, which is
+  what makes a posted W a real W.
+
+Which world Tab takes is `App::pointed`, rewritten every UI frame by
+whoever is hovered — a panel world by its WINDOW, since an
+overlap-allowed item learns its hover a frame late, the window's world
+when no panel claimed the pointer — and read by the next Tab.
+
+**A gamepad steers without a flight.** The left stick walks, the
+right stick looks, the triggers lift, the left stick pressed is its
+Shift and B its Escape. It needs no mode: a pad has no hotkeys to
+collide with and no pointer to hide, so it steers the world under the
+pointer, else the window's, whenever it is touched, and in a flight
+it steers the flown world beside the keys and the mouse. Both devices
+are live at once and the hand-off is seamless: a key on top of a
+stick is still ONE full deflection, never twice the speed, and the
+in-flight hint names whichever device spoke last. The pad is the
+platform's, six axes and two buttons polled once a frame in `poll`
+into `Input`, and ImGui never sees it — its own copy would be cleared
+by `NoKeyboard` in flight and would open the device a second time.
+The subsystem is optional: a machine that cannot enumerate pads runs
+and says so in the log. `pad_check` pushes raw axes through the same
+dead zone a device does, because a stick at rest never reads exactly
+zero.
+
+The camera stays the turntable and grows two mutators. `turn` is
+orbit's rotation applied about the eye, re-deriving the focus, so
+ending a flight leaves an orbit whose pivot is what was straight
+ahead. `move` shifts eye and focus together, at a rate scaled by the
+orbit distance as `pan` is. Neither clamps the pitch, as orbit does
+not. Under orthographic projection turning works and moving ahead is
+invisible, and that is left as it is.
+
+`fly_check` proves it headless — relative mode needs a window and is
+a no-op without one; every other fact flips the same either way. W
+moves eye and focus by one vector along forward; E rises along world Z
+only; a look holds the eye and keeps forward's height; a drag in
+flight moves nothing; Shift and the wheel scale the step; Escape
+releases, and a key held into the release moves nothing after, nor
+does one whose release was lost before the next flight; W never
+reaches the sim while Space does, and both are the sim's again
+afterwards; the panel world under the pointer is the one captured and
+the window's does not turn; a press latched before the flight does not
+orbit under it; over a plain panel Tab falls back to the window's
+world. Two things it cannot reach: a text field keeping Tab, which is
+the OS-event typing gate that `PostEvent` bypasses by design, and the
+release on focus loss, which is an SDL event.
+
+## Picking
+
+A click asks the world what is under the pointer. `Pick` is the
+answer, a POD: the world point, the distance along the ray, and which
+cloud and which of its points — or the GROUND, no cloud and no index,
+when the ray met the grid's plane first. `world.OnPick(fn)` is how a
+program hears it, `world.Follow(pick)` makes the camera's focus track
+that point every frame until a pan, a flight, a `Camera` call or the
+point's disappearance ends it, and a double-click makes the point the
+pivot with distance and pose untouched.
+
+**The world picks, not the item** — culling's argument again. Each
+item gets a `pick` hook beside `bounds`, answers with its nearest hit
+or with "I do not know", and the world keeps the nearest over all of
+them. A cloud answers from its host copy: the nearest point whose
+sphere the ray enters, at the radius it is drawn with. The grid
+answers as the ground. `locate` is the hook's twin for following:
+where element N is now.
+
+**A device-resident cloud gets a host copy, one frame late, while it
+is asked.** bgk's gas and flow's tracers never touch the host — a
+Sync over a tensor resolves through `source_of`, so the engine pulls
+the sim's device buffer every frame — and the first version answered
+nothing for them, which is what "clicking a particle does nothing"
+was. The copy is made only while something asks what is where (a pick
+listener, a hover, a following) and costs the host nothing otherwise.
+It cannot be `vkCmdCopyBuffer`: gpud creates its buffers with storage
+and device-address usage only, so a transfer copy reads zeros. It
+cannot be gpud's own `read()`: that is not in its thread-safe
+carve-out, and bgk's sim is dispatching on another thread. What the
+renderer may do with a gpud buffer is read it from a shader, so the
+readback is one compute dispatch (`shaders/readback.slang`) into an
+NVRHI scratch buffer, a copy from THAT into a CPU-readable one, and a
+map at the next prepare — after the frame that carried the copy has
+been waited for, so the map never blocks. The pipeline is the world's,
+made on first use.
+
+**Hovering brightens the point under the pointer**, and following
+brightens the followed one: the hovered index goes to the cloud's
+shaders in a push constant, and that instance is lerped 55% toward
+white. The hover is a pick every frame the pointer is over the world
+with no button down; on bgk's hundred thousand points that is well
+under a millisecond.
+
+**The ray is the picture's.** The world keeps the view its last draw
+looked through, and a click looks back through it — a click lands on
+what the reader saw, not on what the next frame will draw. Two depths
+are unprojected through `clip_to_world`, the near plane and one behind
+it, so one arithmetic serves both projections. A click is a release
+whose drag distance ImGui reports as zero; the engine remembers no
+press position of its own. **The picture's rect is in SCREEN
+coordinates**, because that is where ImGui puts the pointer once
+viewports are on, and a window is rarely at the screen's origin: the
+first version measured from the window's corner and every click in a
+windowed program landed a window's position away. The headless suite
+sat at (0, 0) and could not see it; `pick_screen_check` now puts the
+window at (100, 50) on the viewport fake's pretend screen.
+
+**A click has six pixels of slop**, ImGui's own drag threshold. A
+cloud's sphere is taken no smaller than that at the point's depth, so
+bgk's gas, drawn at a radius under half a pixel, can be clicked at
+all. What a click cannot resolve, a pick does not demand.
+
+One thing the device section of `pick_check` taught about writing a
+check against a Sync over a device buffer: create the cloud BEFORE the
+first Publish. The cloud is what installs the stamper on the Sync's
+gate, and an unstamped Publish makes the frame wait for nothing, so
+the fill had not run when the frame read the buffer — a picture with
+the point at the origin, and a readback faithfully copying zeros. The
+check now asserts the point is DRAWN where it belongs before it asks
+the pick, so data that never arrived can never again read as a
+readback that failed.
+
+vklib had the whole vocabulary of this, a cursor ray and six ray tests,
+and in its entire history nothing called any of it. So the hook landed
+with its first two callers in the same change: bgk tags the particle
+you click, follows it and plots its momentum beside the ensemble's
+spreads — one molecule's relaxation inside the gas's — and water sends
+a jet up under the point you click, water or floor. Both keep their
+data on the device; both work through the readback above.
+
+`pick_check` posts the camera at +X looking at the origin, so screen
+right is world +Y and up is +Z, and asks: the middle finds the point at
+the focus, and the NEAR cloud, though a far one directly behind it was
+registered first; a point one unit right and one up land where +Y and
++Z do; a click 0.45 units off a point of radius 0.3 misses and one 0.2
+off hits; a click fires the callback and a drag does not; a
+double-click moves the focus onto the point and nothing else; tilted,
+the ground answers below the focus at z = 0 and the particle at the
+focus still beats it; following moves the focus with an `Update`, a pan
+ends it, and so does the point going away; a panel world picks through
+its own rect and the window's does not hear it; a speck three pixels
+off is picked and one twelve pixels off is not; hovering names the
+point and the picture brightens it by half while its neighbour does
+not change; a cloud filled by a gpud kernel is drawn where it belongs,
+then picked and followed through the readback. Ten drills, each red:
+first hit kept instead of nearest, the radius doubled, the drag gate
+removed, following that never moves the focus, screen y flipped, the
+slop removed, the rect measured from the window's corner, the
+highlight never drawn, the hover never recorded, and the host copy
+never wanted.
+
+One more thing the windowed path taught, not reachable headless: a
+popup viewport closing is a focus loss too, so only the MAIN window's
+counts as leaving a flight — the `fly` menu entry began and ended one
+in the same frame until then.
+
+What it cannot do yet: pick anything that is not a cloud or the
+ground. A surface, when there is one, wants either a ray-triangle
+test on host geometry or the depth readback the lighting work also
+wants.
 
 ## What W2 added
 

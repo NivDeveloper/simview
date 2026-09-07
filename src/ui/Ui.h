@@ -75,7 +75,17 @@ void world_camera_gesture(impl::WorldState &, bool hovered, bool active);
 // true.
 void ui_world_input(impl::App *);
 void ui_world_overlay(impl::App *);
-void world_controls(impl::WorldState &, ::ImVec2);
+void world_controls(impl::App *, impl::WorldState &, ::ImVec2);
+
+// A flight: the pointer is captured, its motion and the held keys
+// steer ONE world, and ImGui is blind to both until it ends. One
+// function begins it and one ends it, so it cannot be half-entered.
+void world_fly_begin(impl::App *, impl::WorldState &);
+void world_fly_end(impl::App *);
+
+// Tab's half: the world under the pointer, else the window's. True
+// whenever the app has a world at all — then Tab is the engine's.
+bool ui_fly_begin(impl::App *);
 
 // The view presets, as the menu loops them. Shared so a test applies
 // the same table rather than a copy of it.

@@ -118,9 +118,9 @@ void ui_init(impl::App *a, const Config &c) {
         if (!a->ui.ini.empty())
             ImGui::LoadIniSettingsFromDisk(a->ui.ini.c_str());
         ImGui_ImplSDL3_InitForVulkan(a->platform.win);
-        // The backend polls gamepads on every frame; simview initialises
-        // only the video subsystem, and letting it look sets SDL's error
-        // string for a device that was never meant to exist.
+        // The pad is the platform's, read into Input once a frame, and
+        // ImGui never sees it: the backend's own copy would be cleared
+        // by NoKeyboard in flight and open the device a second time.
         ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual,
                                       nullptr, 0);
         g_main_format = VkFormat(a->platform.sc.vk_format);
@@ -357,8 +357,21 @@ void view_draw(impl::View &v) {
                 const bool active = ImGui::IsItemActive();
                 ImGui::GetWindowDrawList()->AddImage(
                     tex, p0, ImVec2(p0.x + avail.x, p0.y + avail.y));
-                world_camera_gesture(*v.world, hovered, active);
-                world_controls(*v.world, p0);
+                // The WINDOW, not the item: an overlap-allowed item
+                // learns its hover a frame late, the window does not.
+                // And a press on this rect must not un-point it.
+                if (ImGui::IsWindowHovered(
+                        ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+                    v.app->pointed = v.world.get();
+                v.world->rect[0] = p0.x;
+                v.world->rect[1] = p0.y;
+                v.world->rect[2] = avail.x;
+                v.world->rect[3] = avail.y;
+                // A press latched before the flight began would still
+                // be active: the flight owns the pointer, so no orbit.
+                if (!v.app->flying)
+                    world_camera_gesture(*v.world, hovered, active);
+                world_controls(v.app, *v.world, p0);
             } else {
                 ImGui::Image(tex, avail);
             }
@@ -374,6 +387,7 @@ bool ui_event(impl::App *a, const SDL_Event &ev) {
 }
 
 void ui_run_panels(impl::App *a) {
+    a->pointed = nullptr; // whoever is hovered below re-establishes it
     impl::in_order(a->ui.cbs, [](const impl::Cb &c) { c.fn(c.user); });
     // The corner button is a panel too, as far as the pointer is
     // concerned: drawn before the test below, so clicking it steers

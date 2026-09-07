@@ -298,6 +298,16 @@ int main() {
         return 1;
     gas.Colors(mom);
 
+    // A click tags one particle: the camera follows it and its momentum
+    // joins the plot — one molecule's relaxation inside the ensemble's.
+    int tagged = -1;
+    world.OnPick([&](const sv::Pick &p) {
+        if (!p.On(gas))
+            return;
+        tagged = p.index;
+        world.Follow(p);
+    });
+
     // Measured every 20 steps, on the sim's own thread. `measured`
     // carries the step the spreads and the plane were taken at, stored
     // with release AFTER them, so a frame that sees a new step number
@@ -371,6 +381,10 @@ int main() {
             "across it (z)", [&] { return sig_z.load(); }, "%.3f")
         .Text("equal on all three = thermalized")
         .Separator()
+        .Text("click a particle to follow it, double-click to re-centre")
+        .Value(
+            "tagged particle", [&] { return float(tagged); }, "%.0f")
+        .Separator()
         .Text(fixed_line);
 
     // Everything below is frame-owned: the plots read the atomics
@@ -380,6 +394,8 @@ int main() {
     int window = 400;
     std::uint64_t sampled = 0;
     std::vector<float> at_step, along, across_y, across_z, thermal;
+    std::vector<float> tag_step, tag_p;
+    int plotted = -1; // the particle tag_p is about
     std::vector<float> plane_x(PB * PB), plane_y(PB * PB);
     std::vector<float> plane_z(PB * PB, 0.0f);
 
@@ -405,6 +421,8 @@ int main() {
         .Line("equipartition",
               [&] { return sv::Points<float>{at_step, thermal}; },
               {.color = {0.60f, 0.63f, 0.70f, 0.90f}, .weight = 1.25f})
+        .Line("tagged particle |p|",
+              [&] { return sv::Points<float>{tag_step, tag_p}; })
         .Controls([&](sv::Panel &p) {
             p.Slider("steps shown", window, 100, int(TRAIL));
         });
@@ -441,8 +459,15 @@ int main() {
         // stops counting exactly at 2^24.
         const std::uint64_t n = measured.load(std::memory_order_acquire);
         if (n < sampled)
-            for (auto *v : {&at_step, &along, &across_y, &across_z, &thermal})
+            for (auto *v : {&at_step, &along, &across_y, &across_z, &thermal,
+                            &tag_step, &tag_p})
                 v->clear();
+        // A new tag starts its own trail.
+        if (tagged != plotted) {
+            plotted = tagged;
+            tag_step.clear();
+            tag_p.clear();
+        }
 
         if (n && n != sampled) {
             const float sx = sig_x.load(std::memory_order_relaxed);
@@ -456,6 +481,15 @@ int main() {
             // cell's energy, so the spread they must share is the rms
             // of the three they currently have.
             thermal.push_back(std::sqrt((sx * sx + sy * sy + sz * sz) / 3.0f));
+            // The tagged particle's momentum, read off the frame's own
+            // copy of what the cloud is coloured by.
+            if (tagged >= 0 && mom.Generation()) {
+                const Vecs &M = mom.Shown();
+                const idx k = idx(tagged);
+                tag_step.push_back(float(n));
+                tag_p.push_back(std::sqrt(
+                    M[k, 0] * M[k, 0] + M[k, 1] * M[k, 1] + M[k, 2] * M[k, 2]));
+            }
         }
         sampled = n;
 
@@ -463,6 +497,12 @@ int main() {
             const auto drop =
                 std::ptrdiff_t(at_step.size() - std::size_t(window));
             for (auto *v : {&at_step, &along, &across_y, &across_z, &thermal})
+                v->erase(v->begin(), v->begin() + drop);
+        }
+        if (tag_step.size() > std::size_t(window)) {
+            const auto drop =
+                std::ptrdiff_t(tag_step.size() - std::size_t(window));
+            for (auto *v : {&tag_step, &tag_p})
                 v->erase(v->begin(), v->begin() + drop);
         }
 

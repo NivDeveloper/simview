@@ -11,6 +11,7 @@ make          # configures and builds; needs g++-16 for -freflection
 ```
 
 Space toggles, R restarts, Esc quits. Drag to orbit, wheel to zoom.
+Click the water, or the floor, and a jet goes up there.
 
 ## The controls
 

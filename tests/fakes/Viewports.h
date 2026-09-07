@@ -59,6 +59,14 @@ inline std::vector<Window *> &live() {
     return v;
 }
 
+// Where the MAIN window sits on the pretend screen. Not the origin by
+// default is the case that matters: with viewports on, the pointer is
+// reported in screen coordinates.
+inline ImVec2 &main_pos() {
+    static ImVec2 p{0, 0};
+    return p;
+}
+
 inline nvrhi::IDevice *&device() {
     static nvrhi::IDevice *d = nullptr;
     return d;
@@ -208,6 +216,8 @@ inline void enable(sv::App &app) {
             w->pos = p;
     };
     pio.Platform_GetWindowPos = [](ImGuiViewport *vp) {
+        if (vp == ImGui::GetMainViewport())
+            return main_pos();
         Window *w = of(vp);
         return w ? w->pos : ImVec2(0, 0);
     };

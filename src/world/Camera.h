@@ -101,6 +101,22 @@ class Camera3 {
         focus_ = focus_ + right() * (-dx * k) + up() * (dy * k);
     }
 
+    // Orbit's rotation about the EYE instead of the focus: the eye
+    // holds and the focus swings, which is what a look is. Ending a
+    // flight then leaves an orbit around whatever was straight ahead.
+    void turn(float dx, float dy) {
+        const Vec3 eye = position();
+        orbit(dx, dy);
+        focus_ = eye - pose_ * Vec3{0.0f, 0.0f, 1.0f} * distance_;
+    }
+
+    // Eye and focus together, in world units: along the camera's
+    // right, along WORLD up, and ahead where it looks.
+    void move(float right_by, float up_by, float ahead_by) {
+        focus_ = focus_ + right() * right_by + Vec3{0.0f, 0.0f, 1.0f} * up_by +
+                 forward() * ahead_by;
+    }
+
     // Multiplicative, so one wheel click covers the same visual step at
     // every scale, and clamped so the camera can neither pass through
     // the focus nor leave the depth range behind.

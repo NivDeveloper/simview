@@ -108,6 +108,58 @@ void mouse_modifier_shift(impl::App *a, bool down) {
         io->AddKeyEvent(ImGuiMod_Shift, down);
 }
 
+void look(impl::App *a, float dx, float dy) {
+    if (!a)
+        return;
+    a->input.look_dx += dx;
+    a->input.look_dy += dy;
+}
+
+void fly_wheel(impl::App *a, float dy) {
+    if (a)
+        a->input.wheel += dy;
+}
+
+bool flying(impl::App *a, const char *title) {
+    impl::WorldState *w = world_of(a, title);
+    return w && a->flying == w;
+}
+
+void gamepad(impl::App *a, const std::int16_t raw[6]) {
+    if (!a)
+        return;
+    impl::pad_axes(a->input, raw);
+    a->input.pad.present = true;
+}
+
+void gamepad_buttons(impl::App *a, bool fast, bool back) {
+    if (a)
+        impl::pad_buttons(a, fast, back);
+}
+
+bool pick(impl::App *a, const char *title, float x, float y, Pick *out) {
+    impl::WorldState *w = world_of(a, title);
+    return w && world_pick(*w, x, y, out);
+}
+
+bool hovered(impl::App *a, const char *title, std::int32_t *index) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w || !w->hovered)
+        return false;
+    if (index)
+        *index = std::int32_t(w->hover_index);
+    return true;
+}
+
+bool following(impl::App *a, const char *title, std::int32_t *index) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w || !w->followed)
+        return false;
+    if (index)
+        *index = std::int32_t(w->follow_index);
+    return true;
+}
+
 std::size_t mesh_tiers(impl::App *a, const char *title, unsigned *triangles,
                        std::size_t cap) {
     impl::WorldState *w = world_of(a, title);

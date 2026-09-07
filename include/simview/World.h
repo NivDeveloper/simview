@@ -5,6 +5,8 @@
 #include "world/Cloud.h"
 
 #include <concepts>
+#include <cstdint>
+#include <utility>
 
 namespace sv {
 
@@ -35,6 +37,17 @@ struct LightDesc {
     float intensity = 0.7f;
 };
 
+struct Pick {
+    float point[3] = {0.0f, 0.0f, 0.0f};
+    float distance = 0.0f;
+    std::int32_t index = -1;
+    impl::Cloud cloud;
+    bool Ground() const { return cloud.p == nullptr; }
+    bool On(const sv::Cloud &c) const {
+        return cloud.p != nullptr && cloud.p == c.Raw().p;
+    }
+};
+
 namespace impl {
 
 World world_create(App *, const WorldDesc &);
@@ -43,6 +56,9 @@ bool world_light(World, const LightDesc &);
 void world_ambient(World, const float rgb[3]);
 void world_track(World, SyncGate);
 void world_untracked_pull(World);
+void world_on_pick(World, void (*fn)(const Pick &, void *), void *user,
+                   void (*free)(void *));
+void world_follow(World, Cloud, std::int32_t index);
 
 }
 
@@ -67,6 +83,23 @@ class World {
     World &Ambient(float r, float g, float b) {
         const float rgb[3] = {r, g, b};
         impl::world_ambient(w_, rgb);
+        return *this;
+    }
+
+    template <class F> World &OnPick(F fn) {
+        impl::world_on_pick(
+            w_, [](const Pick &p, void *u) { (*static_cast<F *>(u))(p); },
+            new F(std::move(fn)), [](void *u) { delete static_cast<F *>(u); });
+        return *this;
+    }
+
+    World &Follow(const Pick &p) {
+        impl::world_follow(w_, p.cloud, p.index);
+        return *this;
+    }
+
+    World &Unfollow() {
+        impl::world_follow(w_, impl::Cloud{}, -1);
         return *this;
     }
 

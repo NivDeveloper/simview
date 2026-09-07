@@ -1,7 +1,10 @@
 // A world you can look around: a shell of particles coloured by
 // direction over a ground grid, lit from above and to one side.
 // Drag inside the window to orbit, shift-drag or right-drag to pan,
-// wheel to dolly.
+// wheel to dolly. Tab to fly: W A S D and Q E move, the mouse looks,
+// Shift is faster, the wheel sets the speed, Esc or Tab comes back.
+// A gamepad needs no Tab: left stick walks, right stick looks,
+// triggers lift, L3 is faster and B comes back.
 //
 // The world has no title, so it IS the window and the panel floats
 // over it. Give it one and it becomes a panel among panels instead.

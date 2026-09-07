@@ -12,7 +12,7 @@ SLANGC=${SLANGC:-$(command -v slangc || echo /usr/local/bin/slangc)}
 # Where a source's bytecode belongs — the stratum that includes it.
 out_for() {
     case "$1" in
-    cloud | grid3 | axes3 | mesh) echo ../src/world/bytecode ;;
+    cloud | grid3 | axes3 | mesh | readback) echo ../src/world/bytecode ;;
     *) echo ../src/scene/bytecode ;;
     esac
 }
@@ -27,9 +27,17 @@ emit() { # source-name, array-name, file
 # One shader, or all of them. Naming one matters: slangc's output is
 # only byte-stable for a given slangc, so regenerating everything with
 # a newer one diffs bytecode nobody meant to touch.
-for src in ${*:-display lines particles cloud grid3 axes3 mesh}; do
+for src in ${*:-display lines particles cloud grid3 axes3 mesh readback}; do
     OUT=$(out_for "$src")
     mkdir -p "$OUT"
+    # A compute shader has one entry and no stage pair.
+    if [ "$src" = readback ]; then
+        "$SLANGC" "$src.slang" -target spirv -entry main -stage compute \
+            -fvk-use-entrypoint-name -emit-spirv-directly -o main.spv
+        emit "$src.slang" "${src}_main_spirv" main.spv
+        rm -f main.spv
+        continue
+    fi
     for e in vsmain fsmain; do
         stage=$([ "$e" = vsmain ] && echo vertex || echo fragment)
         "$SLANGC" "$src.slang" -target spirv -entry $e -stage $stage \

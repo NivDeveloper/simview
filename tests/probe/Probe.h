@@ -12,6 +12,7 @@
 // Tests are not consumers.
 
 #include <simview/Types.h>
+#include <simview/World.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -80,6 +81,27 @@ void mouse_move(impl::App *, float x, float y);
 void mouse_button(impl::App *, int button, bool down);
 void mouse_wheel(impl::App *, float dy);
 void mouse_modifier_shift(impl::App *, bool down);
+
+// A flight's inputs, delivered where the platform would put them: the
+// captured pointer's motion and wheel go to Input, not to ImGui, which
+// is blind to the mouse while a world is flown. Keys go through
+// PostEvent. And whether the named world is the one being flown.
+void look(impl::App *, float dx, float dy);
+void fly_wheel(impl::App *, float dy);
+bool flying(impl::App *, const char *title);
+
+// A pad's six raw axes as SDL reports them — left x y, right x y, the
+// two triggers — through the same dead zone a device goes through.
+// The pad counts as present from the first call.
+void gamepad(impl::App *, const std::int16_t raw[6]);
+void gamepad_buttons(impl::App *, bool fast, bool back);
+
+// A pick at window point (x, y) through the named world's last drawn
+// view, bypassing the gesture; and whether the world follows anything,
+// with the followed index.
+bool pick(impl::App *, const char *title, float x, float y, Pick *out);
+bool following(impl::App *, const char *title, std::int32_t *index);
+bool hovered(impl::App *, const char *title, std::int32_t *index);
 
 // The built-in meshes a world has had to make, newest last, as their
 // triangle counts. A tier is chosen from how many instances there
