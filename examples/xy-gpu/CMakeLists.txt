@@ -6,6 +6,7 @@
 # option here (gpud's own doctrine: build from source).
 cmake_minimum_required(VERSION 3.24)
 project(xy-gpu LANGUAGES CXX)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(FetchContent)
 set(SIMVIEW_BUILD_EXAMPLES OFF)
