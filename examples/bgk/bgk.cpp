@@ -143,7 +143,7 @@ void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
     // Under two particles there is nothing to resample from.
     Ones live = 1.0f * (c.pop[at] >= 2.0f);
     Vecs next = b[at] * q[i, n] + shift[at, n];
-    Mom[i, n] += live[i] * (next[i, n] - Mom[i, n]);
+    Mom += live[i] * (next[i, n] - Mom[i, n]);
 }
 
 // The bin centres the histogram and the Maxwellian share.

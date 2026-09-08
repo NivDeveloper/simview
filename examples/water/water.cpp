@@ -223,17 +223,16 @@ Grid pressure_of(Grid p, const Tank &t, const Grid &fluid, const Grid &rhs,
                  const Grid &winv, int sweeps, f32 omega) {
     // A cell that has just drained must restart from zero, or
     // over-relaxing an air cell towards zero overshoots and grows.
-    p[i, j, k] *= fluid[i, j, k];
+    p *= fluid[i, j, k];
 
     for (int s = 0; s < 2 * sweeps; ++s) {
         const Grid &half = (s % 2) ? t.black : t.red;
-        p[i, j, k] +=
-            half[i, j, k] * omega *
-            ((p[zero(i + 1_c), j, k] + p[zero(i - 1_c), j, k] +
-              p[i, zero(j + 1_c), k] + p[i, zero(j - 1_c), k] +
-              p[i, j, zero(k + 1_c)] + p[i, j, zero(k - 1_c)] - rhs[i, j, k]) *
-                 winv[i, j, k] -
-             p[i, j, k]);
+        p += half[i, j, k] * omega *
+             ((p[zero(i + 1_c), j, k] + p[zero(i - 1_c), j, k] +
+               p[i, zero(j + 1_c), k] + p[i, zero(j - 1_c), k] +
+               p[i, j, zero(k + 1_c)] + p[i, j, zero(k - 1_c)] - rhs[i, j, k]) *
+                  winv[i, j, k] -
+              p[i, j, k]);
     }
     return p;
 }
@@ -294,8 +293,8 @@ void advance(State &s, const Tank &tank, const Params &prm) {
     // it, so water slides along a wall instead of sticking to it.
     const Vecs moved = s.X[i, n] + prm.dt * s.V[i, n];
     s.X = Fmin(Fmax(moved[i, n], margin), L - margin);
-    s.V[i, n] *= 1.0f - 1.0f * (moved[i, n] < margin) -
-                 1.0f * (moved[i, n] > L - margin);
+    s.V *= 1.0f - 1.0f * (moved[i, n] < margin) -
+           1.0f * (moved[i, n] > L - margin);
 }
 
 // A start state is one or two boxes of water, each an exact number of
