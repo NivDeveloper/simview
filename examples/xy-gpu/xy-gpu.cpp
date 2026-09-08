@@ -108,7 +108,7 @@ void overrelax(tensor::Gpu<Field> &theta, const Mask &colour) {
 // float precision never becomes the colormap's problem.
 void rewrap(tensor::Gpu<Field> &theta) {
     using namespace tensor;
-    theta = theta - math::Floor(theta * (1.0f / two_pi)) * two_pi;
+    theta -= math::Floor(theta * (1.0f / two_pi)) * two_pi;
 }
 
 // One frame of dynamics: a Metropolis sweep, then two microcanonical
