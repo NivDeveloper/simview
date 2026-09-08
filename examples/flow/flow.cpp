@@ -137,12 +137,12 @@ int main() {
     // changes, so folding is visible as the colours laminate.
     const Vecs origin = offset[i, n] * (1.0f / R);
 
-    // The slots are device tensors: a publish is a copy on the device
-    // into the slot's own buffer, and the frame pulls that buffer.
+    // The slots are device tensors: a publish is a copy on the device,
+    // moved into the slot, and the frame pulls that buffer.
     sv::Sync<Vecs> pos, tag;
-    pos.Next() = +P;
+    pos.Next() = copy(P);
     pos.Publish();
-    tag.Next() = +origin;
+    tag.Next() = copy(origin);
     tag.Publish();
 
     // One const read to sync: the compute backend batches eagerly, so
@@ -179,12 +179,12 @@ int main() {
                     A_now.load(std::memory_order_relaxed),
                     B_now.load(std::memory_order_relaxed),
                     C_now.load(std::memory_order_relaxed));
-        pos.Next() = +P;
+        pos.Next() = copy(P);
         pos.Publish();
     });
     sim.OnRestart([&] {
         P = 0.5f * box + offset[i, n];
-        pos.Next() = +P;
+        pos.Next() = copy(P);
         pos.Publish();
     });
     sim.SetDt(double(h));

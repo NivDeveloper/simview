@@ -262,13 +262,13 @@ int main() {
 
     // Positions place the particles; momenta colour them, so the gas
     // reads as fast and slow rather than as a shape. The slots are
-    // device tensors: a publish is a copy on the device into the slot's
-    // own buffer, and the frame pulls that buffer.
+    // device tensors: a publish is a copy on the device, moved into the
+    // slot, and the frame pulls that buffer.
     sv::Sync<Vecs> pos, mom;
     const auto publish = [&] {
-        pos.Next() = +Pos;
+        pos.Next() = copy(Pos);
         pos.Publish();
-        mom.Next() = +Mom;
+        mom.Next() = copy(Mom);
         mom.Publish();
     };
     publish();
