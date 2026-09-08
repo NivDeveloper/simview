@@ -118,9 +118,9 @@ Vecs resample(const auto &at, const Cell &c, const Vecs &mom,
 
 void step(Vecs &Pos, Vecs &Mom, const Tensor<f32, B> &centre, f32 dt,
           f32 alpha) {
-    Vecs moved = Pos + Mom * dt;
+    Pos += Mom * dt;
     // periodic boundary conditions
-    Pos = moved - Floor(moved + 0.5f);
+    Pos -= Floor(Pos + 0.5f);
 
     auto cid = cells(Pos);
     // The cell each particle deposits into and reads back from: built
