@@ -55,6 +55,8 @@ using Vecs = Tsr<f32, N, 3>;
 using Cells = Tsr<f32, N>; // each particle's cell, as one number
 using Grid = Tsr<f32, CC>;
 using GridV = Tsr<f32, CC, 3>;
+using Dist = Tsr<f32, CC, 3, B>;        // per cell and axis, over the B bins
+using Counts = Tsr<unsigned, CC, B, 3>; // the same, counted: bins lead
 using Ones = Tsr<f32, N>;
 
 namespace {
@@ -93,22 +95,20 @@ Cell measure(const auto &at, const Vecs &mom) {
 Vecs resample(const auto &at, const Cell &c, const Vecs &mom,
               const Tensor<f32, B> &centre, f32 alpha) {
     // Momenta per cell
-    Tsr<unsigned, CC, B, 3> hist =
-        scatter<i>(at, clamp(bins<B>(mom[i, n], -vmax, vmax)), 1u);
+    Counts hist = scatter<i>(at, clamp(bins<B>(mom[i, n], -vmax, vmax)), 1u);
 
     // The Maxwellian for these cell parameters, centred on the drift.
     // The cell index leads: free indices take first-appearance order.
-    Tsr<f32, CC, 3, B> off = c.p[j, n] * -c.inv[j] + centre[m];
-    Tsr<f32, CC, 3, B> heat = Exp(off[j, n, m] * off[j, n, m] * -0.5f / c.T[j]);
-    Tsr<f32, CC, 3> nrm = fold<2>(heat);
+    Dist off = c.p[j, n] * -c.inv[j] + centre[m];
+    Dist heat = Exp(off[j, n, m] * off[j, n, m] * -0.5f / c.T[j]);
+    GridV nrm = fold<2>(heat);
 
     // f(t+dt) = f_eq + (f - f_eq)·exp(-dt/tau)
-    Tsr<f32, CC, 3, B> relaxed =
-        (1.0f - alpha) * c.pop[j] * heat[j, n, m] / nrm[j, n] +
-        hist[j, m, n] * alpha;
+    Dist relaxed = (1.0f - alpha) * c.pop[j] * heat[j, n, m] / nrm[j, n] +
+                   hist[j, m, n] * alpha;
 
     // The CDF is the running sum of the relaxed histogram along its bins.
-    Tsr<f32, CC, 3, B> cdf = scan<ops::Add, m>(relaxed[j, n, m]) * c.inv[j];
+    Dist cdf = scan<ops::Add, m>(relaxed[j, n, m]) * c.inv[j];
 
     Vecs u1 = rng::Uniform<f32, N, 3>();
     Vecs hit = fold<m>(1.0f * (u1[i, n] > cdf[at, n, m]));
