@@ -22,8 +22,10 @@ bool flight_key(const Event &e) {
 }
 
 void note_key(App *a, const Event &e) {
-    if (e.key >= 0 && std::size_t(e.key) < a->input.held.size())
-        a->input.held.set(std::size_t(e.key), e.type == Event::Type::KeyDown);
+    const std::int32_t k = e.control.code;
+    if (e.control.device == Device::Keyboard && k >= 0 &&
+        std::size_t(k) < a->input.held.size())
+        a->input.held.set(std::size_t(k), e.type == Event::Type::Down);
 }
 
 constexpr std::int16_t kDeadZone = 8000; // SDL_gamepad.h's suggestion
@@ -122,7 +124,7 @@ void pad_close(App *a) {
 void dispatch_key(App *a, const Event &e) {
     note_key(a, e);
     a->input.last_pad = false;
-    const bool press = e.type == Event::Type::KeyDown && !e.repeat;
+    const bool press = e.type == Event::Type::Down && !e.repeat;
     if (a->flying) {
         if (press && (Is(e, Key::Escape) || Is(e, Key::Tab)))
             world_fly_end(a);
@@ -182,9 +184,12 @@ void poll(App *a) {
         if (a->flying && ev.type == SDL_EVENT_MOUSE_WHEEL)
             a->input.wheel += ev.wheel.y;
         if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
-            const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::KeyDown
-                                                        : Event::Type::KeyUp,
-                          std::int32_t(ev.key.scancode), ev.key.repeat};
+            const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::Down
+                                                        : Event::Type::Up,
+                          {Device::Keyboard, std::int32_t(ev.key.scancode)},
+                          0.0f,
+                          0.0f,
+                          ev.key.repeat};
             // The state is true whoever has the keyboard; the edge is
             // the panel's while it is typing.
             if (typing && !a->flying) {

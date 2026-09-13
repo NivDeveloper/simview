@@ -218,6 +218,7 @@ endif()
 
 add_library(simview STATIC
     src/core/Error.cpp
+    src/core/Actions.cpp
     src/platform/Device.cpp
     src/platform/Swapchain.cpp
     src/platform/Vk.cpp

@@ -98,6 +98,23 @@ add_test(NAME headless.math_check COMMAND math_check)
 set_tests_properties(headless.math_check PROPERTIES
     SKIP_RETURN_CODE 77 LABELS "pure")
 
+# The resolver, with no device: controls in, action values out, and
+# the file both ways. Compiles the model's one source directly, as
+# math_check does the arithmetic's headers.
+add_executable(bindings_check checks/bindings_check.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/Actions.cpp)
+target_include_directories(bindings_check PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include)
+set_target_properties(bindings_check PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+if(NOT MSVC)
+    target_compile_options(bindings_check PRIVATE ${SIMVIEW_WARNINGS})
+endif()
+add_test(NAME headless.bindings_check COMMAND bindings_check)
+set_tests_properties(headless.bindings_check PROPERTIES
+    SKIP_RETURN_CODE 77 LABELS "pure")
+
 # S2's bring-up gate: the app-owned Vulkan stack with NVRHI and gpud
 # both adopting it, headless. It speaks src/ internals on purpose —
 # the App does not drive this stack until the swap commit — so it gets

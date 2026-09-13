@@ -293,6 +293,13 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.slab(0.53f, 0.10f, 0.77f, 0.43f, 0.10f);
         return;
 
+    case Icon::MouseMiddle:
+        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
+        p.line(0.50f, 0.06f, 0.50f, 0.46f);
+        p.line(0.20f, 0.46f, 0.80f, 0.46f);
+        p.slab(0.40f, 0.12f, 0.60f, 0.40f, 0.08f);
+        return;
+
     case Icon::MouseWheel:
         p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
         p.line(0.20f, 0.46f, 0.80f, 0.46f);

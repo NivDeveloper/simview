@@ -2,6 +2,7 @@
 
 #include "App.h"
 #include "Event.h"
+#include "Input.h"
 #include "Panel.h"
 #include "Plots.h"
 #include "Scene.h"

@@ -42,33 +42,68 @@ enum class Key : std::int32_t {
     N8 = 37,
     N9 = 38,
     N0 = 39,
+    Return = 40,
     Escape = 41,
+    Backspace = 42,
     Tab = 43,
     Space = 44,
+    Grave = 53,
+    F1 = 58,
     Right = 79,
     Left = 80,
     Down = 81,
     Up = 82,
+    LeftCtrl = 224,
     LeftShift = 225,
+    LeftAlt = 226,
 };
 
+enum class Device : std::int32_t {
+    None = 0,
+    Keyboard = 1,
+    Mouse = 2,
+    Pad = 3,
+};
+
+struct Control {
+    Device device = Device::None;
+    std::int32_t code = 0;
+};
+
+inline bool operator==(Control a, Control b) {
+    return a.device == b.device && a.code == b.code;
+}
+
+inline bool operator!=(Control a, Control b) { return !(a == b); }
+
 struct Event {
-    enum class Type : std::int32_t { KeyDown, KeyUp };
-    Type type;
-    std::int32_t key;
-    bool repeat;
+    enum class Type : std::int32_t { Down, Up, Move, Delta };
+    Type type = Type::Down;
+    Control control;
+    float x = 0.0f;
+    float y = 0.0f;
+    bool repeat = false;
 };
 
 inline bool Is(const Event &e, Key k) {
-    return e.key == static_cast<std::int32_t>(k);
+    return e.control.device == Device::Keyboard &&
+           e.control.code == static_cast<std::int32_t>(k);
 }
 
 inline Event KeyDown(Key k, bool repeat = false) {
-    return {Event::Type::KeyDown, static_cast<std::int32_t>(k), repeat};
+    return {Event::Type::Down,
+            {Device::Keyboard, static_cast<std::int32_t>(k)},
+            0.0f,
+            0.0f,
+            repeat};
 }
 
 inline Event KeyUp(Key k) {
-    return {Event::Type::KeyUp, static_cast<std::int32_t>(k), false};
+    return {Event::Type::Up,
+            {Device::Keyboard, static_cast<std::int32_t>(k)},
+            0.0f,
+            0.0f,
+            false};
 }
 
 }

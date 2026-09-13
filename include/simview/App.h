@@ -93,7 +93,7 @@ class App {
 
     App &OnKey(Key k, std::function<void()> fn) {
         return OnEvent([k, fn = std::move(fn)](const Event &e) {
-            if (e.type == Event::Type::KeyDown && !e.repeat && Is(e, k))
+            if (e.type == Event::Type::Down && !e.repeat && Is(e, k))
                 fn();
         });
     }

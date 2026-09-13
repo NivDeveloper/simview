@@ -22,7 +22,7 @@ constexpr Icon kAll[] = {
     Icon::Legend,      Icon::Histogram,    Icon::Density,   Icon::Profile,
     Icon::Joint,       Icon::Restart,      Icon::Forward,   Icon::Play,
     Icon::Pause,       Icon::Step,         Icon::MouseLeft, Icon::MouseRight,
-    Icon::MouseWheel};
+    Icon::MouseMiddle, Icon::MouseWheel};
 constexpr int kCount = int(sizeof kAll / sizeof kAll[0]);
 
 constexpr float kSize = 40.0f;

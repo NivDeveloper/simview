@@ -42,6 +42,7 @@ enum class Icon : std::uint8_t {
     Step,
     MouseLeft,
     MouseRight,
+    MouseMiddle,
     MouseWheel
 };
 
