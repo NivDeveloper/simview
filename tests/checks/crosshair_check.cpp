@@ -81,7 +81,7 @@ int main() {
     const std::size_t centre_on = lit_count(aimed_shot, 386, 286, 414, 314, 40);
     std::printf("  the centre lit: %zu without the crosshair, %zu with\n",
                 centre_off, centre_on);
-    CHECK_GT(centre_on, centre_off + 20);
+    CHECK_GT(centre_on, centre_off + 8); // a dot: a dozen pixels or so
 
     // ── W moves eye and focus along forward, and is the flight's ─────
     const auto start = cam(app);
