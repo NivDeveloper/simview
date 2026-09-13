@@ -20,14 +20,29 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
     const bool left = ImGui::IsMouseDown(ImGuiMouseButton_Left);
     const bool right = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
+    // With the cut tool on, a left drag is a stroke through the picture
+    // — from where the pointer was last frame to where it is — and the
+    // right button orbits in its place.
+    const bool cutting = w.tool == int(Tool::Cut) && !w.strokes.empty();
+    if (active && left && cutting) {
+        if (w.stroking && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
+            world_stroke(w, w.stroke_x, w.stroke_y, io.MousePos.x,
+                         io.MousePos.y);
+        w.stroking = true;
+        w.stroke_x = io.MousePos.x;
+        w.stroke_y = io.MousePos.y;
+    } else {
+        w.stroking = false;
+    }
+
     // No latch of our own: whoever the press landed on owns the drag
     // until the release, and both callers get that for free.
-    if (active && (left || right)) {
+    if (active && (right || (left && !cutting))) {
         // Per-frame deltas, not a remembered cursor: there is no state
         // of ours to seed on the first frame of a drag, so the jump
         // that a remembered position causes cannot happen.
         const ImVec2 d = io.MouseDelta;
-        const bool pan = io.KeyShift || right;
+        const bool pan = io.KeyShift || (right && !cutting);
         if (d.x != 0.0f || d.y != 0.0f) {
             if (pan) {
                 w.followed = nullptr; // the reader took the focus back
@@ -214,6 +229,15 @@ void world_menu(impl::App *a, impl::WorldState &w) {
             ImGui::Checkbox("axes", &w.axes->visible);
     }
 
+    // A tool is offered only where something listens for it.
+    if (!w.strokes.empty()) {
+        ImGui::SeparatorText("tool");
+        if (ImGui::Selectable("camera", w.tool == int(Tool::Camera)))
+            w.tool = int(Tool::Camera);
+        if (ImGui::Selectable("cut", w.tool == int(Tool::Cut)))
+            w.tool = int(Tool::Cut);
+    }
+
     ImGui::SeparatorText("navigate");
     if (ImGui::Selectable("fly  (Tab)"))
         world_fly_begin(a, w);
@@ -243,6 +267,10 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
         if (ImGui::BeginPopup("##world_menu")) {
             world_menu(a, w);
             ImGui::EndPopup();
+        }
+        if (w.tool == int(Tool::Cut) && !w.strokes.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("cut  drag    orbit  right-drag");
         }
     }
     ImGui::PopID();

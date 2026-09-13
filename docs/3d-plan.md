@@ -105,6 +105,7 @@ a 3D program would come back empty.
 ```
 include/simview/World.h        WorldDesc, CameraDesc, the World builder
 include/simview/world/Cloud.h  CloudMode/CloudDesc, the Cloud handle
+include/simview/world/Wire.h   WireDesc, the Wire handle
 src/core/Math.h     Vec3, Quat, Mat4, Aabb, Plane, Frustum — pure
                     functions and nothing else
 src/world/Camera.h  Camera3, the reverse-Z projection, the near plane
@@ -116,10 +117,13 @@ src/world/Items.h   WorldItemOps, WorldItem, DrawCmd, WorldView
 src/world/World.h   WorldState + the draw
 src/world/World.cpp constants, submit, sort, the pass loop
 src/world/Pipelines.cpp  the world's pipeline cache
+src/world/Channel.h      a channel: host, Sync or device buffer, and
+                         the readback that gives the last a host copy
 src/world/Cloud.cpp      the cloud item, three ops rows, three doors
+src/world/Wire.cpp       the wire item: edges over a channel, a mask
 src/world/GridAxes.cpp   the grid and the axes, as ordinary items
-src/ui/World.cpp    world_create and the camera controller
-shaders/{world_view,cloud,grid3,axes3}.slang
+src/ui/World.cpp    world_create, the camera controller, the stroke
+shaders/{world_view,cloud,mesh,wire,grid3,axes3}.slang
 ```
 
 Math is a 250-line internal header rather than a dependency: ten
@@ -447,6 +451,42 @@ cloud that was in front of it.
 cubes, a shell of spheres coloured by direction, the same shell as
 billboards — with a slider that walks the sphere count across the tier
 boundary. `examples/orbit` is the same world in one panel-free window.
+
+## What the wire and the stroke added
+
+**Segments over a point set.** A `Wire` is a cloud's positions channel
+with an edge list — two indices each, fixed at creation — drawn as thin
+quads of a pixel width (`shaders/wire.slang`): the perpendicular is
+taken in pixel space and put back in clip space scaled by w, so the
+width holds at any depth and the quad keeps the segment's depth. A mask,
+one float an edge, hides the ones at or below zero, and it is a channel
+like any other: uploaded, pulled from a Sync, or a producer's device
+buffer through the door. The channel itself moved out of the cloud into
+`Channel.h`, one `width` field wider, which is the whole of what the
+second item cost the first — and moving it fixed a cloud fed by a Sync
+never learning its bounds, since the prepare now says whether the host
+copy changed. A wire picks by the nearest edge the ray passes within
+the click's slop of, masked-out edges excluded; a followed edge is its
+midpoint.
+
+**A stroke is a drag with the cut tool on.** The tool is a field on the
+world, offered in the on-picture menu only where something listens
+(`OnStroke`). While it is on, a left drag hands each frame's motion on
+as a `Stroke`: two picture-space points and the view it was drawn
+through, so `Crosses(p, q)` answers whether a world segment's projection
+crossed it — the whole of what a cut needs, and nothing the world has to
+know about the data. The right button orbits meanwhile. A stroke through
+a picture nobody has seen is nothing: headless, that means a shot must
+have been drawn, which is what `stroke_check` learned first.
+
+`examples/cloth` is the case: a spring lattice hung from its top edge,
+position-based dynamics with every spring family a stencil over the
+grid, two wires for the structural springs with the families' own masks
+as their masks, cut with the pointer and tearing where a spring is
+stretched past its limit. The sim runs on the host, which is what makes
+the cut exact and immediate: the stroke callback tests every spring
+against the frame's own copy of the positions and queues the crossings
+for the next tick.
 
 ## Stated limitations
 

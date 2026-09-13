@@ -17,6 +17,9 @@ Particles particles_from_source(Scene, gpud::BufferSource,
 Lines lines_from_source(Scene, gpud::BufferSource, const LinesDesc &);
 Cloud cloud_from_source(World, gpud::BufferSource, const CloudDesc &);
 bool cloud_values_from_source(Cloud, gpud::BufferSource);
+Wire wire_from_source(World, gpud::BufferSource, const std::uint32_t *edges,
+                      std::size_t count, const WireDesc &);
+bool wire_mask_from_source(Wire, gpud::BufferSource);
 }
 
 inline gpud::Device &Device(const App &a) { return *impl::app_device(a.Raw()); }

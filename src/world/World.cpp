@@ -5,6 +5,7 @@
 #include "bytecode/readback_main_spirv.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace sv {
@@ -415,6 +416,74 @@ void world_picked(impl::WorldState &w, const Pick &p) {
             c.fn(p, c.user);
 }
 
+void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1) {
+    if (!w.viewed || w.rect[2] <= 0.0f || w.rect[3] <= 0.0f ||
+        w.strokes.empty())
+        return;
+    Stroke s{};
+    s.from[0] = (x0 - w.rect[0]) / w.rect[2];
+    s.from[1] = (y0 - w.rect[1]) / w.rect[3];
+    s.to[0] = (x1 - w.rect[0]) / w.rect[2];
+    s.to[1] = (y1 - w.rect[1]) / w.rect[3];
+    for (int k = 0; k < 16; ++k)
+        s.clip[k] = w.last_view.world_to_clip.m[k];
+    for (const impl::WorldState::StrokeCb &c : w.strokes)
+        if (c.fn)
+            c.fn(s, c.user);
+}
+
+namespace impl {
+
+// Both ends projected through the view the stroke was drawn in, then a
+// segment crossing in the picture's own coordinates. An end behind the
+// camera has no place in the picture, so it never crosses.
+bool stroke_crosses(const Stroke &s, const float p[3], const float q[3]) {
+    Mat4 m;
+    for (int k = 0; k < 16; ++k)
+        m.m[k] = s.clip[k];
+    float wp = 0.0f, wq = 0.0f;
+    const Vec3 a = transform_point(m, {p[0], p[1], p[2]}, &wp);
+    const Vec3 b = transform_point(m, {q[0], q[1], q[2]}, &wq);
+    if (wp <= 0.0f || wq <= 0.0f)
+        return false;
+    const float ax = (a.x + 1.0f) * 0.5f, ay = (1.0f - a.y) * 0.5f;
+    const float bx = (b.x + 1.0f) * 0.5f, by = (1.0f - b.y) * 0.5f;
+    const float cx = s.from[0], cy = s.from[1], dx = s.to[0], dy = s.to[1];
+    const auto side = [](float x0, float y0, float x1, float y1, float x,
+                         float y) {
+        return (x1 - x0) * (y - y0) - (y1 - y0) * (x - x0);
+    };
+    const float o1 = side(ax, ay, bx, by, cx, cy);
+    const float o2 = side(ax, ay, bx, by, dx, dy);
+    const float o3 = side(cx, cy, dx, dy, ax, ay);
+    const float o4 = side(cx, cy, dx, dy, bx, by);
+    return ((o1 > 0.0f) != (o2 > 0.0f)) && ((o3 > 0.0f) != (o4 > 0.0f)) &&
+           o1 != 0.0f && o2 != 0.0f && o3 != 0.0f && o4 != 0.0f;
+}
+
+void world_on_stroke(World w, void (*fn)(const Stroke &, void *), void *user,
+                     void (*free)(void *)) {
+    WorldState *ws = static_cast<WorldState *>(w.p);
+    if (!ws) {
+        if (free)
+            free(user);
+        return;
+    }
+    ws->strokes.push_back({fn, user, free});
+}
+
+void world_tool(World w, int t) {
+    if (WorldState *ws = static_cast<WorldState *>(w.p))
+        ws->tool = t;
+}
+
+int world_tool(World w) {
+    const WorldState *ws = static_cast<const WorldState *>(w.p);
+    return ws ? ws->tool : 0;
+}
+
+} // namespace impl
+
 nvrhi::IComputePipeline *world_readback(impl::WorldState &w) {
     if (w.readback)
         return w.readback.Get();
@@ -451,6 +520,10 @@ void world_release(impl::WorldState &w) {
         if (c.free)
             c.free(c.user);
     w.picks.clear();
+    for (impl::WorldState::StrokeCb &c : w.strokes)
+        if (c.free)
+            c.free(c.user);
+    w.strokes.clear();
     w.followed = nullptr;
     w.hovered = nullptr;
     for (impl::WorldItem &it : w.items)

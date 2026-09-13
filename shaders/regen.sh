@@ -12,7 +12,7 @@ SLANGC=${SLANGC:-$(command -v slangc || echo /usr/local/bin/slangc)}
 # Where a source's bytecode belongs — the stratum that includes it.
 out_for() {
     case "$1" in
-    cloud | grid3 | axes3 | mesh | readback) echo ../src/world/bytecode ;;
+    cloud | grid3 | axes3 | mesh | readback | wire) echo ../src/world/bytecode ;;
     *) echo ../src/scene/bytecode ;;
     esac
 }
@@ -27,7 +27,7 @@ emit() { # source-name, array-name, file
 # One shader, or all of them. Naming one matters: slangc's output is
 # only byte-stable for a given slangc, so regenerating everything with
 # a newer one diffs bytecode nobody meant to touch.
-for src in ${*:-display lines particles cloud grid3 axes3 mesh readback}; do
+for src in ${*:-display lines particles cloud grid3 axes3 mesh readback wire}; do
     OUT=$(out_for "$src")
     mkdir -p "$OUT"
     # A compute shader has one entry and no stage pair.

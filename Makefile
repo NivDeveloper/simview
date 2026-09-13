@@ -107,6 +107,7 @@ flagship: all
 	$(MAKE) -C examples/bgk
 	$(MAKE) -C examples/xy-gpu
 	$(MAKE) -C examples/ising
+	$(MAKE) -C examples/cloth
 
 clean:
 	rm -rf build build-debug build-san build-tsan build-trace

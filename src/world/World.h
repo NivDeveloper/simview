@@ -64,6 +64,18 @@ struct WorldState {
     };
     std::vector<PickCb> picks;
 
+    // A stroke of the pointer through the picture, handed to whoever
+    // asked, while the cut tool is on.
+    struct StrokeCb {
+        void (*fn)(const Stroke &, void *);
+        void *user;
+        void (*free)(void *);
+    };
+    std::vector<StrokeCb> strokes;
+    int tool = 0; // sv::Tool
+    bool stroking = false;
+    float stroke_x = 0.0f, stroke_y = 0.0f; // window points, last frame
+
     // The item and element the focus tracks, when it tracks one.
     WorldItem *followed = nullptr;
     std::uint32_t follow_index = 0;
@@ -118,6 +130,10 @@ bool world_pick(impl::WorldState &, float x, float y, Pick *);
 
 // Hand a pick to everyone who asked.
 void world_picked(impl::WorldState &, const Pick &);
+
+// A stroke from window point (x0, y0) to (x1, y1), through the last
+// view drawn, to everyone who asked. Nothing has been drawn: nothing.
+void world_stroke(impl::WorldState &, float x0, float y0, float x1, float y1);
 
 // The readback pipeline, made on first use: `src` at binding 0, `dst`
 // at 1, a count in push constants. Null when the device refused.

@@ -243,7 +243,9 @@ add_library(simview STATIC
     src/world/World.cpp
     src/world/Geometry.cpp
     src/world/Pipelines.cpp
+    src/world/Channel.cpp
     src/world/Cloud.cpp
+    src/world/Wire.cpp
     src/world/GridAxes.cpp
     src/door/Gpud.cpp
     src/sync/Sync.cpp)

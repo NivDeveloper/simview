@@ -14,7 +14,7 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             hang_check timing_check world_check input_check grid_check mesh_check
             cull_check panel_check theme_check derive_check surface_check icon_check
             chrome_check world_controls_check fly_check pad_check pick_check
-            pick_screen_check
+            pick_screen_check wire_check stroke_check
             layout_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)

@@ -1,6 +1,7 @@
 #include "World.h"
 
 #include "../core/Error.h"
+#include "Channel.h"
 #include "bytecode/cloud_fsmain_spirv.h"
 #include "bytecode/cloud_vsmain_spirv.h"
 #include "bytecode/mesh_fsmain_spirv.h"
@@ -16,29 +17,11 @@
 namespace sv {
 namespace {
 
-struct Channel {
-    nvrhi::BufferHandle buf;     // owned, when the host writes it
-    nvrhi::BufferHandle wrapped; // the producer's, re-resolved per frame
-    std::vector<float> shadow;
-    std::size_t count = 0;    // points the host last wrote
-    std::size_t capacity = 0; // points the buffer holds
-    bool dirty = false;
-    bool external = false;
-    gpud::BufferSource src{};
-    HostSource host{};
-    std::uint64_t host_gen = 0;
-    // A device buffer's host copy comes through here, one frame late:
-    // a shader reads it into `scratch`, which is copied into `staging`.
-    nvrhi::BufferHandle scratch, staging;
-    std::size_t staging_bytes = 0;
-    std::size_t staged_count = 0;
-    bool staged = false;
-
-    bool live() const { return external || host || count; }
-    nvrhi::IBuffer *bound() const {
-        return external ? wrapped.Get() : buf.Get();
-    }
-};
+using impl::Channel;
+using impl::channel_prepare;
+using impl::channel_readback;
+using impl::channel_resolve;
+using impl::channel_upload;
 
 struct CloudState {
     Channel pos;
@@ -96,150 +79,6 @@ std::uint32_t highlight_of(const impl::WorldItem &it) {
 
 CloudState &state_of(impl::WorldItem &it) {
     return *static_cast<CloudState *>(it.state);
-}
-
-// A channel is xyz triples: twelve bytes a point, whichever source
-// they came from, so the byte count IS the point count.
-bool channel_upload(Channel &ch, const impl::Gpu &gpu, const char *name,
-                    const float *xyz, std::size_t count) {
-    if (!count) {
-        ch.count = 0; // an empty channel is not an error
-        return true;
-    }
-    if (count > ch.capacity) {
-        ch.buf = gpu.dev->createBuffer(
-            nvrhi::BufferDesc()
-                .setByteSize(count * 12)
-                .setStructStride(4)
-                .setInitialState(nvrhi::ResourceStates::ShaderResource)
-                .setKeepInitialState(true)
-                .setDebugName(name));
-        if (!ch.buf) {
-            ch.capacity = ch.count = 0;
-            return set_error(std::string(name) + ": buffer creation failed"),
-                   false;
-        }
-        ch.capacity = count;
-    }
-    ch.shadow.assign(xyz, xyz + count * 3);
-    ch.count = count;
-    ch.dirty = true;
-    return true;
-}
-
-void channel_pull_host(Channel &ch, const impl::Gpu &gpu, const char *name) {
-    std::size_t bytes = 0;
-    std::uint64_t gen = 0;
-    const void *data = ch.host.fn(ch.host.user, &bytes, &gen);
-    if (!data || gen == ch.host_gen)
-        return;
-    ch.host_gen = gen;
-    if (bytes % 12)
-        return set_error(std::string(name) + " are xyz triples, and " +
-                         std::to_string(bytes / 4) +
-                         " floats were published — not a multiple of three");
-    channel_upload(ch, gpu, name, static_cast<const float *>(data), bytes / 12);
-}
-
-void channel_prepare(Channel &ch, const impl::Gpu &gpu, nvrhi::ICommandList *cl,
-                     Stats *stats, const char *name) {
-    if (ch.host)
-        channel_pull_host(ch, gpu, name);
-    if (ch.dirty && !ch.external && ch.buf && ch.count) {
-        cl->writeBuffer(ch.buf, ch.shadow.data(), ch.count * 12);
-        ch.dirty = false;
-        ++stats->uploads;
-    }
-}
-
-// Ask the producer where its data is NOW and wrap it. The size is
-// where the count comes from, so nothing sits between asking and using.
-void channel_resolve(Channel &ch, const impl::Gpu &gpu, const char *name) {
-    if (!ch.external)
-        return;
-    gpud::Buffer *b = ch.src.current();
-    const std::uint64_t native = b ? gpud::vulkan::native_buffer(*b) : 0;
-    ch.count = b ? b->bytes() / 12 : 0;
-    if (!native || !ch.count) {
-        ch.wrapped = nullptr;
-        return;
-    }
-    ch.wrapped = gpu.dev->createHandleForNativeBuffer(
-        nvrhi::ObjectTypes::VK_Buffer,
-        nvrhi::Object(reinterpret_cast<void *>(native)),
-        nvrhi::BufferDesc()
-            .setByteSize(b->bytes())
-            .setStructStride(4)
-            .setInitialState(nvrhi::ResourceStates::ShaderResource)
-            .setKeepInitialState(true)
-            .setDebugName(name));
-}
-
-// Matches readback.slang's RParams.
-struct ReadbackParams {
-    std::uint32_t count;
-    std::uint32_t pad0, pad1, pad2;
-};
-
-// A device buffer's host copy, ONE FRAME LATE: recorded now, mapped at
-// the next prepare once its frame has been waited for, so the map never
-// blocks. The producer's buffer has no transfer usage: a shader reads it.
-void channel_readback(Channel &ch, impl::WorldItem &it, nvrhi::ICommandList *cl,
-                      const char *name) {
-    const impl::Gpu &gpu = it.gpu;
-    if (!ch.external || !ch.wrapped || !ch.count || !it.owner)
-        return;
-    if (ch.staged && ch.staging) {
-        if (const void *p =
-                gpu.dev->mapBuffer(ch.staging, nvrhi::CpuAccessMode::Read)) {
-            const float *f = static_cast<const float *>(p);
-            ch.shadow.assign(f, f + ch.staged_count * 3);
-            gpu.dev->unmapBuffer(ch.staging);
-        }
-        ch.staged = false;
-    }
-
-    nvrhi::IComputePipeline *pipe = world_readback(*it.owner);
-    if (!pipe)
-        return;
-    const std::size_t bytes = ch.count * 12;
-    if (!ch.staging || ch.staging_bytes < bytes) {
-        ch.scratch = gpu.dev->createBuffer(
-            nvrhi::BufferDesc()
-                .setByteSize(bytes)
-                .setStructStride(4)
-                .setCanHaveUAVs(true)
-                .setInitialState(nvrhi::ResourceStates::UnorderedAccess)
-                .setKeepInitialState(true)
-                .setDebugName(name));
-        ch.staging =
-            gpu.dev->createBuffer(nvrhi::BufferDesc()
-                                      .setByteSize(bytes)
-                                      .setCpuAccess(nvrhi::CpuAccessMode::Read)
-                                      .setDebugName(name));
-        ch.staging_bytes = bytes;
-        if (!ch.scratch || !ch.staging)
-            return set_error(std::string(name) + ": buffer creation failed");
-    }
-
-    // The wrapped handle is this frame's, so the set is too.
-    nvrhi::BindingSetHandle bset = gpu.dev->createBindingSet(
-        nvrhi::BindingSetDesc()
-            .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, ch.wrapped))
-            .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(1, ch.scratch))
-            .addItem(nvrhi::BindingSetItem::PushConstants(
-                2, sizeof(ReadbackParams))),
-        it.owner->readback_layout);
-    if (!bset)
-        return;
-    const ReadbackParams rp{std::uint32_t(ch.count * 3), 0, 0, 0};
-    cl->setComputeState(
-        nvrhi::ComputeState().setPipeline(pipe).addBindingSet(bset));
-    cl->setPushConstants(&rp, sizeof rp);
-    cl->dispatch(std::uint32_t((ch.count * 3 + 255) / 256));
-    cl->copyBuffer(ch.staging, 0, ch.scratch, 0, bytes);
-    ch.staged = true;
-    ch.staged_count = ch.count;
 }
 
 // One walk, both summaries. The centroid places the cloud in the draw
@@ -328,10 +167,10 @@ bool locate(const impl::WorldItem &it, std::uint32_t k, impl::Vec3 *p) {
 // buffer, and the shape this item will need. Draw only binds.
 void prepare(impl::WorldItem &it, nvrhi::ICommandList *cl) {
     CloudState &cs = state_of(it);
-    const bool was_dirty = cs.pos.dirty;
-    channel_prepare(cs.pos, it.gpu, cl, it.stats, "cloud positions");
+    const bool moved =
+        channel_prepare(cs.pos, it.gpu, cl, it.stats, "cloud positions");
     channel_prepare(cs.val, it.gpu, cl, it.stats, "cloud values");
-    if (cs.pos.dirty != was_dirty)
+    if (moved)
         resummarize(cs);
     channel_resolve(cs.pos, it.gpu, "cloud positions (external)");
     channel_resolve(cs.val, it.gpu, "cloud values (external)");
