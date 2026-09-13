@@ -119,6 +119,19 @@ int main() {
     CHECK_LT(std::fabs(carried[0]), 0.01f);
     CHECK_LT(std::fabs(carried[2]), 0.01f);
 
+    // ── the drag tool is a stroke tool too, and a stroke says which ──
+    for (const Stroke &s : strokes)
+        CHECK(s.tool == Tool::Cut);
+    strokes.clear();
+    w.Tool(Tool::Drag);
+    const auto steady = cam(app);
+    input::drag(app, cx, cy - 60.0f, cx + 40.0f, cy - 60.0f);
+    CHECK_LT(input::turned(steady, cam(app)), 1e-3f);
+    REQUIRE(strokes.size() >= 1);
+    CHECK(strokes.front().tool == Tool::Drag);
+    CHECK(strokes.front().On(wire));
+    w.Tool(Tool::Cut);
+
     // ── the right button orbits under the cut tool ───────────────────
     strokes.clear();
     const auto still = cam(app);

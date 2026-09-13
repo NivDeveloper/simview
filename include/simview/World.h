@@ -57,6 +57,7 @@ struct Pick {
 enum class Tool : int {
     Camera = 0,
     Cut = 1,
+    Drag = 2,
 };
 
 struct Stroke;
@@ -72,6 +73,7 @@ struct Stroke {
     float clip[16] = {};
     impl::Cloud item;
     std::int32_t index = -1;
+    sv::Tool tool = sv::Tool::Cut;
     bool Crosses(const float p[3], const float q[3]) const {
         return impl::stroke_crosses(*this, p, q);
     }

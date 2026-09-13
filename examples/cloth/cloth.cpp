@@ -1,9 +1,9 @@
 // A cloth hung by its top edge: position-based dynamics on a grid of
-// springs, every spring family a stencil over the grid. Choose "cut" and
-// drag to cut it, or drag the ball through it; a spring stretched past
-// its limit tears.
+// springs, every spring family a stencil over the grid. The cut tool
+// cuts it where the pointer drags; the drag tool moves the ball, through
+// it if you like; a spring stretched past its limit tears.
 //
-// Space toggles, R restarts, Esc quits. Right-drag orbits while cutting.
+// Space toggles, R restarts, Esc quits. Right-drag orbits under a tool.
 #include <simview/simview.h>
 
 #include <Tensor/Gen.h>
@@ -30,14 +30,15 @@ using u32 = std::uint32_t;
 constexpr idx N = 100;            // particles per side
 constexpr f32 L = 1.6f;           // side, metres
 constexpr f32 h = L / f32(N - 1); // a structural spring's rest length
-constexpr f32 z0 = 0.15f;         // the bottom edge's height at rest
+constexpr f32 hd = h * 1.41421356f, hb = 2.0f * h; // shear and bend
+constexpr f32 z0 = 0.15f; // the bottom edge's height at rest
 constexpr f32 ball_r = 0.3f;
 constexpr f32 ball_start[3] = {0.0f, -0.35f, 0.8f}; // the camera's side
 
 // The solver: a 1/60 s tick in substeps of two averaged Jacobi pulls,
 // over-relaxed. The pulls propagate one spring a pass, so a longer chain
 // needs more substeps to hold: eight at N = 40 keeps a hanging cloth
-// within a tenth at 1.4 ms a tick, twenty at N = 100 at 21 ms.
+// within a tenth at 1 ms a tick, twenty at N = 100 at 15 ms.
 constexpr f32 kDt = 1.0f / 60.0f, kDamping = 0.02f, kRelax = 1.5f;
 constexpr f32 kBend = 0.25f; // the bend springs' weight
 constexpr int kIterations = 2;
@@ -125,10 +126,10 @@ Grid pinned(int mode) {
 }
 
 // One substep: predict under gravity, then a few rounds of pulling every
-// spring toward its rest length (Jacobi, averaged over the springs that
-// pulled) and putting particles back out of the floor and the ball, and
-// finally drop the springs that stretched too far.
-void substep(State &s, const Grid &W, const Params &p) {
+// spring toward its rest length (Jacobi, each particle taking its share
+// of the pulls on it) and putting particles back out of the floor and
+// the ball.
+void substep(State &s, const Grid &W, const Grid &share, const Params &p) {
     constexpr f32 dt = kDt / f32(kSubsteps);
     constexpr f32 damping = kDamping / f32(kSubsteps);
     // Gravity comes on over the first second, so the sheet never
@@ -143,8 +144,9 @@ void substep(State &s, const Grid &W, const Params &p) {
     // rest length, once per spring, handed to both ends — the near end
     // takes its mass's share of it, the far end the negative of its own.
     auto spring = [&](const Grid &alive, auto dc, auto dr, f32 rest_len, f32 k,
-                      Vecs &d, Grid &cnt) {
+                      Vecs &d) {
         auto fi = clamp(i + dc), fj = clamp(j + dr);
+        auto bi = clamp(i - dc), bj = clamp(j - dr);
         auto gap = xn[fi, fj, n] - xn[i, j, n];
         auto len = Fmax(Sqrt(fold<n>(gap * gap)), 1e-6f);
 
@@ -152,12 +154,8 @@ void substep(State &s, const Grid &W, const Params &p) {
             alive[i, j] > 0.0f,
             k * (1.0f - rest_len / len) / (W[i, j] + W[fi, fj] + 1e-9f), 0.0f);
 
-        Vecs move = coef[i, j] * gap;
-        d += W[i, j] * move[i, j, n];
-        d -= W[i, j] * move[zero(i - dc), zero(j - dr), n];
-
-        Grid held = where(alive[i, j] > 0.0f, k, 0.0f);
-        cnt += held[i, j] + held[zero(i - dc), zero(j - dr)];
+        d += W[i, j] * (coef[i, j] * gap - coef[zero(i - dc), zero(j - dr)] *
+                                               (xn[i, j, n] - xn[bi, bj, n]));
     };
 
     // The floor, and the ball: a particle inside is put back on the
@@ -174,39 +172,59 @@ void substep(State &s, const Grid &W, const Params &p) {
                    xn[i, j, n]);
     };
 
-    f32 hd = h * 1.41421356f, hb = 2.0f * h;
-
     for (int it = 0; it < kIterations; ++it) {
         Vecs d(gen::Fill(0.0f));
-        Grid cnt(gen::Fill(0.0f));
-        spring(s.s.right, 1_c, 0_c, h, 1.0f, d, cnt);
-        spring(s.s.up, 0_c, 1_c, h, 1.0f, d, cnt);
-        spring(s.s.diag_a, 1_c, 1_c, hd, 1.0f, d, cnt);
-        spring(s.s.diag_b, 1_c, -1_c, hd, 1.0f, d, cnt);
-        spring(s.s.bend_r, 2_c, 0_c, hb, kBend, d, cnt);
-        spring(s.s.bend_u, 0_c, 2_c, hb, kBend, d, cnt);
-        xn += kRelax * d[i, j, n] / Fmax(cnt[i, j], 1.0f);
+        spring(s.s.right, 1_c, 0_c, h, 1.0f, d);
+        spring(s.s.up, 0_c, 1_c, h, 1.0f, d);
+        spring(s.s.diag_a, 1_c, 1_c, hd, 1.0f, d);
+        spring(s.s.diag_b, 1_c, -1_c, hd, 1.0f, d);
+        spring(s.s.bend_r, 2_c, 0_c, hb, kBend, d);
+        spring(s.s.bend_u, 0_c, 2_c, hb, kBend, d);
+        xn += share[i, j] * d[i, j, n];
         collide();
     }
 
     s.xo = std::move(s.x);
     s.x = std::move(xn);
     s.t += dt;
+}
 
-    // A spring stretched past its limit is gone.
-    auto tear = [&](Grid &alive, auto dc, auto dr, f32 rest_len) {
+// Each particle's share of a pull: over-relaxed, averaged over the
+// springs on it, counted from both ends. The masks only change between
+// ticks, so this is once a tick.
+Grid shares(const Springs &s) {
+    auto pulls = [&](const Grid &alive, auto dc, auto dr, f32 k, Grid &cnt) {
+        Grid held = where(alive[i, j] > 0.0f, k, 0.0f);
+        cnt += held[i, j] + held[zero(i - dc), zero(j - dr)];
+    };
+
+    Grid cnt(gen::Fill(0.0f));
+    pulls(s.right, 1_c, 0_c, 1.0f, cnt);
+    pulls(s.up, 0_c, 1_c, 1.0f, cnt);
+    pulls(s.diag_a, 1_c, 1_c, 1.0f, cnt);
+    pulls(s.diag_b, 1_c, -1_c, 1.0f, cnt);
+    pulls(s.bend_r, 2_c, 0_c, kBend, cnt);
+    pulls(s.bend_u, 0_c, 2_c, kBend, cnt);
+
+    Grid share = kRelax / Fmax(cnt[i, j], 1.0f);
+    return share;
+}
+
+// A spring stretched past its limit is gone.
+void tear(State &s, f32 past) {
+    auto check = [&](Grid &alive, auto dc, auto dr, f32 rest_len) {
         auto fi = clamp(i + dc), fj = clamp(j + dr);
         auto gap = s.x[fi, fj, n] - s.x[i, j, n];
-        f32 limit = p.tear * rest_len;
+        f32 limit = past * rest_len;
         alive *= 1.0f * (fold<n>(gap * gap) < limit * limit);
     };
 
-    tear(s.s.right, 1_c, 0_c, h);
-    tear(s.s.up, 0_c, 1_c, h);
-    tear(s.s.diag_a, 1_c, 1_c, hd);
-    tear(s.s.diag_b, 1_c, -1_c, hd);
-    tear(s.s.bend_r, 2_c, 0_c, hb);
-    tear(s.s.bend_u, 0_c, 2_c, hb);
+    check(s.s.right, 1_c, 0_c, h);
+    check(s.s.up, 0_c, 1_c, h);
+    check(s.s.diag_a, 1_c, 1_c, hd);
+    check(s.s.diag_b, 1_c, -1_c, hd);
+    check(s.s.bend_r, 2_c, 0_c, hb);
+    check(s.s.bend_u, 0_c, 2_c, hb);
 }
 
 // One tick: the sag gravity adds per substep shrinks with its square,
@@ -214,13 +232,17 @@ void substep(State &s, const Grid &W, const Params &p) {
 // tick is spread over the substeps, so a fast drag pushes the cloth a
 // little at a time rather than throwing it a whole frame's distance.
 void step(State &s, const Grid &W, const Params &p) {
+    Grid share = shares(s.s);
     f32 from[3] = {s.ball[0], s.ball[1], s.ball[2]};
+
     for (int t = 0; t < kSubsteps; ++t) {
         f32 along = f32(t + 1) / f32(kSubsteps);
         for (int k = 0; k < 3; ++k)
             s.ball[k] = from[k] + (p.ball_at[k] - from[k]) * along;
-        substep(s, W, p);
+        substep(s, W, share, p);
     }
+
+    tear(s, p.tear);
 }
 
 // A wire's edges for one family, in the mask's own order — spring (c, r)
@@ -349,7 +371,7 @@ int main() {
     int tool = 0;
     app.Panel("cloth")
         .Transport(sim)
-        .Choice("tool", tool, {"camera", "cut"})
+        .Choice("tool", tool, {"camera", "cut", "drag"})
         .Choice("hang from", knobs.pin, {"the top edge", "two corners"})
         .Checkbox("ball", knobs.ball)
         .Button("mend",
@@ -369,11 +391,10 @@ int main() {
 
         // The tool has two switches, the panel's and the picture's: the
         // one that moved since last frame wins.
-        int picture = world.Tool() == sv::Tool::Cut ? 1 : 0;
         if (tool != tool_shown)
-            world.Tool(tool ? sv::Tool::Cut : sv::Tool::Camera);
+            world.Tool(sv::Tool(tool));
         else
-            tool = picture;
+            tool = int(world.Tool());
         tool_shown = tool;
 
         if (knobs.pin != pin_shown)
@@ -385,12 +406,14 @@ int main() {
         .OnKey(sv::Key::R, [&] { sim.Restart(); })
         .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
-    // A stroke that began on the ball carries it; any other cuts every
-    // spring whose segment it crosses, tested against the frame's own
-    // copy of the positions and queued for the next tick.
+    // The drag tool carries the ball when a stroke began on it. The cut
+    // tool cuts every spring whose segment the stroke crosses, tested
+    // against the frame's own copy of the positions and queued for the
+    // next tick.
     world.OnStroke([&](const sv::Stroke &st) {
-        if (st.On(ball)) {
-            st.Carry(knobs.ball_at, knobs.ball_at);
+        if (st.tool == sv::Tool::Drag) {
+            if (st.On(ball))
+                st.Carry(knobs.ball_at, knobs.ball_at);
             return;
         }
 

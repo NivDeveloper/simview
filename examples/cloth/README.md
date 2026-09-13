@@ -1,11 +1,11 @@
 # cloth — a hanging sheet you can cut
 
 A square of cloth hangs by its top edge, or by its two corners, with a
-ball in front of it. Choose the cut tool: drag across the cloth and
-every spring the stroke crosses is gone, drag the ball and it goes where
-the pointer takes it, through the cloth if you like. A spring stretched
-past its limit tears on its own, so a slit runs on under the cloth's
-weight.
+ball in front of it. With the cut tool, drag across the cloth and every
+spring the stroke crosses is gone. With the drag tool, drag the ball and
+it goes where the pointer takes it, through the cloth if you like. A
+spring stretched past its limit tears on its own, so a slit runs on
+under the cloth's weight.
 
 ```sh
 make          # configures and builds; needs g++-16 for -freflection
@@ -13,7 +13,7 @@ make          # configures and builds; needs g++-16 for -freflection
 ```
 
 Space toggles, R restarts, Esc quits. Drag to orbit, wheel to zoom;
-with the cut tool on, the right button orbits instead. The sim runs at
+with a tool on, the right button orbits instead. The sim runs at
 sixty ticks a second, real time.
 
 ## How it is built
@@ -27,7 +27,10 @@ every spring toward its rest length a few times over with every pull a
 stencil over the grid, collide with the floor and the ball, read the
 velocity off the move. The pulls are averaged per particle and
 over-relaxed, and a tick is split into substeps, which is what holds a
-hanging cloth within a few percent at under two milliseconds a tick.
+hanging cloth within a few percent. The share each particle takes of a
+pull and the tear test are once a tick, since the springs only change
+between ticks: a hundred particles a side runs at fifteen milliseconds
+a tick, forty at one.
 
 The picture is two `Wire` items over one positions Sync, one per
 structural family, each masked by that family's own tensor. The cut

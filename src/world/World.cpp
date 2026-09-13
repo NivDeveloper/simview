@@ -429,6 +429,7 @@ void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1) {
         s.clip[k] = w.last_view.world_to_clip.m[k];
     s.item = w.stroke_item;
     s.index = w.stroke_index;
+    s.tool = Tool(w.tool);
     for (const impl::WorldState::StrokeCb &c : w.strokes)
         if (c.fn)
             c.fn(s, c.user);

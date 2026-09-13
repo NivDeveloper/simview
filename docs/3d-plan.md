@@ -469,11 +469,12 @@ copy changed. A wire picks by the nearest edge the ray passes within
 the click's slop of, masked-out edges excluded; a followed edge is its
 midpoint.
 
-**A stroke is a drag with the cut tool on.** The tool is a field on the
-world, offered in the on-picture menu only where something listens
-(`OnStroke`). While it is on, a left drag hands each frame's motion on
-as a `Stroke`: two picture-space points, the view it was drawn through,
-and what the drag began on, picked once at the press. `Crosses(p, q)`
+**A stroke is a drag with a stroke tool on, cut or drag.** The tool is a
+field on the world, offered in the on-picture menu only where something
+listens (`OnStroke`). While one is on, a left drag hands each frame's
+motion on as a `Stroke`: two picture-space points, the view it was
+drawn through, what the drag began on, picked once at the press, and
+which tool was on, so one listener serves both. `Crosses(p, q)`
 answers whether a world segment's projection crossed it — the whole of
 what a cut needs — and `Carry(at, to)` moves a world point along it in
 the picture's plane at that point's depth, which is the whole of what

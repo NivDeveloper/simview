@@ -20,10 +20,10 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
     const bool left = ImGui::IsMouseDown(ImGuiMouseButton_Left);
     const bool right = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
-    // With the cut tool on, a left drag is a stroke through the picture
-    // — from where the pointer was last frame to where it is — and the
-    // right button orbits in its place.
-    const bool cutting = w.tool == int(Tool::Cut) && !w.strokes.empty();
+    // With a stroke tool on, cut or drag, a left drag is a stroke through
+    // the picture — from where the pointer was last frame to where it is
+    // — and the right button orbits in its place.
+    const bool cutting = w.tool != int(Tool::Camera) && !w.strokes.empty();
     if (active && left && cutting) {
         if (w.stroking && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
             world_stroke(w, w.stroke_x, w.stroke_y, io.MousePos.x,
@@ -244,6 +244,8 @@ void world_menu(impl::App *a, impl::WorldState &w) {
             w.tool = int(Tool::Camera);
         if (ImGui::Selectable("cut", w.tool == int(Tool::Cut)))
             w.tool = int(Tool::Cut);
+        if (ImGui::Selectable("drag", w.tool == int(Tool::Drag)))
+            w.tool = int(Tool::Drag);
     }
 
     ImGui::SeparatorText("navigate");
@@ -276,9 +278,11 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
             world_menu(a, w);
             ImGui::EndPopup();
         }
-        if (w.tool == int(Tool::Cut) && !w.strokes.empty()) {
+        if (w.tool != int(Tool::Camera) && !w.strokes.empty()) {
             ImGui::SameLine();
-            ImGui::TextDisabled("cut  drag    orbit  right-drag");
+            ImGui::TextDisabled(w.tool == int(Tool::Cut)
+                                    ? "cut  drag    orbit  right-drag"
+                                    : "move  drag    orbit  right-drag");
         }
     }
     ImGui::PopID();
