@@ -18,9 +18,19 @@
 
 namespace {
 
-// Per-app, next to the executable: two apps sharing one ini clobber
-// each other, and a working-directory ini loses the layout.
-std::string ini_path(const char *title) {
+// The color formats the backend's pipelines are built for. Static on
+// purpose: the InitInfo keeps POINTERS to these past ui_init — the
+// viewport pipelines are created when a panel is first torn out.
+VkFormat g_main_format = VK_FORMAT_R8G8B8A8_UNORM;
+VkFormat g_viewport_format = VK_FORMAT_B8G8R8A8_UNORM;
+
+} // namespace
+
+namespace sv {
+
+// Per-app, under the preference path: two apps sharing one file
+// clobber each other, and a working-directory file loses the layout.
+std::string pref_file(const char *title, const char *name) {
     std::string app;
     for (const char *p = title ? title : ""; *p; ++p) {
         const unsigned char c = static_cast<unsigned char>(*p);
@@ -36,25 +46,15 @@ std::string ini_path(const char *title) {
     if (!dir) {
         // Not a refusal: the app runs, it just will not remember.
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "simview: no layout directory (%s) — the panel layout "
-                    "will not persist",
-                    SDL_GetError());
+                    "simview: no preference directory (%s) — %s will not "
+                    "persist",
+                    SDL_GetError(), name);
         return {};
     }
-    std::string p = std::string(dir) + "layout.ini";
+    std::string p = std::string(dir) + name;
     SDL_free(dir);
     return p;
 }
-
-// The color formats the backend's pipelines are built for. Static on
-// purpose: the InitInfo keeps POINTERS to these past ui_init — the
-// viewport pipelines are created when a panel is first torn out.
-VkFormat g_main_format = VK_FORMAT_R8G8B8A8_UNORM;
-VkFormat g_viewport_format = VK_FORMAT_B8G8R8A8_UNORM;
-
-} // namespace
-
-namespace sv {
 
 // A world in the window needs a UI frame even with no panels: the
 // pointer it steers by is ImGui's to report.
@@ -114,9 +114,10 @@ void ui_init(impl::App *a, const Config &c) {
 
     const bool windowed = a->platform.win != nullptr;
     if (windowed) {
-        a->ui.ini = ini_path(c.title);
+        a->ui.ini = pref_file(c.title, "layout.ini");
         if (!a->ui.ini.empty())
             ImGui::LoadIniSettingsFromDisk(a->ui.ini.c_str());
+        ui_settings_load(a, c.title);
         ImGui_ImplSDL3_InitForVulkan(a->platform.win);
         // The pad is the platform's, read into Input once a frame, and
         // ImGui sees only the cursor it drives: the backend's own copy
@@ -198,6 +199,7 @@ void ui_quit(impl::App *a) {
     // writing anyway truncates a good layout.
     if (!a->ui.ini.empty() && ImGui::GetFrameCount() > 0)
         ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
+    ui_settings_save(a, nullptr);
     // The plot contexts hold ImGui-derived state: they go first.
     ImPlot3D::DestroyContext(a->ui.plot3d);
     a->ui.plot3d = nullptr;
@@ -240,6 +242,7 @@ void ui_end(impl::App *a) {
             ImGui::SaveIniSettingsToDisk(a->ui.ini.c_str());
         io.WantSaveIniSettings = false;
     }
+    ui_settings_save(a, nullptr);
 }
 
 void ui_draw(impl::App *a, nvrhi::ICommandList *cl, nvrhi::IFramebuffer *fb) {
@@ -393,6 +396,7 @@ void ui_run_panels(impl::App *a) {
     // concerned: drawn before the test below, so clicking it steers
     // nothing.
     ui_world_overlay(a);
+    ui_settings_window(a);
     // After them, never before: whether a panel claimed the pointer is
     // only true once every panel has had its say.
     actions_frame(a, true);

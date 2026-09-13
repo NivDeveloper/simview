@@ -244,6 +244,7 @@ add_library(simview STATIC
     src/ui/Actions.cpp
     src/ui/Pointer.cpp
     src/ui/Chips.cpp
+    src/ui/Settings.cpp
     src/world/World.cpp
     src/world/Geometry.cpp
     src/world/Pipelines.cpp

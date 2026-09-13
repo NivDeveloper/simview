@@ -271,6 +271,19 @@ std::vector<Binding> vetted(const ActionDesc &d) {
     return out;
 }
 
+// A row registered after the file landed picks its line up from the
+// unknown ones: they are re-read, and what still fits nothing stays.
+void file_pending(impl::App *a) {
+    ActionTable &t = a->input.table;
+    if (!a->input.file_applied || t.unknown.empty())
+        return;
+    std::string text;
+    for (const std::string &u : t.unknown)
+        text += u + "\n";
+    t.unknown.clear();
+    impl::table_load(t, text);
+}
+
 int bind_row(impl::App *a, int ctx, const ActionDesc &d,
              void (*fn)(float, float, void *), void *user,
              void (*free)(void *)) {
@@ -287,6 +300,7 @@ int bind_row(impl::App *a, int ctx, const ActionDesc &d,
         a->input.callbacks.push_back({row, fn, user, free});
     else if (free)
         free(user);
+    file_pending(a);
     return row;
 }
 
@@ -346,8 +360,22 @@ void actions_frame(impl::App *a, bool ui) {
             a->pointed = a->world.get();
     }
 
+    // The file's rows land once the app has registered its own; a line
+    // for a row not yet known waits in `unknown` and lands when it is.
+    if (!in.file_applied) {
+        if (!a->ui.bindings_text.empty())
+            impl::table_load(in.table, a->ui.bindings_text);
+        in.file_applied = true;
+    }
+
     set_active(a);
     impl::Snapshot s = snapshot(a, ui);
+    // A capture takes the frame's controls for itself.
+    if (ui_settings_capture(a, s)) {
+        impl::resolve(in.table, impl::Snapshot{});
+        impl::clear_edges(in);
+        return;
+    }
     impl::resolve(in.table, s);
     if (ui && double_click(a, s)) {
         s.double_click = true;
@@ -488,6 +516,7 @@ Mode mode_create(App *a, const ModeDesc &d) {
                          m->enter.data(), std::int32_t(m->enter.size())};
     in.table.add(in.table.find_context("base"), row);
     in.modes.push_back(std::move(m));
+    file_pending(a);
     return Mode{in.modes.back().get()};
 }
 

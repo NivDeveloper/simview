@@ -96,6 +96,17 @@ const char *active_mode(impl::App *);
 std::size_t bindings_text(impl::App *, char *out, std::size_t cap);
 void bindings_load(impl::App *, const char *text);
 
+// The settings page driven as its cells drive it: whether it is
+// showing, a cell put to listening for the named hand (a Device), and
+// whether one is still listening; how many cells clash in their
+// context.
+void settings_open(impl::App *, bool on);
+bool settings_showing(impl::App *);
+bool settings_capture(impl::App *, const char *context, const char *id,
+                      int device);
+bool settings_capturing(impl::App *);
+std::size_t bindings_conflicts(impl::App *);
+
 // The named world's key bar as one line, chips joined by two spaces
 // and the current one in brackets — so a check reads what the bar
 // says rather than hunting text in a picture. Returns the length.

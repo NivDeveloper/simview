@@ -174,8 +174,12 @@ void ui_pointer_feed(impl::App *a) {
             }
         }
     };
-    mirror("pointer.primary", 0);
-    mirror("pointer.secondary", 1);
+    // Not while a cell is listening for the pad: a mirrored press would
+    // read as the mouse's to a capture of the other hand.
+    if (!a->ui.capture.active) {
+        mirror("pointer.primary", 0);
+        mirror("pointer.secondary", 1);
+    }
 }
 
 void ui_inject(impl::App *a, const Event &e) {

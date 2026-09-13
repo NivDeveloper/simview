@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../core/Actions.h"
 #include "../core/Callbacks.h"
 #include "Chips.h"
 
@@ -30,6 +31,17 @@ namespace impl {
 struct App;
 struct WorldState;
 
+// A settings cell waiting for its control: which row and hand, the
+// controls pressed so far of a composite, and a modifier held.
+struct Capture {
+    bool active = false;
+    int row = -1;
+    Device device = Device::None;
+    Control got[4] = {};
+    int n = 0;
+    Control modifier = {};
+};
+
 struct UiState {
     ::ImGuiContext *ctx = nullptr;
     ::ImPlotContext *plot = nullptr;
@@ -52,6 +64,8 @@ struct UiState {
     std::string bindings_text;
     bool bindings_dirty = false;
     bool settings_open = false;
+    int settings_slot = -1;
+    Capture capture;
 };
 
 // Is this window title spoken for? Plots, panels and views open ImGui
@@ -114,6 +128,18 @@ void world_camera_act(impl::App *, impl::WorldState &, float dt);
 
 // The key bar's entries for the device in hand, the current lit.
 std::vector<Chip> world_legend(impl::App *, impl::WorldState &);
+
+// The settings page: every row's bindings on both hands, a cell that
+// captures the next control, and the file beside the layout.
+void ui_settings_window(impl::App *);
+// The capture's turn, before the resolve; true while one is waiting,
+// and the frame's controls are then its and nobody's.
+bool ui_settings_capture(impl::App *, const impl::Snapshot &);
+void ui_settings_load(impl::App *, const char *title);
+void ui_settings_save(impl::App *, const char *title);
+
+// A per-app file under SDL's preference path, or empty with a warning.
+std::string pref_file(const char *title, const char *name);
 
 // The view presets, as the menu loops them. Shared so a test applies
 // the same table rather than a copy of it.

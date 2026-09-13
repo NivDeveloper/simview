@@ -166,6 +166,51 @@ void bindings_load(impl::App *a, const char *text) {
         impl::table_load(a->input.table, text);
 }
 
+void settings_open(impl::App *a, bool on) {
+    if (a)
+        a->ui.settings_open = on;
+}
+
+bool settings_showing(impl::App *a) { return a && a->ui.settings_open; }
+
+bool settings_capture(impl::App *a, const char *context, const char *id,
+                      int device) {
+    if (!a || !context || !id)
+        return false;
+    const impl::ActionTable &t = a->input.table;
+    const int ctx = t.find_context(context);
+    const int row = ctx < 0 ? -1 : t.find(ctx, id);
+    if (row < 0)
+        return false;
+    a->ui.capture = {};
+    a->ui.capture.active = true;
+    a->ui.capture.row = row;
+    a->ui.capture.device = Device(device);
+    return true;
+}
+
+bool settings_capturing(impl::App *a) { return a && a->ui.capture.active; }
+
+// Two rows of one context binding one control the same way on one
+// hand, counted once a pair.
+std::size_t bindings_conflicts(impl::App *a) {
+    if (!a)
+        return 0;
+    const impl::ActionTable &t = a->input.table;
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < t.rows.size(); ++i)
+        for (std::size_t j = i + 1; j < t.rows.size(); ++j) {
+            if (t.rows[i].context != t.rows[j].context)
+                continue;
+            for (Device d : {Device::Keyboard, Device::Pad})
+                for (const Binding &x : impl::effective(t.rows[i], d))
+                    for (const Binding &y : impl::effective(t.rows[j], d))
+                        if (impl::binding_text(x) == impl::binding_text(y))
+                            ++n;
+        }
+    return n;
+}
+
 std::size_t world_legend(impl::App *a, const char *title, char *out,
                          std::size_t cap) {
     impl::WorldState *w = world_of(a, title);
