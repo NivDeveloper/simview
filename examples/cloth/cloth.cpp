@@ -3,10 +3,10 @@
 // cuts it where the pointer drags; the drag tool moves the ball, through
 // it if you like; a spring stretched past its limit tears.
 //
-// 1 2 3 pick the tool, Space toggles, R restarts, Esc quits. Right-drag
-// orbits under a tool. On a gamepad, Y picks the next tool; under the
-// drag tool the left stick moves the ball and the triggers pull and
-// push it.
+// 2 and 3 (X and Y on a pad) enter the cut and drag modes, Esc (B)
+// leaves them; Space (RB) toggles, R (LB) restarts; Tab flies, Ctrl+Tab
+// aims a crosshair, F1 rebinds. Under a mode the pointer strokes, and
+// the right button or B orbits.
 #include <simview/simview.h>
 
 #include <Tensor/Gen.h>
@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -371,10 +372,21 @@ int main() {
     sim.SetDelayNs(16'666'667); // 60 ticks a second: real time
     sim.Play();
 
-    int tool = 0;
+    // Two modes of the app's own: cutting, and dragging the ball. Each
+    // has a key and a pad button to enter it, and the bar lists both.
+    sv::Mode cut = app.Mode({
+        .name = "cut",
+        .enter = {sv::Ctl(sv::Key::N2), sv::Ctl(sv::Pad::X)},
+    });
+    sv::Mode drag = app.Mode({
+        .name = "drag",
+        .enter = {sv::Ctl(sv::Key::N3), sv::Ctl(sv::Pad::Y)},
+    });
+
+    int mode = 0;
     app.Panel("cloth")
         .Transport(sim)
-        .Choice("tool", tool, {"camera", "cut", "drag"})
+        .Choice("mode", mode, {"camera", "cut", "drag"})
         .Choice("hang from", knobs.pin, {"the top edge", "two corners"})
         .Checkbox("ball", knobs.ball)
         .Button("mend",
@@ -385,44 +397,56 @@ int main() {
         .Slider("gravity", knobs.gravity, 0.0f, 20.0f)
         .Slider("tears at x rest", knobs.tear, 1.2f, 4.0f);
 
-    int tool_shown = 0, pin_shown = knobs.pin;
+    // The mode has two switches, the panel's and the keys': the one
+    // that moved since last frame wins.
+    auto mode_of = [](const char *name) {
+        if (!name)
+            return 0;
+        return std::strcmp(name, "cut") == 0 ? 1 : 2;
+    };
+
+    int mode_shown = 0, pin_shown = knobs.pin;
     app.OnFrame([&] {
         {
             std::lock_guard l(shared.lock);
             shared.params = knobs;
         }
 
-        // The tool has two switches, the panel's and the picture's: the
-        // one that moved since last frame wins.
-        if (tool != tool_shown)
-            world.Tool(sv::Tool(tool));
+        if (mode != mode_shown)
+            app.Modes().Enter(mode == 1 ? "cut" : mode == 2 ? "drag" : nullptr);
         else
-            tool = int(world.Tool());
-        tool_shown = tool;
+            mode = mode_of(app.Modes().Active());
+        mode_shown = mode;
 
         if (knobs.pin != pin_shown)
             sim.Restart();
         pin_shown = knobs.pin;
     });
 
-    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
-        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
+    app.Bind({.id = "pause",
+              .label = "pause",
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+             [&] { sim.Toggle(); })
+        .Bind({.id = "restart",
+               .label = "restart",
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+              [&] { sim.Restart(); })
+        .Bind({.id = "quit",
+               .label = "quit",
+               .controls = {sv::Ctl(sv::Key::Escape)}},
+              [&] { app.RequestQuit(); });
 
-    // The drag tool carries the ball: a pointer stroke when it began on
-    // the ball, a gamepad stroke outright, since a pad has no pointer to
-    // press with. The cut tool cuts every spring whose segment the
-    // stroke crosses, tested against the frame's own copy of the
-    // positions and queued for the next tick; a pad cannot cut.
-    world.OnStroke([&](const sv::Stroke &st) {
-        if (st.tool == sv::Tool::Drag) {
-            if (st.pad || st.On(ball))
-                st.Carry(knobs.ball_at, knobs.ball_at);
-            return;
-        }
-        if (st.pad)
-            return;
+    // The drag mode carries the ball when the stroke began on it, or on
+    // nothing at all — a crosshair's stroke begins on what its centre
+    // hit. The cut mode cuts every spring whose segment the stroke
+    // crosses, tested against the frame's own copy of the positions and
+    // queued for the next tick.
+    drag.OnCarry([&](const sv::Stroke &st) {
+        if (st.On(ball) || st.item.p == nullptr)
+            st.Carry(knobs.ball_at, knobs.ball_at);
+    });
 
+    cut.OnStroke([&](const sv::Stroke &st) {
         auto &x = pos.Shown();
         if (x.size() < N * N * 3)
             return;

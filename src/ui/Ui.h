@@ -1,7 +1,10 @@
 #pragma once
 
 #include "../core/Callbacks.h"
+#include "Chips.h"
 
+#include <simview/Event.h>
+#include <simview/Input.h>
 #include <simview/Theme.h>
 #include <simview/Types.h>
 
@@ -43,6 +46,12 @@ struct UiState {
     // UpdatePlatformWindows in one frame.
     int viewports_pumped = -1;
     int viewports_rendered = -1;
+    // The bindings file beside the layout, its text until the app has
+    // registered its rows, and whether the page is showing.
+    std::string bindings;
+    std::string bindings_text;
+    bool bindings_dirty = false;
+    bool settings_open = false;
 };
 
 // Is this window title spoken for? Plots, panels and views open ImGui
@@ -68,43 +77,42 @@ void ui_views_resize(impl::App *);
 // will sample them.
 void ui_views_draw(impl::App *, nvrhi::ICommandList *);
 
-// `hovered` and `active` are the caller's to establish.
-void world_camera_gesture(impl::WorldState &, bool hovered, bool active);
-
-// The window's world reads what the panels did not claim. Called once
-// a frame, after they are built, because that is when the answer is
-// true.
-void ui_world_input(impl::App *);
 void ui_world_overlay(impl::App *);
 void world_controls(impl::App *, impl::WorldState &, ::ImVec2);
 
-// A flight: the pointer is captured, its motion and the held keys
-// steer ONE world, and ImGui is blind to both until it ends. One
-// function begins it and one ends it, so it cannot be half-entered.
-void world_fly_begin(impl::App *, impl::WorldState &);
-void world_fly_end(impl::App *);
+// The engine's contexts and their default rows, once at bring-up; and
+// every handler an app registered, freed at the end.
+void actions_init(impl::App *);
+void actions_quit(impl::App *);
 
-// Tab's half: the world under the pointer, else the window's. True
-// whenever the app has a world at all — then Tab is the engine's.
-bool ui_fly_begin(impl::App *);
+// The frame's actions: the device snapshot, the resolve, then every
+// handler — modes, pointer, gestures, camera, the app's. After the
+// panels, since whether one claimed the pointer is only true then.
+void actions_frame(impl::App *, bool ui);
 
-// The tool keys, 1 2 3, and the pad's Y, the next tool round: only
-// where the world under the pointer, else the window's, has a stroke
-// listener, which is where the menu offers a tool. True when taken.
-bool ui_tool_key(impl::App *, const Event &);
-void ui_tool_cycle(impl::App *);
+// The world a gesture, a key or the pad means: grabbed, else under
+// the pointer, else the window's; the aimed one under a crosshair.
+impl::WorldState *ui_target(impl::App *);
 
-// The key bar's entries, the current one lit: `key` is spoken —
-// "Space", "W A S D", "right-drag" — and drawn a keycap a word unless
-// a glyph stands for it; an empty chip ends a line. A check reads them.
-struct Chip {
-    std::string key;
-    std::string label;
-    int icon = -1;      // an Icon, drawn in the keycaps' place
-    std::string hold;   // a key held with the glyph's gesture
-    bool round = false; // a pad button: the cap is a pill
-    bool lit = false;
-};
+// One function in and out of the crosshair: relative motion, ImGui
+// blind, the aimed world — so the style cannot be half-entered.
+void ui_pointer_style(impl::App *, PointerStyle);
+
+// The pad's cursor, fed to ImGui before NewFrame so this frame's
+// panels hover and press under it.
+void ui_pointer_feed(impl::App *);
+
+// A posted pointer event into ImGui's queue, where SDL's own land.
+void ui_inject(impl::App *, const Event &);
+
+// The gestures on one world from this frame's values: hover, pick,
+// double-click, stroke and carry.
+void world_gestures(impl::App *, impl::WorldState &, float dt);
+
+// The camera's handlers for the mode that is on.
+void world_camera_act(impl::App *, impl::WorldState &, float dt);
+
+// The key bar's entries for the device in hand, the current lit.
 std::vector<Chip> world_legend(impl::App *, impl::WorldState &);
 
 // The view presets, as the menu loops them. Shared so a test applies

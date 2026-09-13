@@ -1,32 +1,18 @@
-// Input: SDL's events and the posted ones, delivered to the same
-// callbacks in the same order — which is what makes a posted event a
-// faithful stand-in for a keypress.
+// Input: SDL's events and the posted ones, noted into one device truth
+// in the same order — which is what makes a posted event a faithful
+// stand-in for a keypress, a click or a stick.
 
 #include "Input.h"
 
 #include "../core/App.h"
 #include "../ui/Ui.h"
 
+#include <cmath>
 #include <vector>
 
 namespace sv {
 namespace impl {
 namespace {
-
-// What a flight keeps for itself. Space and R are not here, so a
-// pause or a restart still works in the air.
-bool flight_key(const Event &e) {
-    return Is(e, Key::W) || Is(e, Key::A) || Is(e, Key::S) || Is(e, Key::D) ||
-           Is(e, Key::Q) || Is(e, Key::E) || Is(e, Key::LeftShift) ||
-           Is(e, Key::Tab) || Is(e, Key::Escape);
-}
-
-void note_key(App *a, const Event &e) {
-    const std::int32_t k = e.control.code;
-    if (e.control.device == Device::Keyboard && k >= 0 &&
-        std::size_t(k) < a->input.held.size())
-        a->input.held.set(std::size_t(k), e.type == Event::Type::Down);
-}
 
 constexpr std::int16_t kDeadZone = 8000; // SDL_gamepad.h's suggestion
 
@@ -58,59 +44,129 @@ void pad_removed(App *a, SDL_JoystickID id) {
     pad_close(a);
 }
 
+// SDL's button names to the pad's: the fourteen a Pad names.
+struct PadButton {
+    SDL_GamepadButton sdl;
+    Pad pad;
+};
+
+constexpr PadButton kPadButtons[] = {
+    {SDL_GAMEPAD_BUTTON_SOUTH, Pad::A},
+    {SDL_GAMEPAD_BUTTON_EAST, Pad::B},
+    {SDL_GAMEPAD_BUTTON_WEST, Pad::X},
+    {SDL_GAMEPAD_BUTTON_NORTH, Pad::Y},
+    {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, Pad::LB},
+    {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, Pad::RB},
+    {SDL_GAMEPAD_BUTTON_LEFT_STICK, Pad::L3},
+    {SDL_GAMEPAD_BUTTON_RIGHT_STICK, Pad::R3},
+    {SDL_GAMEPAD_BUTTON_START, Pad::Start},
+    {SDL_GAMEPAD_BUTTON_BACK, Pad::Back},
+    {SDL_GAMEPAD_BUTTON_DPAD_UP, Pad::Up},
+    {SDL_GAMEPAD_BUTTON_DPAD_DOWN, Pad::Down},
+    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, Pad::Left},
+    {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Pad::Right},
+};
+
+int mouse_of(Uint8 button) {
+    switch (button) {
+    case SDL_BUTTON_LEFT:
+        return int(Mouse::Left);
+    case SDL_BUTTON_RIGHT:
+        return int(Mouse::Right);
+    case SDL_BUTTON_MIDDLE:
+        return int(Mouse::Middle);
+    default:
+        return -1;
+    }
+}
+
 } // namespace
 
-void pad_axes(Input &in, const std::int16_t raw[6]) {
-    in.pad.lx = stick(raw[0]);
-    in.pad.ly = stick(raw[1]);
-    in.pad.rx = stick(raw[2]);
-    in.pad.ry = stick(raw[3]);
-    in.pad.lt = trigger(raw[4]);
-    in.pad.rt = trigger(raw[5]);
+void pad_axes(PadState &p, const std::int16_t raw[6]) {
+    for (int i = 0; i < 4; ++i)
+        p.axes[i] = stick(raw[i]);
+    p.axes[4] = trigger(raw[4]);
+    p.axes[5] = trigger(raw[5]);
 }
 
-void pad_buttons(App *a, bool fast, bool back, bool tool) {
-    Gamepad &g = a->input.pad;
-    if (back && !g.back && a->flying)
-        world_fly_end(a);
-    if (tool && !g.tool)
-        ui_tool_cycle(a);
-    g.fast = fast;
-    g.back = back;
-    g.tool = tool;
-}
-
-const char *key_name(Key k) {
-    static const char *const letters[] = {
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
-    static const char *const digits[] = {"1", "2", "3", "4", "5",
-                                         "6", "7", "8", "9", "0"};
-    const int c = int(k);
-    if (c >= int(Key::A) && c <= int(Key::Z))
-        return letters[c - int(Key::A)];
-    if (c >= int(Key::N1) && c <= int(Key::N0))
-        return digits[c - int(Key::N1)];
-    switch (k) {
-    case Key::Escape:
-        return "Esc";
-    case Key::Tab:
-        return "Tab";
-    case Key::Space:
-        return "Space";
-    case Key::Right:
-        return "Right";
-    case Key::Left:
-        return "Left";
-    case Key::Down:
-        return "Down";
-    case Key::Up:
-        return "Up";
-    case Key::LeftShift:
-        return "Shift";
+void note_event(App *a, const Event &e) {
+    Input &in = a->input;
+    const Control c = e.control;
+    const std::int32_t k = c.code;
+    switch (c.device) {
+    case Device::Keyboard:
+        if (k < 0 || std::size_t(k) >= in.held.size())
+            return;
+        if (e.type == Event::Type::Down) {
+            if (!e.repeat)
+                in.pressed.set(std::size_t(k));
+            in.held.set(std::size_t(k));
+        } else if (e.type == Event::Type::Up) {
+            in.held.reset(std::size_t(k));
+            in.released.set(std::size_t(k));
+        }
+        in.last = Device::Keyboard;
+        return;
+    case Device::Mouse:
+        if (k >= 0 && k < 3) {
+            if (e.type == Event::Type::Down) {
+                in.mouse_down[k] = true;
+                in.mouse_pressed[k] = true;
+            } else if (e.type == Event::Type::Up) {
+                in.mouse_down[k] = false;
+                in.mouse_released[k] = true;
+            }
+        } else if (k == int(Mouse::Move) && e.type == Event::Type::Delta) {
+            in.look_dx += e.x;
+            in.look_dy += e.y;
+        } else if (k == int(Mouse::Wheel) && e.type == Event::Type::Delta) {
+            in.wheel += e.y;
+        }
+        in.last = Device::Mouse;
+        return;
+    case Device::Pad:
+        if (k < 0 || k >= kPadControls)
+            return;
+        in.pad.present = true;
+        if (e.type == Event::Type::Delta) {
+            if (k == int(Pad::LS)) {
+                in.pad.axes[0] = e.x;
+                in.pad.axes[1] = e.y;
+            } else if (k == int(Pad::RS)) {
+                in.pad.axes[2] = e.x;
+                in.pad.axes[3] = e.y;
+            } else if (k == int(Pad::LT)) {
+                in.pad.axes[4] = e.x;
+            } else if (k == int(Pad::RT)) {
+                in.pad.axes[5] = e.x;
+            }
+            if (e.x != 0.0f || e.y != 0.0f)
+                in.last = Device::Pad;
+            return;
+        }
+        if (e.type == Event::Type::Down) {
+            if (!in.pad.down[k])
+                in.pad.pressed[k] = true;
+            in.pad.down[k] = true;
+        } else if (e.type == Event::Type::Up) {
+            in.pad.down[k] = false;
+            in.pad.released[k] = true;
+        }
+        in.last = Device::Pad;
+        return;
     default:
-        return "?";
+        return;
     }
+}
+
+void clear_edges(Input &in) {
+    in.pressed.reset();
+    in.released.reset();
+    for (int i = 0; i < 3; ++i)
+        in.mouse_pressed[i] = in.mouse_released[i] = false;
+    for (int i = 0; i < kPadControls; ++i)
+        in.pad.pressed[i] = in.pad.released[i] = false;
+    in.look_dx = in.look_dy = in.wheel = 0.0f;
 }
 
 void pad_close(App *a) {
@@ -118,38 +174,24 @@ void pad_close(App *a) {
         return;
     SDL_CloseGamepad(a->input.pad_device);
     a->input.pad_device = nullptr;
-    a->input.pad = Gamepad{};
-}
-
-void dispatch_key(App *a, const Event &e) {
-    note_key(a, e);
-    a->input.last_pad = false;
-    const bool press = e.type == Event::Type::Down && !e.repeat;
-    if (a->flying) {
-        if (press && (Is(e, Key::Escape) || Is(e, Key::Tab)))
-            world_fly_end(a);
-        if (flight_key(e))
-            return;
-    } else if (press && Is(e, Key::Tab) && ui_fly_begin(a)) {
-        return;
-    } else if (press && ui_tool_key(a, e)) {
-        return;
-    }
-    in_order(a->input.event_cbs, [&](const Ecb &c) { c.fn(e, c.user); });
+    a->input.pad = PadState{};
 }
 
 // Events posted through the automation seam, delivered exactly where
-// SDL's own are: same callbacks, same order, same frame.
+// SDL's own are: the device truth, and ImGui's queue for the pointer.
 void deliver_posted(App *a) {
     std::vector<Event> queued;
     queued.swap(a->input.posted);
-    for (const Event &e : queued)
-        dispatch_key(a, e);
+    for (const Event &e : queued) {
+        note_event(a, e);
+        ui_inject(a, e);
+    }
 }
 
 void poll(App *a) {
     deliver_posted(a); // the automation seam is never gated by the UI
     const bool ui = ui_on(a);
+    Input &in = a->input;
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         const bool typing = ui && ui_event(a, ev);
@@ -162,27 +204,31 @@ void poll(App *a) {
             ev.window.windowID == SDL_GetWindowID(a->platform.win))
             a->platform.quit = true;
         // A window that lost focus cannot show its own hidden cursor
-        // again, so the flight ends rather than waiting to be found.
-        // THIS window: a popup viewport closing loses focus too.
-        if (ev.type == SDL_EVENT_WINDOW_FOCUS_LOST && a->flying &&
+        // again, so the crosshair ends rather than waiting to be found.
+        if (ev.type == SDL_EVENT_WINDOW_FOCUS_LOST && a->aimed &&
             a->platform.win &&
             ev.window.windowID == SDL_GetWindowID(a->platform.win))
-            world_fly_end(a);
+            ui_pointer_style(a, PointerStyle::Cursor);
         if (ev.type == SDL_EVENT_GAMEPAD_ADDED)
             pad_open(a, ev.gdevice.which);
         if (ev.type == SDL_EVENT_GAMEPAD_REMOVED)
             pad_removed(a, ev.gdevice.which);
-        // The pointer spoke: the bar shows the pointer's gestures again.
-        if (ev.type == SDL_EVENT_MOUSE_MOTION ||
-            ev.type == SDL_EVENT_MOUSE_WHEEL ||
-            ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
-            a->input.last_pad = false;
-        if (a->flying && ev.type == SDL_EVENT_MOUSE_MOTION) {
-            a->input.look_dx += ev.motion.xrel;
-            a->input.look_dy += ev.motion.yrel;
+        if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+            if (a->aimed)
+                note_event(a, Look(ev.motion.xrel, ev.motion.yrel));
+            else
+                in.last = Device::Mouse;
         }
-        if (a->flying && ev.type == SDL_EVENT_MOUSE_WHEEL)
-            a->input.wheel += ev.wheel.y;
+        if (ev.type == SDL_EVENT_MOUSE_WHEEL)
+            note_event(a, MouseWheel(ev.wheel.y));
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+            ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            const int m = mouse_of(ev.button.button);
+            if (m >= 0)
+                note_event(a, ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                                  ? MouseDown(Mouse(m))
+                                  : MouseUp(Mouse(m)));
+        }
         if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
             const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::Down
                                                         : Event::Type::Up,
@@ -190,31 +236,30 @@ void poll(App *a) {
                           0.0f,
                           0.0f,
                           ev.key.repeat};
-            // The state is true whoever has the keyboard; the edge is
-            // the panel's while it is typing.
-            if (typing && !a->flying) {
-                note_key(a, e);
+            // A press is the panel's while it is typing; a release is
+            // always noted, so no key is left held.
+            if (typing && !a->aimed && e.type == Event::Type::Down)
                 continue;
-            }
-            dispatch_key(a, e);
+            note_event(a, e);
         }
     }
 
     // Polled, not evented: a held stick reports nothing new, and the
-    // camera wants its state once a frame.
-    if (SDL_Gamepad *pad = a->input.pad_device) {
+    // frame wants its state once.
+    if (SDL_Gamepad *pad = in.pad_device) {
         std::int16_t raw[6];
         for (int i = 0; i < 6; ++i)
             raw[i] = SDL_GetGamepadAxis(
                 pad, SDL_GamepadAxis(int(SDL_GAMEPAD_AXIS_LEFTX) + i));
-        pad_axes(a->input, raw);
-        pad_buttons(a, SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_STICK),
-                    SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST),
-                    SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH));
-        const Gamepad &g = a->input.pad;
-        if (g.lx != 0.0f || g.ly != 0.0f || g.rx != 0.0f || g.ry != 0.0f ||
-            g.lt != 0.0f || g.rt != 0.0f || g.fast || g.back || g.tool)
-            a->input.last_pad = true;
+        pad_axes(in.pad, raw);
+        for (const PadButton &b : kPadButtons) {
+            const bool d = SDL_GetGamepadButton(pad, b.sdl);
+            if (d != in.pad.down[int(b.pad)])
+                note_event(a, d ? PadDown(b.pad) : PadUp(b.pad));
+        }
+        for (float v : in.pad.axes)
+            if (v != 0.0f)
+                in.last = Device::Pad;
     }
 }
 

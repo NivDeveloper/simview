@@ -69,32 +69,32 @@ bool timings_on(impl::App *);
 std::size_t gpu_sections(impl::App *, GpuSection *out, std::size_t cap);
 std::size_t compute_batches(impl::App *, ComputeBatch *out, std::size_t cap);
 
-// Synthetic pointer input, delivered where a backend delivers the
-// real thing: into the UI's own event queue, to be consumed by the
-// next frame the app builds. A headless app runs no backend, so
-// nothing overwrites these — which is what makes a gesture testable
-// without a window, a cursor or a person.
-//
-// One frame per call is the unit: press, then move, then release,
-// each with a Step between, is what a drag IS to the layer under test.
-void mouse_move(impl::App *, float x, float y);
-void mouse_button(impl::App *, int button, bool down);
-void mouse_wheel(impl::App *, float dy);
-void mouse_modifier_shift(impl::App *, bool down);
-
-// A flight's inputs, delivered where the platform would put them: the
-// captured pointer's motion and wheel go to Input, not to ImGui, which
-// is blind to the mouse while a world is flown. Keys go through
-// PostEvent. And whether the named world is the one being flown.
-void look(impl::App *, float dx, float dy);
-void fly_wheel(impl::App *, float dy);
-bool flying(impl::App *, const char *title);
+// Every synthetic input goes through PostEvent, the public seam, and
+// lands where a backend's events do. What the probe adds is the
+// reading side: whether the named world is the one a crosshair aims
+// at, where the pointer is and in which style, which device spoke
+// last, and an action's value after the last frame.
+bool aimed(impl::App *, const char *title);
+int pointer(impl::App *, float *x, float *y); // returns the PointerStyle
+int last_device(impl::App *);                 // a Device
 
 // A pad's six raw axes as SDL reports them — left x y, right x y, the
 // two triggers — through the same dead zone a device goes through.
 // The pad counts as present from the first call.
 void gamepad(impl::App *, const std::int16_t raw[6]);
-void gamepad_buttons(impl::App *, bool fast, bool back, bool tool = false);
+
+struct ActionState {
+    bool down, pressed, released;
+    float x, y, rx, ry;
+};
+// `context` null asks for the row the id resolves to.
+bool action(impl::App *, const char *context, const char *id, ActionState *);
+const char *active_mode(impl::App *);
+
+// The bindings file's text as the app would write it, and a text
+// loaded as the file would be — the same code, no disk.
+std::size_t bindings_text(impl::App *, char *out, std::size_t cap);
+void bindings_load(impl::App *, const char *text);
 
 // The named world's key bar as one line, chips joined by two spaces
 // and the current one in brackets — so a check reads what the bar

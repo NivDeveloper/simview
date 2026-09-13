@@ -203,6 +203,7 @@ App *app_init(const Config &c) {
     pl.cl = pl.ndev->createCommandList();
     timing_init(pl);
     ui_init(a, c);
+    actions_init(a);
     return a;
 }
 
@@ -223,6 +224,7 @@ void app_quit(App *a) {
     // One release per layer, top down. Before the devices die: the
     // renderer backend holds pipelines and buffers, the views hold
     // textures, and the swapchain holds wrapped images.
+    actions_quit(a);
     ui_quit(a);
     pipelines_release(a->pipelines);
     world_pipelines_release(a->world_pipelines);
@@ -273,11 +275,6 @@ void app_on_frame(App *a, void (*fn)(void *), void *user) {
         a->platform.frame_cbs.push_front({fn, user});
 }
 
-void app_on_event(App *a, void (*fn)(const Event &, void *), void *user) {
-    if (a && fn)
-        a->input.event_cbs.push_front({fn, user});
-}
-
 void app_on_ui(App *a, void (*fn)(void *), void *user) {
     if (a && fn)
         a->ui.cbs.push_front({fn, user});
@@ -291,11 +288,6 @@ void app_request_quit(App *a) {
 void app_post_event(App *a, const Event &e) {
     if (a)
         a->input.posted.push_back(e);
-}
-
-void app_bind(App *a, Key k, const char *label) {
-    if (a && label && *label)
-        a->input.binds.push_back({k, label});
 }
 
 Stats app_stats(App *a) { return a ? a->stats : Stats{}; }

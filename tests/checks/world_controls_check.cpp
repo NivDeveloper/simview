@@ -98,6 +98,7 @@ int main() {
     CHECK(std::strstr(line, "Tab fly") != nullptr);
     CHECK(std::strstr(line, "drag orbit") != nullptr);
     CHECK(std::strstr(line, "wheel zoom") != nullptr);
+    CHECK(std::strstr(line, "F1 settings") != nullptr);
 
     // Every preset a DIFFERENT view. Applied from the table the menu
     // loops, so two entries that ended up the same fail here.

@@ -215,6 +215,8 @@ int main() {
         }
     });
 
-    app.OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Bind(
+        {.id = "quit", .label = "quit", .controls = {sv::Ctl(sv::Key::Escape)}},
+        [&] { app.RequestQuit(); });
     app.Run();
 }

@@ -44,9 +44,16 @@ void frame_build(impl::App *a) {
     // Before the UI frame: a draw list must never record a texture
     // this frame is about to release.
     ui_views_resize(a);
-    if (!ui_on(a))
+    // No UI frame, still a frame of actions: a sim with no panel and
+    // no world keeps its keys.
+    if (!ui_on(a)) {
+        actions_frame(a, false);
         return;
+    }
 
+    // The pad's cursor lands before NewFrame, so this frame's panels
+    // hover and press under it.
+    ui_pointer_feed(a);
     ui_begin(a);
     ui_run_panels(a);
     ui_end(a);

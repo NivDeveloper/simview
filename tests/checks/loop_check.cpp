@@ -27,24 +27,25 @@ int main() {
     // Posted events reach the callbacks Step drives — the automation
     // seam, and the only way input is testable at all.
     int space = 0, other = 0;
-    app.OnKey(Key::Space, [&] { ++space; });
-    app.OnEvent([&](const Event &e) {
-        if (!Is(e, Key::Space))
-            ++other;
-    });
+    app.Bind({.id = "space", .controls = {Ctl(Key::Space)}}, [&] { ++space; });
+    app.Bind({.id = "other", .controls = {Ctl(Key::Escape)}}, [&] { ++other; });
     app.PostEvent(KeyDown(Key::Space));
     app.PostEvent(KeyDown(Key::Escape));
     CHECK_EQ(space, 0); // nothing is delivered before a Step
     app.Step();
     CHECK_EQ(space, 1);
     CHECK_EQ(other, 1);
+    app.PostEvent(KeyUp(Key::Space));
+    app.PostEvent(KeyUp(Key::Escape));
     app.Step();
     CHECK_EQ(space, 1); // the queue is drained, not replayed
 
-    // A key REPEAT is not a press: OnKey ignores it.
+    // A key REPEAT is not a press: a Bind ignores it.
     app.PostEvent(KeyDown(Key::Space, true));
     app.Step();
     CHECK_EQ(space, 1);
+    app.PostEvent(KeyUp(Key::Space));
+    app.Step();
 
     // The counters: a Step draws nothing (no window, no shot), and a
     // field with no new data uploads once and only once.

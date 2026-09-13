@@ -520,13 +520,26 @@ int main() {
         }
     });
 
-    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
-        .OnKey(sv::Key::Up, "slower relaxation",
-               [&] { relax = std::min(0.5f, relax * 1.3f); })
-        .OnKey(sv::Key::Down, "faster relaxation",
-               [&] { relax = std::max(0.002f, relax / 1.3f); })
-        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
+    app.Bind({.id = "pause",
+              .label = "pause",
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+             [&] { sim.Toggle(); })
+        .Bind({.id = "slower",
+               .label = "slower relaxation",
+               .controls = {sv::Ctl(sv::Key::Up), sv::Ctl(sv::Pad::Up)}},
+              [&] { relax = std::min(0.5f, relax * 1.3f); })
+        .Bind({.id = "faster",
+               .label = "faster relaxation",
+               .controls = {sv::Ctl(sv::Key::Down), sv::Ctl(sv::Pad::Down)}},
+              [&] { relax = std::max(0.002f, relax / 1.3f); })
+        .Bind({.id = "restart",
+               .label = "restart",
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+              [&] { sim.Restart(); })
+        .Bind({.id = "quit",
+               .label = "quit",
+               .controls = {sv::Ctl(sv::Key::Escape)}},
+              [&] { app.RequestQuit(); });
 
     app.Run();
 }

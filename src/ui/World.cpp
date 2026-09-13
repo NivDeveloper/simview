@@ -14,225 +14,63 @@
 
 namespace sv {
 
-// From two facts the caller establishes: whether the pointer is over
-// this world, and whether a drag on it is under way.
-void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
-    ImGuiIO &io = ImGui::GetIO();
-    const bool left = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    const bool right = ImGui::IsMouseDown(ImGuiMouseButton_Right);
-
-    // With a stroke tool on, cut or drag, a left drag is a stroke through
-    // the picture — from where the pointer was last frame to where it is
-    // — and the right button orbits in its place.
-    const bool cutting = w.tool != int(Tool::Camera) && !w.strokes.empty();
-    if (active && left && cutting) {
-        if (w.stroking && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
-            world_stroke(w, w.stroke_x, w.stroke_y, io.MousePos.x,
-                         io.MousePos.y);
-        // What the drag began on, asked once at the press: every stroke
-        // of it carries the answer.
-        if (!w.stroking) {
-            Pick p{};
-            const bool hit = world_pick(w, io.MousePos.x, io.MousePos.y, &p);
-            w.stroke_item = hit ? p.cloud : impl::Cloud{};
-            w.stroke_index = hit ? p.index : -1;
-        }
-        w.stroking = true;
-        w.stroke_x = io.MousePos.x;
-        w.stroke_y = io.MousePos.y;
-    } else {
-        w.stroking = false;
-    }
-
-    // No latch of our own: whoever the press landed on owns the drag
-    // until the release, and both callers get that for free.
-    if (active && (right || (left && !cutting))) {
-        // Per-frame deltas, not a remembered cursor: there is no state
-        // of ours to seed on the first frame of a drag, so the jump
-        // that a remembered position causes cannot happen.
-        const ImVec2 d = io.MouseDelta;
-        const bool pan = io.KeyShift || (right && !cutting);
-        if (d.x != 0.0f || d.y != 0.0f) {
-            if (pan) {
-                w.followed = nullptr; // the reader took the focus back
-                w.camera.pan(d.x, d.y);
-            } else {
-                w.camera.orbit(d.x, d.y);
-            }
-        }
-    }
-    if (hovered && io.MouseWheel != 0.0f)
-        w.camera.dolly(io.MouseWheel);
-
-    // What the pointer is over, every frame it is over the world with
-    // no button down: the highlight the picture shows.
-    w.hovered_now = hovered;
-    w.hovered = nullptr;
-    if (hovered && !left && !right) {
-        Pick p{};
-        if (world_pick(w, io.MousePos.x, io.MousePos.y, &p) && !p.Ground()) {
-            w.hovered = static_cast<impl::WorldItem *>(p.cloud.p);
-            w.hover_index = std::uint32_t(p.index);
-        }
-    }
-
-    // A click is a release that never dragged, and ImGui keeps the
-    // distance; a double-click makes the point the pivot, distance
-    // and pose untouched.
-    if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        const ImVec2 dragged = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-        Pick p{};
-        if (dragged.x == 0.0f && dragged.y == 0.0f &&
-            world_pick(w, io.MousePos.x, io.MousePos.y, &p))
-            world_picked(w, p);
-    }
-    if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-        Pick p{};
-        if (world_pick(w, io.MousePos.x, io.MousePos.y, &p)) {
-            w.followed = nullptr;
-            w.camera.frame({p.point[0], p.point[1], p.point[2]},
-                           w.camera.distance());
-        }
-    }
-}
-
 namespace {
 
 constexpr float kFlyPerSecond = 1.0f; // orbit distances, before the multiplier
 constexpr float kFlyShift = 4.0f;
 constexpr float kFlyWheel = 0.25f; // e-folds of speed per wheel notch
 constexpr float kPadTurn = 500.0f; // pixels a second at full deflection
-constexpr float kPadCarry = 0.5f;  // of the picture a second, carrying
-constexpr float kPadPush = 1.0f;   // of the point's depth a second
+constexpr float kPadDolly = 10.0f; // wheel notches a second at full pull
+constexpr float kPadSpeed = 4.0f;  // wheel notches a second on the D-pad
 
-// The keys, the captured pointer and the pad, once a frame. The keys
-// and the pointer are a flight's; the pad steers without one. The step
-// scales with the orbit distance as a pan does.
-void world_camera_steer(impl::WorldState &w, impl::Input &in,
-                        const impl::Gamepad &g, float dt, bool flying) {
-    const auto down = [&](Key k) {
-        return flying && in.held.test(std::size_t(k));
-    };
-    if (in.wheel != 0.0f)
-        w.fly_speed = std::clamp(w.fly_speed * std::exp(in.wheel * kFlyWheel),
-                                 0.05f, 20.0f);
-
-    // Both devices at once, and a key plus a stick is still ONE full
-    // deflection: swapping hands mid-move must not double the speed.
-    const auto axis = [](float x) { return std::clamp(x, -1.0f, 1.0f); };
-    const float v = kFlyPerSecond * w.camera.distance() * w.fly_speed *
-                    (down(Key::LeftShift) || g.fast ? kFlyShift : 1.0f) * dt;
-    const float ahead = axis((down(Key::W) ? 1.0f : 0.0f) -
-                             (down(Key::S) ? 1.0f : 0.0f) - g.ly);
-    const float right = axis((down(Key::D) ? 1.0f : 0.0f) -
-                             (down(Key::A) ? 1.0f : 0.0f) + g.lx);
-    const float up = axis((down(Key::E) ? 1.0f : 0.0f) -
-                          (down(Key::Q) ? 1.0f : 0.0f) + g.rt - g.lt);
-    if (ahead != 0.0f || right != 0.0f || up != 0.0f)
-        w.camera.move(right * v, up * v, ahead * v);
-
-    const float dx = (flying ? in.look_dx : 0.0f) + g.rx * kPadTurn * dt;
-    const float dy = (flying ? in.look_dy : 0.0f) + g.ry * kPadTurn * dt;
-    if (dx != 0.0f || dy != 0.0f)
-        w.camera.turn(dx, dy);
-    in.look_dx = in.look_dy = in.wheel = 0.0f;
+const impl::ActionValue &val(impl::App *a, const char *id) {
+    static const impl::ActionValue none;
+    const impl::ActionRow *r = impl::effective_row(a->input.table, id);
+    return r ? r->value : none;
 }
-
-// Under a stroke tool the pad's move half, left stick and triggers, is
-// a stroke, not a walk — carried in the picture's plane, pushed and
-// pulled — and cleared from the copy the camera reads. Else false.
-bool world_pad_stroke(impl::WorldState &w, impl::Gamepad &g, float dt) {
-    if (w.tool == int(Tool::Camera) || w.strokes.empty())
-        return false;
-    if (g.lx != 0.0f || g.ly != 0.0f || g.lt != 0.0f || g.rt != 0.0f)
-        world_stroke_pad(w, g.lx * kPadCarry * dt, g.ly * kPadCarry * dt,
-                         (g.rt - g.lt) * kPadPush * dt);
-    g.lx = g.ly = g.lt = g.rt = 0.0f;
-    return true;
-}
-
-// Forgotten at take-off: a release can land in another window, and a
-// press remembered from before the flight would move it forever.
-void forget_keys(impl::App *a) {
-    a->input.held.reset();
-    a->input.look_dx = a->input.look_dy = a->input.wheel = 0.0f;
-}
-
-// The world a tool key or the pad's Y means: under the pointer, else
-// the window's — and only one with a stroke listener has tools.
-impl::WorldState *tool_world(impl::App *a) {
-    impl::WorldState *w = a->pointed ? a->pointed : a->world.get();
-    return w && !w->strokes.empty() ? w : nullptr;
-}
-
-// DATA, so the keys, the menu and the bar agree by construction.
-struct ToolKey {
-    Tool tool;
-    Key key;
-    const char *name;
-};
-constexpr ToolKey kTools[] = {{Tool::Camera, Key::N1, "camera"},
-                              {Tool::Cut, Key::N2, "cut"},
-                              {Tool::Drag, Key::N3, "drag"}};
 
 } // namespace
 
-bool ui_tool_key(impl::App *a, const Event &e) {
-    impl::WorldState *w = a ? tool_world(a) : nullptr;
-    if (!w)
-        return false;
-    for (const ToolKey &t : kTools)
-        if (Is(e, t.key)) {
-            w->tool = int(t.tool);
-            return true;
+// The camera's handlers: a delta is pixels a drag moved, a rate a stick
+// at so many pixels a second. In orbit the turn pivots on the focus and
+// the slide pans; in flight it pivots on the eye and the slide walks.
+void world_camera_act(impl::App *a, impl::WorldState &w, float dt) {
+    const impl::ActionValue &turn = val(a, "camera.turn");
+    const impl::ActionValue &slide = val(a, "camera.slide");
+    const impl::ActionValue &depth = val(a, "camera.depth");
+    const float tx = turn.x + turn.rx * kPadTurn * dt;
+    const float ty = turn.y + turn.ry * kPadTurn * dt;
+
+    if (a->input.camera == CameraMode::Orbit) {
+        if (tx != 0.0f || ty != 0.0f)
+            w.camera.orbit(tx, ty);
+        // A stick pushes the camera the way it leans; a drag carries
+        // the scene with the pointer. Opposite signs, one pan.
+        const float sx = slide.x - slide.rx * kPadTurn * dt;
+        const float sy = slide.y - slide.ry * kPadTurn * dt;
+        if (sx != 0.0f || sy != 0.0f) {
+            w.followed = nullptr; // the reader took the focus back
+            w.camera.pan(sx, sy);
         }
-    return false;
-}
-
-void ui_tool_cycle(impl::App *a) {
-    if (impl::WorldState *w = a ? tool_world(a) : nullptr)
-        w->tool = (w->tool + 1) % int(sizeof kTools / sizeof kTools[0]);
-}
-
-void world_fly_begin(impl::App *a, impl::WorldState &w) {
-    if (!a || a->flying)
+        const float dz = depth.x + depth.rx * kPadDolly * dt;
+        if (dz != 0.0f)
+            w.camera.dolly(dz);
         return;
-    a->flying = &w;
-    w.followed = nullptr; // a flight moves the focus itself
-    forget_keys(a);
-    if (a->ui.ctx) {
-        ImGui::SetCurrentContext(a->ui.ctx);
-        ImGui::GetIO().ConfigFlags |=
-            ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoKeyboard;
     }
-    if (a->platform.win)
-        SDL_SetWindowRelativeMouseMode(a->platform.win, true);
-}
 
-void world_fly_end(impl::App *a) {
-    if (!a || !a->flying)
-        return;
-    if (a->platform.win)
-        SDL_SetWindowRelativeMouseMode(a->platform.win, false);
-    if (a->ui.ctx) {
-        ImGui::SetCurrentContext(a->ui.ctx);
-        ImGui::GetIO().ConfigFlags &=
-            ~(ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoKeyboard);
-    }
-    a->flying = nullptr;
-}
-
-bool ui_fly_begin(impl::App *a) {
-    if (!a)
-        return false;
-    bool any = bool(a->world);
-    for (const impl::View &v : a->views)
-        any = any || bool(v.world);
-    if (!any)
-        return false;
-    if (impl::WorldState *w = a->pointed ? a->pointed : a->world.get())
-        world_fly_begin(a, *w);
-    return true;
+    const impl::ActionValue &fast = val(a, "camera.fast");
+    const impl::ActionValue &speed = val(a, "camera.speed");
+    const float notches = speed.x + speed.rx * kPadSpeed * dt;
+    if (notches != 0.0f)
+        w.fly_speed = std::clamp(w.fly_speed * std::exp(notches * kFlyWheel),
+                                 0.05f, 20.0f);
+    const float v = kFlyPerSecond * w.camera.distance() * w.fly_speed *
+                    (fast.down ? kFlyShift : 1.0f) * dt;
+    const float right = slide.rx, ahead = -slide.ry, up = depth.rx;
+    if (right != 0.0f || ahead != 0.0f || up != 0.0f)
+        w.camera.move(right * v, up * v, ahead * v);
+    if (tx != 0.0f || ty != 0.0f)
+        w.camera.turn(tx, ty);
 }
 
 // A 3D scene has no chrome to put a panel in, so its controls sit ON
@@ -286,177 +124,108 @@ void world_menu(impl::App *a, impl::WorldState &w) {
             ImGui::Checkbox("axes", &w.axes->visible);
     }
 
-    // A tool is offered only where something listens for it.
-    if (!w.strokes.empty()) {
-        ImGui::SeparatorText("tool");
-        for (const ToolKey &t : kTools) {
-            const std::string entry =
-                std::string(t.name) + "  (" + impl::key_name(t.key) + ")";
-            if (ImGui::Selectable(entry.c_str(), w.tool == int(t.tool)))
-                w.tool = int(t.tool);
+    // An entry names its key beside it, from the row that binds it.
+    const auto entry = [&](const char *name, const char *id) {
+        std::string s = name;
+        if (const impl::ActionRow *r =
+                impl::effective_row(a->input.table, id)) {
+            const std::vector<Binding> &bs =
+                impl::effective(*r, Device::Keyboard);
+            if (!bs.empty())
+                s += "  (" + chip_text(chip_for(bs[0], nullptr, false)) + ")";
+        }
+        return s;
+    };
+
+    // A mode is offered only where the app made one.
+    if (!a->input.modes.empty()) {
+        ImGui::SeparatorText("mode");
+        const char *active = impl::app_active_mode(a);
+        if (ImGui::Selectable("none", active == nullptr))
+            impl::app_enter_mode(a, nullptr);
+        for (const auto &m : a->input.modes) {
+            const std::string id = "mode." + m->name;
+            const bool on = active && m->name == active;
+            if (ImGui::Selectable(entry(m->name.c_str(), id.c_str()).c_str(),
+                                  on))
+                impl::app_enter_mode(a, on ? nullptr : m->name.c_str());
         }
     }
 
     ImGui::SeparatorText("navigate");
-    if (ImGui::Selectable("fly  (Tab)"))
-        world_fly_begin(a, w);
+    const bool fly = a->input.camera == CameraMode::Fly;
+    if (ImGui::Selectable(entry(fly ? "orbit" : "fly", "mode.camera").c_str()))
+        impl::app_camera_mode(a, fly ? CameraMode::Orbit : CameraMode::Fly);
+    const bool cross = a->input.style == PointerStyle::Crosshair;
+    if (ImGui::Selectable(
+            entry(cross ? "cursor" : "crosshair", "mode.pointer").c_str()))
+        impl::app_pointer_style(a, cross ? PointerStyle::Cursor
+                                         : PointerStyle::Crosshair);
+    if (ImGui::Selectable(entry("settings", "settings").c_str()))
+        a->ui.settings_open = !a->ui.settings_open;
 }
 
-namespace {
-
-Chip cap(const char *key, const char *label, bool lit = false) {
-    return {key, label, -1, "", false, lit};
-}
-
-Chip glyph(Icon ic, const char *key, const char *label, const char *hold = "") {
-    return {key, label, int(ic), hold, false, false};
-}
-
-Chip button(const char *key, const char *label) {
-    return {key, label, -1, "", true, false};
-}
-
-const Chip kBreak{};
-
-// A pad's stroke tool, and the pad in flight, in the names a
-// controller prints on itself.
-void pad_chips(std::vector<Chip> &chips, const char *stick, const char *trig,
-               bool tools) {
-    chips.push_back(button("LS", stick));
-    chips.push_back(button("RS", "look"));
-    chips.push_back(button("LT RT", trig));
-    if (tools)
-        chips.push_back(button("Y", "tool"));
-}
-
-} // namespace
-
-// In flight the bar is the only control, naming the device in hand.
-// Otherwise one line of keys — the tools, Tab, the sim's labelled ones
-// — and one of the device, pointer or pad, under the tool that is on.
+// One line of the keys — modes, the app's labelled actions, the engine's
+// toggles — and one of what the hand in use does under the camera, the
+// pointer and the mode; a row shows its first binding left alive.
 std::vector<Chip> world_legend(impl::App *a, impl::WorldState &w) {
+    (void)w;
     std::vector<Chip> chips;
-    const bool pad = a->input.pad.present && a->input.last_pad;
-    if (a->flying == &w) {
-        if (pad) {
-            chips.push_back(button("B", "release"));
-            pad_chips(chips, "move", "down / up", false);
-            chips.push_back(button("L3", "faster"));
-        } else {
-            chips.push_back(cap("Esc", "release"));
-            chips.push_back(cap("W A S D", "move"));
-            chips.push_back(cap("Q E", "down / up"));
-            chips.push_back(cap("Shift", "faster"));
-            chips.push_back(glyph(Icon::MouseWheel, "wheel", "speed"));
-        }
-        return chips;
+    const impl::Input &in = a->input;
+    const impl::ActionTable &t = in.table;
+    const Device hand = in.last == Device::Pad && in.pad.present
+                            ? Device::Pad
+                            : Device::Keyboard;
+    const auto chip = [&](const impl::ActionRow &r, const char *label,
+                          bool lit) {
+        const std::vector<Binding> &bs = impl::effective(r, hand);
+        const std::uint32_t alive =
+            hand == Device::Pad ? r.alive_pad : r.alive_km;
+        for (std::size_t i = 0; i < bs.size(); ++i)
+            if (alive & (1u << i)) {
+                chips.push_back(chip_for(bs[i], label, lit));
+                return;
+            }
+    };
+    const auto row = [&](const char *id) { return impl::effective_row(t, id); };
+
+    for (std::size_t i = 0; i < in.modes.size(); ++i) {
+        const std::string id = "mode." + in.modes[i]->name;
+        if (const impl::ActionRow *r = row(id.c_str()))
+            chip(*r, in.modes[i]->name.c_str(), int(i) == in.active_mode);
     }
+    const int base = t.find_context("base");
+    for (const impl::ActionRow &r : t.rows)
+        if (r.context == base && !r.label.empty() && r.id != "settings" &&
+            r.id.rfind("mode.", 0) != 0 && row(r.id.c_str()) == &r)
+            chip(r, r.label.c_str(), false);
+    if (const impl::ActionRow *r = row("mode.camera"))
+        chip(*r, r->label.c_str(), false);
+    if (const impl::ActionRow *r = row("mode.pointer"))
+        chip(*r, r->label.c_str(), false);
+    if (const impl::ActionRow *r = row("settings"))
+        chip(*r, "settings", false);
+    chips.push_back(Chip{});
 
-    const bool tools = !w.strokes.empty();
-    const bool stroke = tools && w.tool != int(Tool::Camera);
-    const char *does = w.tool == int(Tool::Cut) ? "cut" : "move";
-    if (tools)
-        for (const ToolKey &t : kTools)
-            chips.push_back(
-                cap(impl::key_name(t.key), t.name, w.tool == int(t.tool)));
-    chips.push_back(cap("Tab", "fly"));
-    for (const impl::Bind &b : a->input.binds)
-        chips.push_back(cap(impl::key_name(b.key), b.label.c_str()));
-    chips.push_back(kBreak);
-
-    if (pad && stroke) {
-        pad_chips(chips, does, "pull / push", true);
-    } else if (pad) {
-        pad_chips(chips, "move", "down / up", tools);
-    } else if (stroke) {
-        chips.push_back(glyph(Icon::MouseLeft, "drag", does));
-        chips.push_back(glyph(Icon::MouseRight, "right-drag", "orbit"));
-    } else {
-        chips.push_back(glyph(Icon::MouseLeft, "drag", "orbit"));
-        chips.push_back(glyph(Icon::MouseLeft, "shift-drag", "pan", "Shift"));
-        chips.push_back(glyph(Icon::MouseWheel, "wheel", "zoom"));
+    const char *mode = impl::app_active_mode(a);
+    const bool orbit = in.camera == CameraMode::Orbit;
+    const char *ids[] = {"camera.turn",     "camera.slide", "camera.depth",
+                         "camera.fast",     "camera.speed", "camera.frame",
+                         "pointer.primary", "pointer.drag", "pointer.depth",
+                         "mode.exit"};
+    for (const char *id : ids) {
+        const impl::ActionRow *r = row(id);
+        if (!r || !r->enabled)
+            continue;
+        const char *label = r->label.c_str();
+        if (r->id == "pointer.drag")
+            label = mode ? mode : "";
+        else if (r->id == "camera.turn" && orbit)
+            label = "orbit";
+        chip(*r, label, false);
     }
     return chips;
 }
-
-namespace {
-
-// One keycap: the word centred on a rounded slab — a pill for a pad
-// button — sized from the font so it sits on the text's own line.
-void keycap(const char *word, bool round, bool lit) {
-    ImDrawList *dl = ImGui::GetWindowDrawList();
-    const float h = ImGui::GetTextLineHeight() + 4.0f;
-    const ImVec2 tw = ImGui::CalcTextSize(word);
-    const float w = std::max(h, tw.x + 10.0f);
-    const ImVec2 p0 = ImGui::GetCursorScreenPos();
-    const ImVec2 p1{p0.x + w, p0.y + h};
-    const ImU32 face =
-        ImGui::GetColorU32(lit ? ImGuiCol_ButtonActive : ImGuiCol_FrameBg);
-    const ImU32 edge = ImGui::GetColorU32(ImGuiCol_Border);
-    const ImU32 ink =
-        ImGui::GetColorU32(lit ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-    const float r = round ? h * 0.5f : 4.0f;
-    dl->AddRectFilled(p0, p1, face, r);
-    dl->AddRect(p0, p1, edge, r);
-    dl->AddText({p0.x + (w - tw.x) * 0.5f, p0.y + (h - tw.y) * 0.5f}, ink,
-                word);
-    ImGui::Dummy({w, h});
-}
-
-// A chip: its keycaps, one a word, or its glyph, then the label; the
-// current one in the reading colour and the rest dimmed. An empty
-// chip ends the line.
-void draw_chips(const std::vector<Chip> &chips) {
-    const float gap = ImGui::GetFontSize() * 0.4f;
-    bool first = true;
-    for (const Chip &c : chips) {
-        if (c.key.empty() && c.label.empty()) {
-            first = true;
-            continue;
-        }
-        if (!first)
-            ImGui::SameLine(0.0f, gap * 4.0f);
-        first = false;
-
-        if (c.icon >= 0) {
-            if (!c.hold.empty()) {
-                keycap(c.hold.c_str(), false, false);
-                ImGui::SameLine(0.0f, gap * 0.5f);
-            }
-            const float h = ImGui::GetTextLineHeight() + 4.0f;
-            const ImVec2 at = ImGui::GetCursorScreenPos();
-            impl::icon_draw(ImGui::GetWindowDrawList(), Icon(c.icon), at, h,
-                            ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            ImGui::Dummy({h, h});
-        } else {
-            std::string word;
-            bool any = false;
-            for (std::size_t i = 0; i <= c.key.size(); ++i) {
-                if (i < c.key.size() && c.key[i] != ' ') {
-                    word += c.key[i];
-                    continue;
-                }
-                if (word.empty())
-                    continue;
-                if (any)
-                    ImGui::SameLine(0.0f, gap * 0.5f);
-                keycap(word.c_str(), c.round, c.lit);
-                any = true;
-                word.clear();
-            }
-        }
-
-        ImGui::SameLine(0.0f, gap);
-        // Text sits on the cap's own centre line.
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
-        if (c.lit)
-            ImGui::TextUnformatted(c.label.c_str());
-        else
-            ImGui::TextDisabled("%s", c.label.c_str());
-    }
-}
-
-} // namespace
 
 // Drawn at `at`, which is the top-left of the picture. The caller owns
 // the window; this only knows where the corner is.
@@ -467,9 +236,9 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
     const float pad = ImGui::GetStyle().WindowPadding.x;
     ImGui::SetCursorScreenPos(ImVec2(at.x + pad, at.y + pad));
     ImGui::PushID(&w);
-    // In flight there is no pointer to press a button with: the bar IS
-    // the control.
-    if (a->flying != &w) {
+    // Under a crosshair there is no pointer to press a button with: the
+    // bar IS the control.
+    if (a->aimed != &w) {
         if (impl::icon_button(Icon::Cube, "view", "camera and what is drawn"))
             ImGui::OpenPopup("##world_menu");
         if (ImGui::BeginPopup("##world_menu")) {
@@ -479,7 +248,7 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
         ImGui::SameLine(0.0f, ImGui::GetFontSize());
     }
     ImGui::BeginGroup();
-    draw_chips(world_legend(a, w));
+    impl::draw_chips(world_legend(a, w));
     ImGui::EndGroup();
     ImGui::PopID();
     // ImGui warns about a cursor moved with nothing following.
@@ -506,38 +275,6 @@ void ui_world_overlay(impl::App *a) {
         world_controls(a, *a->world, vp->WorkPos);
     ImGui::End();
     ImGui::PopStyleVar();
-}
-
-void ui_world_input(impl::App *a) {
-    if (!a)
-        return;
-    const float dt = ImGui::GetIO().DeltaTime;
-    if (a->flying) {
-        world_camera_steer(*a->flying, a->input, a->input.pad, dt, true);
-        return;
-    }
-    if (a->world) {
-        const ImGuiIO &io = ImGui::GetIO();
-        const bool free = !io.WantCaptureMouse;
-        if (free)
-            a->pointed = a->world.get();
-        // SCREEN coordinates, as the pointer is once viewports are on:
-        // a window is rarely at the screen's origin.
-        const ImGuiViewport *vp = ImGui::GetMainViewport();
-        a->world->rect[0] = vp->Pos.x;
-        a->world->rect[1] = vp->Pos.y;
-        a->world->rect[2] = vp->Size.x;
-        a->world->rect[3] = vp->Size.y;
-        world_camera_gesture(*a->world, free, free);
-    }
-    // A pad needs no flight: it has no hotkeys to collide with and no
-    // pointer to hide. It steers the world under the pointer, else the
-    // window's — and under a stroke tool its move half strokes instead.
-    if (impl::WorldState *t = a->pointed ? a->pointed : a->world.get()) {
-        impl::Gamepad g = a->input.pad;
-        world_pad_stroke(*t, g, dt);
-        world_camera_steer(*t, a->input, g, dt, false);
-    }
 }
 
 namespace impl {

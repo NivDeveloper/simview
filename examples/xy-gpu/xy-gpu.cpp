@@ -156,11 +156,26 @@ int main() {
             rewrap(theta);
     });
 
-    app.OnKey(sv::Key::Space, [&] { paused = !paused; })
-        .OnKey(sv::Key::Up, [&] { T = std::min(2.0f, T + 0.05f); })
-        .OnKey(sv::Key::Down, [&] { T = std::max(0.05f, T - 0.05f); })
-        .OnKey(sv::Key::R, [&] { theta = random_angles(); })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Bind({.id = "pause",
+              .label = "pause",
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+             [&] { paused = !paused; })
+        .Bind({.id = "warmer",
+               .label = "warmer",
+               .controls = {sv::Ctl(sv::Key::Up), sv::Ctl(sv::Pad::Up)}},
+              [&] { T = std::min(2.0f, T + 0.05f); })
+        .Bind({.id = "cooler",
+               .label = "cooler",
+               .controls = {sv::Ctl(sv::Key::Down), sv::Ctl(sv::Pad::Down)}},
+              [&] { T = std::max(0.05f, T - 0.05f); })
+        .Bind({.id = "restart",
+               .label = "restart",
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+              [&] { theta = random_angles(); })
+        .Bind({.id = "quit",
+               .label = "quit",
+               .controls = {sv::Ctl(sv::Key::Escape)}},
+              [&] { app.RequestQuit(); });
 
     app.Run();
     // Teardown is the lifetime rule: the parked tensors (the field's

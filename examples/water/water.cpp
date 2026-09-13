@@ -655,9 +655,18 @@ int main() {
         shown = start;
     });
 
-    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
-        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
+    app.Bind({.id = "pause",
+              .label = "pause",
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+             [&] { sim.Toggle(); })
+        .Bind({.id = "restart",
+               .label = "restart",
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+              [&] { sim.Restart(); })
+        .Bind({.id = "quit",
+               .label = "quit",
+               .controls = {sv::Ctl(sv::Key::Escape)}},
+              [&] { app.RequestQuit(); });
 
     // A click on the water or the floor is a jet there. The pick is a
     // world point; the tank is that point less the offset it is drawn at.

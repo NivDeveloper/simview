@@ -457,8 +457,6 @@ void resolve(ActionTable &t, const Snapshot &s) {
     for (const Cand &c : cands) {
         ActionRow &r = t.rows[std::size_t(c.row)];
         const Binding &b = effective(r, c.dev)[std::size_t(c.bind)];
-        if (!s.mouse_free && mouse_bound(b))
-            continue;
         if (b.modifier.device != Device::None && !down(s, b.modifier))
             continue;
         want.clear();
@@ -469,6 +467,10 @@ void resolve(ActionTable &t, const Snapshot &s) {
             r.alive_pad |= 1u << c.bind;
         else
             r.alive_km |= 1u << c.bind;
+        // A panel that owns the pointer takes the mouse's bindings for
+        // the frame; they are still alive, so the bar still lists them.
+        if (!s.mouse_free && mouse_bound(b))
+            continue;
         if (r.claims)
             set.insert(set.end(), want.begin(), want.end());
 
@@ -501,6 +503,18 @@ void resolve(ActionTable &t, const Snapshot &s) {
         r.value.rx = std::clamp(r.value.rx, -1.0f, 1.0f);
         r.value.ry = std::clamp(r.value.ry, -1.0f, 1.0f);
     }
+}
+
+const ActionRow *effective_row(const ActionTable &t, const char *id) {
+    const ActionRow *best = nullptr;
+    for (const ActionRow &r : t.rows) {
+        if (r.id != id || !t.contexts[std::size_t(r.context)].active)
+            continue;
+        if (!best || t.contexts[std::size_t(r.context)].priority >
+                         t.contexts[std::size_t(best->context)].priority)
+            best = &r;
+    }
+    return best;
 }
 
 // ── names ────────────────────────────────────────────────────────────

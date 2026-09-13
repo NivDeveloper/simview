@@ -410,15 +410,22 @@ bool world_pick(impl::WorldState &w, float x, float y, Pick *out) {
     return true;
 }
 
+WorldView world_view_now(impl::WorldState &w) {
+    const std::uint32_t tw = w.rect[2] > 0.0f ? std::uint32_t(w.rect[2]) : 1u;
+    const std::uint32_t th = w.rect[3] > 0.0f ? std::uint32_t(w.rect[3]) : 1u;
+    return view_of(w, tw, th, scene_bounds(w));
+}
+
 void world_picked(impl::WorldState &w, const Pick &p) {
     for (const impl::WorldState::PickCb &c : w.picks)
         if (c.fn)
             c.fn(p, c.user);
 }
 
-void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1) {
-    if (!w.viewed || w.rect[2] <= 0.0f || w.rect[3] <= 0.0f ||
-        w.strokes.empty())
+void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1,
+                  float depth, const impl::StrokeCb *stroke,
+                  const impl::StrokeCb *carry) {
+    if (!w.viewed || w.rect[2] <= 0.0f || w.rect[3] <= 0.0f)
         return;
     Stroke s{};
     s.from[0] = (x0 - w.rect[0]) / w.rect[2];
@@ -427,30 +434,13 @@ void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1) {
     s.to[1] = (y1 - w.rect[1]) / w.rect[3];
     for (int k = 0; k < 16; ++k)
         s.clip[k] = w.last_view.world_to_clip.m[k];
-    s.item = w.stroke_item;
-    s.index = w.stroke_index;
-    s.tool = Tool(w.tool);
-    for (const impl::WorldState::StrokeCb &c : w.strokes)
-        if (c.fn)
-            c.fn(s, c.user);
-}
-
-void world_stroke_pad(impl::WorldState &w, float dx, float dy, float push) {
-    if (!w.viewed || w.rect[2] <= 0.0f || w.rect[3] <= 0.0f ||
-        w.strokes.empty())
-        return;
-    Stroke s{};
-    s.from[0] = s.from[1] = 0.5f;
-    s.to[0] = 0.5f + dx;
-    s.to[1] = 0.5f + dy;
-    for (int k = 0; k < 16; ++k)
-        s.clip[k] = w.last_view.world_to_clip.m[k];
-    s.tool = Tool(w.tool);
-    s.pad = true;
-    s.push = push;
-    for (const impl::WorldState::StrokeCb &c : w.strokes)
-        if (c.fn)
-            c.fn(s, c.user);
+    s.item = w.grab_item;
+    s.index = w.grab_index;
+    s.depth = depth;
+    if (stroke && stroke->fn)
+        stroke->fn(s, stroke->user);
+    if (carry && carry->fn)
+        carry->fn(s, carry->user);
 }
 
 namespace impl {
@@ -500,38 +490,17 @@ bool stroke_carry(const Stroke &s, const float at[3], float to[3]) {
     Vec3 p = transform_point(inv, moved, &wi);
     if (wi == 0.0f)
         return false;
-    if (s.push != 0.0f) {
+    if (s.depth != 0.0f) {
         // The line of sight through the carried point: the near plane
         // and one depth behind it, as a pick builds its ray.
         const Vec3 near = transform_point(inv, {moved.x, moved.y, 1.0f});
         const Vec3 mid = transform_point(inv, {moved.x, moved.y, 0.5f});
-        p = p + normalize(mid - near) * (s.push * w);
+        p = p + normalize(mid - near) * (s.depth * w);
     }
     to[0] = p.x;
     to[1] = p.y;
     to[2] = p.z;
     return true;
-}
-
-void world_on_stroke(World w, void (*fn)(const Stroke &, void *), void *user,
-                     void (*free)(void *)) {
-    WorldState *ws = static_cast<WorldState *>(w.p);
-    if (!ws) {
-        if (free)
-            free(user);
-        return;
-    }
-    ws->strokes.push_back({fn, user, free});
-}
-
-void world_tool(World w, int t) {
-    if (WorldState *ws = static_cast<WorldState *>(w.p))
-        ws->tool = t;
-}
-
-int world_tool(World w) {
-    const WorldState *ws = static_cast<const WorldState *>(w.p);
-    return ws ? ws->tool : 0;
 }
 
 } // namespace impl
@@ -572,10 +541,6 @@ void world_release(impl::WorldState &w) {
         if (c.free)
             c.free(c.user);
     w.picks.clear();
-    for (impl::WorldState::StrokeCb &c : w.strokes)
-        if (c.free)
-            c.free(c.user);
-    w.strokes.clear();
     w.followed = nullptr;
     w.hovered = nullptr;
     for (impl::WorldItem &it : w.items)

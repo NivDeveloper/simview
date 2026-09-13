@@ -125,13 +125,26 @@ int main() {
 
     app.OnFrame([&] { T.store(temperature, std::memory_order_relaxed); });
 
-    app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
-        .OnKey(sv::Key::Up,
-               [&] { temperature = std::min(4.5f, temperature + 0.05f); })
-        .OnKey(sv::Key::Down,
-               [&] { temperature = std::max(0.05f, temperature - 0.05f); })
-        .OnKey(sv::Key::R, [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Bind({.id = "pause",
+              .label = "pause",
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+             [&] { sim.Toggle(); })
+        .Bind({.id = "warmer",
+               .label = "warmer",
+               .controls = {sv::Ctl(sv::Key::Up), sv::Ctl(sv::Pad::Up)}},
+              [&] { temperature = std::min(4.5f, temperature + 0.05f); })
+        .Bind({.id = "cooler",
+               .label = "cooler",
+               .controls = {sv::Ctl(sv::Key::Down), sv::Ctl(sv::Pad::Down)}},
+              [&] { temperature = std::max(0.05f, temperature - 0.05f); })
+        .Bind({.id = "restart",
+               .label = "restart",
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+              [&] { sim.Restart(); })
+        .Bind({.id = "quit",
+               .label = "quit",
+               .controls = {sv::Ctl(sv::Key::Escape)}},
+              [&] { app.RequestQuit(); });
 
     app.Run();
     // Teardown is the lifetime rule: the Executor (which writes spins)

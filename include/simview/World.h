@@ -54,12 +54,6 @@ struct Pick {
     }
 };
 
-enum class Tool : int {
-    Camera = 0,
-    Cut = 1,
-    Drag = 2,
-};
-
 struct Stroke;
 
 namespace impl {
@@ -73,9 +67,7 @@ struct Stroke {
     float clip[16] = {};
     impl::Cloud item;
     std::int32_t index = -1;
-    sv::Tool tool = sv::Tool::Cut;
-    bool pad = false;
-    float push = 0.0f;
+    float depth = 0.0f;
     bool Crosses(const float p[3], const float q[3]) const {
         return impl::stroke_crosses(*this, p, q);
     }
@@ -101,10 +93,6 @@ void world_untracked_pull(World);
 void world_on_pick(World, void (*fn)(const Pick &, void *), void *user,
                    void (*free)(void *));
 void world_follow(World, Cloud, std::int32_t index);
-void world_on_stroke(World, void (*fn)(const Stroke &, void *), void *user,
-                     void (*free)(void *));
-void world_tool(World, int);
-int world_tool(World);
 
 }
 
@@ -148,20 +136,6 @@ class World {
         impl::world_follow(w_, impl::Cloud{}, -1);
         return *this;
     }
-
-    template <class F> World &OnStroke(F fn) {
-        impl::world_on_stroke(
-            w_, [](const Stroke &s, void *u) { (*static_cast<F *>(u))(s); },
-            new F(std::move(fn)), [](void *u) { delete static_cast<F *>(u); });
-        return *this;
-    }
-
-    World &Tool(sv::Tool t) {
-        impl::world_tool(w_, int(t));
-        return *this;
-    }
-
-    sv::Tool Tool() const { return sv::Tool(impl::world_tool(w_)); }
 
     sv::Wire Wire(std::span<const std::uint32_t> edges,
                   const WireDesc &d = {}) {

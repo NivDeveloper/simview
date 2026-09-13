@@ -184,8 +184,14 @@ int main() {
         }
     });
 
-    app.OnKey(sv::Key::Space, [&] { running = !running; })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.Bind({.id = "pause",
+              .label = "pause",
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+             [&] { running = !running; })
+        .Bind({.id = "quit",
+               .label = "quit",
+               .controls = {sv::Ctl(sv::Key::Escape)}},
+              [&] { app.RequestQuit(); });
 
     app.Run();
 }

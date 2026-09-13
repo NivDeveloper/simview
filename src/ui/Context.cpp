@@ -119,8 +119,8 @@ void ui_init(impl::App *a, const Config &c) {
             ImGui::LoadIniSettingsFromDisk(a->ui.ini.c_str());
         ImGui_ImplSDL3_InitForVulkan(a->platform.win);
         // The pad is the platform's, read into Input once a frame, and
-        // ImGui never sees it: the backend's own copy would be cleared
-        // by NoKeyboard in flight and open the device a second time.
+        // ImGui sees only the cursor it drives: the backend's own copy
+        // would be cleared under a crosshair and open the device twice.
         ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_Manual,
                                       nullptr, 0);
         g_main_format = VkFormat(a->platform.sc.vk_format);
@@ -367,10 +367,10 @@ void view_draw(impl::View &v) {
                 v.world->rect[1] = p0.y;
                 v.world->rect[2] = avail.x;
                 v.world->rect[3] = avail.y;
-                // A press latched before the flight began would still
-                // be active: the flight owns the pointer, so no orbit.
-                if (!v.app->flying)
-                    world_camera_gesture(*v.world, hovered, active);
+                // The gestures run once for every world, after every
+                // panel has said whether it owns the pointer.
+                (void)hovered;
+                (void)active;
                 world_controls(v.app, *v.world, p0);
             } else {
                 ImGui::Image(tex, avail);
@@ -395,7 +395,7 @@ void ui_run_panels(impl::App *a) {
     ui_world_overlay(a);
     // After them, never before: whether a panel claimed the pointer is
     // only true once every panel has had its say.
-    ui_world_input(a);
+    actions_frame(a, true);
 }
 
 void ui_views_resize(impl::App *a) {

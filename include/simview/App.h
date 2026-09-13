@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Event.h"
+#include "Input.h"
 #include "Panel.h"
 #include "Plots.h"
 #include "Scene.h"
@@ -11,6 +12,7 @@
 #include <cstdint>
 #include <forward_list>
 #include <functional>
+#include <initializer_list>
 #include <utility>
 
 namespace sv {
@@ -31,14 +33,12 @@ void app_quit(App *);
 void app_on_frame(App *, void (*fn)(void *), void *user);
 void app_theme(App *, const Theme &);
 void app_layout(App *, sv::Layout);
-void app_on_event(App *, void (*fn)(const Event &, void *), void *user);
 void app_request_quit(App *);
 void app_run(App *);
 void app_step(App *);
 bool app_shot(App *, const char *bmp_path);
 void app_on_ui(App *, void (*fn)(void *), void *user);
 void app_post_event(App *, const Event &);
-void app_bind(App *, Key, const char *label);
 Stats app_stats(App *);
 
 }
@@ -80,28 +80,42 @@ class App {
         return *this;
     }
 
-    App &OnEvent(std::function<void(const Event &)> fn) {
-        ecbs_.push_front(std::move(fn));
-        impl::app_on_event(
-            a_,
-            [](const Event &e, void *u) {
-                (*static_cast<std::function<void(const Event &)> *>(u))(e);
-            },
-            &ecbs_.front());
+    template <class F> App &Bind(const Action &a, F fn) {
+        impl::app_bind(
+            a_, sv::Mode::Desc(a, ActionKind::Button),
+            [](float, float, void *u) { (*static_cast<F *>(u))(); },
+            new F(std::move(fn)), [](void *u) { delete static_cast<F *>(u); });
         return *this;
     }
 
-    App &OnKey(Key k, std::function<void()> fn) {
-        return OnEvent([k, fn = std::move(fn)](const Event &e) {
-            if (e.type == Event::Type::Down && !e.repeat && Is(e, k))
-                fn();
-        });
+    template <class F> App &Axis(const Action &a, F fn) {
+        impl::app_bind(
+            a_, sv::Mode::Desc(a, ActionKind::Axis),
+            [](float x, float, void *u) { (*static_cast<F *>(u))(x); },
+            new F(std::move(fn)), [](void *u) { delete static_cast<F *>(u); });
+        return *this;
     }
 
-    App &OnKey(Key k, const char *label, std::function<void()> fn) {
-        impl::app_bind(a_, k, label);
-        return OnKey(k, std::move(fn));
+    template <class F> App &Axis2(const Action &a, F fn) {
+        impl::app_bind(
+            a_, sv::Mode::Desc(a, ActionKind::Axis2),
+            [](float x, float y, void *u) { (*static_cast<F *>(u))(x, y); },
+            new F(std::move(fn)), [](void *u) { delete static_cast<F *>(u); });
+        return *this;
     }
+
+    sv::Mode Mode(const ModeSpec &m) {
+        return sv::Mode{impl::mode_create(
+            a_, {m.name, m.enter.data(), std::int32_t(m.enter.size())})};
+    }
+
+    App &Rebind(const char *key, std::initializer_list<Binding> controls) {
+        impl::app_rebind(a_, key, controls.begin(),
+                         std::int32_t(controls.size()));
+        return *this;
+    }
+
+    sv::Modes Modes() { return sv::Modes{a_}; }
 
     void RequestQuit() { impl::app_request_quit(a_); }
     void Run() { impl::app_run(a_); }
@@ -183,7 +197,6 @@ class App {
 
     impl::App *a_ = nullptr;
     std::forward_list<std::function<void()>> cbs_;
-    std::forward_list<std::function<void(const Event &)>> ecbs_;
 };
 
 }

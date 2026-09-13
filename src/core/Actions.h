@@ -101,6 +101,9 @@ void set_layer(Layer &, Device, const std::vector<Binding> &);
 
 void resolve(ActionTable &, const Snapshot &);
 
+// The row an id resolves to: the highest active context's, or null.
+const ActionRow *effective_row(const ActionTable &, const char *id);
+
 // Spellings: the keycap word, and the file's canonical name.
 const char *key_name(Key);
 const char *mouse_name(Mouse);

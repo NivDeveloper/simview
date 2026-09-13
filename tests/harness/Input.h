@@ -31,22 +31,39 @@ enum Button { Left = 0, Right = 1, Middle = 2 };
 
 // Put the pointer somewhere and let a frame see it.
 inline void move(sv::App &app, float x, float y) {
-    sv::probe::mouse_move(app.Raw(), x, y);
+    app.PostEvent(sv::MouseMove(x, y));
     app.Step();
 }
 
 inline void press(sv::App &app, Button b = Left) {
-    sv::probe::mouse_button(app.Raw(), int(b), true);
+    app.PostEvent(sv::MouseDown(sv::Mouse(int(b))));
     app.Step();
 }
 
 inline void release(sv::App &app, Button b = Left) {
-    sv::probe::mouse_button(app.Raw(), int(b), false);
+    app.PostEvent(sv::MouseUp(sv::Mouse(int(b))));
     app.Step();
 }
 
 inline void shift(sv::App &app, bool down) {
-    sv::probe::mouse_modifier_shift(app.Raw(), down);
+    app.PostEvent(down ? sv::KeyDown(sv::Key::LeftShift)
+                       : sv::KeyUp(sv::Key::LeftShift));
+}
+
+// A pad's button, and a stick or trigger held at a deflection: the
+// pad counts as present from the first of these.
+inline void pad(sv::App &app, sv::Pad b, bool down) {
+    app.PostEvent(down ? sv::PadDown(b) : sv::PadUp(b));
+    app.Step();
+}
+
+inline void pad_tap(sv::App &app, sv::Pad b) {
+    pad(app, b, true);
+    pad(app, b, false);
+}
+
+inline void stick(sv::App &app, sv::Pad which, float x, float y = 0.0f) {
+    app.PostEvent(sv::PadAxis(which, x, y));
 }
 
 // A drag, whole: the pointer arrives, the button goes down THERE, the
@@ -78,7 +95,7 @@ inline void double_click(sv::App &app, float x, float y) {
 // The wheel turns where the pointer already is.
 inline void wheel(sv::App &app, float x, float y, float dy) {
     move(app, x, y);
-    sv::probe::mouse_wheel(app.Raw(), dy);
+    app.PostEvent(sv::MouseWheel(dy));
     app.Step();
 }
 
@@ -93,9 +110,9 @@ inline void tap(sv::App &app, sv::Key k) {
     key(app, k, false);
 }
 
-// The captured pointer moves. Only a flight reads it.
+// The captured pointer moves. Only a crosshair reads it.
 inline void look(sv::App &app, float dx, float dy) {
-    sv::probe::look(app.Raw(), dx, dy);
+    app.PostEvent(sv::Look(dx, dy));
     app.Step();
 }
 

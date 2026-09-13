@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../platform/Input.h"
 #include "../platform/Timing.h"
 #include "../render/Target.h"
 #include "Geometry.h"
@@ -64,19 +65,12 @@ struct WorldState {
     };
     std::vector<PickCb> picks;
 
-    // A stroke of the pointer through the picture, handed to whoever
-    // asked, while the cut tool is on.
-    struct StrokeCb {
-        void (*fn)(const Stroke &, void *);
-        void *user;
-        void (*free)(void *);
-    };
-    std::vector<StrokeCb> strokes;
-    int tool = 0; // sv::Tool
-    bool stroking = false;
-    float stroke_x = 0.0f, stroke_y = 0.0f; // window points, last frame
-    Cloud stroke_item{};                    // what the drag began on
-    std::int32_t stroke_index = -1;
+    // What the primary press landed on, carried by every stroke of it.
+    Cloud grab_item{};
+    std::int32_t grab_index = -1;
+    // The crosshair's aim point last frame, for a sweep to start from.
+    Vec3 aim{};
+    bool aim_valid = false;
 
     // The item and element the focus tracks, when it tracks one.
     WorldItem *followed = nullptr;
@@ -125,6 +119,9 @@ void world_draw(impl::WorldState &, impl::Platform &, nvrhi::ICommandList *,
 
 void world_release(impl::WorldState &);
 
+// The view the camera would draw this frame, at the rect's size.
+WorldView world_view_now(impl::WorldState &);
+
 // A click at window point (x, y), through the last view drawn: the
 // nearest hit over every visible item. False when nothing was hit, or
 // nothing has been drawn yet.
@@ -134,13 +131,11 @@ bool world_pick(impl::WorldState &, float x, float y, Pick *);
 void world_picked(impl::WorldState &, const Pick &);
 
 // A stroke from window point (x0, y0) to (x1, y1), through the last
-// view drawn, to everyone who asked. Nothing has been drawn: nothing.
-void world_stroke(impl::WorldState &, float x0, float y0, float x1, float y1);
-
-// The gamepad's stroke: from the picture's centre by (dx, dy) of the
-// picture, pushing by `push` of the carried point's depth; it began on
-// nothing, and says it came from the pad.
-void world_stroke_pad(impl::WorldState &, float dx, float dy, float push);
+// view drawn, pushing by `depth` of a carried point's, to the mode's
+// listeners. Nothing has been drawn: nothing.
+void world_stroke(impl::WorldState &, float x0, float y0, float x1, float y1,
+                  float depth, const impl::StrokeCb *stroke,
+                  const impl::StrokeCb *carry);
 
 // The readback pipeline, made on first use: `src` at binding 0, `dst`
 // at 1, a count in push constants. Null when the device refused.

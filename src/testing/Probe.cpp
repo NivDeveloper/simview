@@ -91,58 +91,79 @@ impl::WorldState *world_of(impl::App *a, const char *title) {
 
 } // namespace
 
-void mouse_move(impl::App *a, float x, float y) {
-    if (ImGuiIO *io = io_of(a))
-        io->AddMousePosEvent(x, y);
-}
-
-void mouse_button(impl::App *a, int button, bool down) {
-    if (ImGuiIO *io = io_of(a))
-        io->AddMouseButtonEvent(button, down);
-}
-
-void mouse_wheel(impl::App *a, float dy) {
-    if (ImGuiIO *io = io_of(a))
-        io->AddMouseWheelEvent(0.0f, dy);
-}
-
-void mouse_modifier_shift(impl::App *a, bool down) {
-    if (ImGuiIO *io = io_of(a))
-        io->AddKeyEvent(ImGuiMod_Shift, down);
-}
-
-void look(impl::App *a, float dx, float dy) {
-    if (!a)
-        return;
-    a->input.look_dx += dx;
-    a->input.look_dy += dy;
-}
-
-void fly_wheel(impl::App *a, float dy) {
-    if (a)
-        a->input.wheel += dy;
-}
-
-bool flying(impl::App *a, const char *title) {
+bool aimed(impl::App *a, const char *title) {
     impl::WorldState *w = world_of(a, title);
-    return w && a->flying == w;
+    return w && a->aimed == w;
 }
 
 void gamepad(impl::App *a, const std::int16_t raw[6]) {
     if (!a)
         return;
-    impl::pad_axes(a->input, raw);
+    impl::pad_axes(a->input.pad, raw);
     a->input.pad.present = true;
     // A touched pad is the device in hand, as the platform's poll says.
-    const impl::Gamepad &g = a->input.pad;
-    if (g.lx != 0.0f || g.ly != 0.0f || g.rx != 0.0f || g.ry != 0.0f ||
-        g.lt != 0.0f || g.rt != 0.0f)
-        a->input.last_pad = true;
+    for (float v : a->input.pad.axes)
+        if (v != 0.0f)
+            a->input.last = Device::Pad;
 }
 
-void gamepad_buttons(impl::App *a, bool fast, bool back, bool tool) {
-    if (a)
-        impl::pad_buttons(a, fast, back, tool);
+int pointer(impl::App *a, float *x, float *y) {
+    if (!a)
+        return 0;
+    if (a->aimed) {
+        if (x)
+            *x = a->aimed->rect[0] + a->aimed->rect[2] * 0.5f;
+        if (y)
+            *y = a->aimed->rect[1] + a->aimed->rect[3] * 0.5f;
+        return int(PointerStyle::Crosshair);
+    }
+    if (ImGuiIO *io = io_of(a)) {
+        if (x)
+            *x = io->MousePos.x;
+        if (y)
+            *y = io->MousePos.y;
+    }
+    return int(PointerStyle::Cursor);
+}
+
+int last_device(impl::App *a) { return a ? int(a->input.last) : 0; }
+
+bool action(impl::App *a, const char *context, const char *id,
+            ActionState *out) {
+    if (!a || !id)
+        return false;
+    const impl::ActionTable &t = a->input.table;
+    const impl::ActionRow *r = nullptr;
+    if (context && *context) {
+        const int ctx = t.find_context(context);
+        const int row = ctx < 0 ? -1 : t.find(ctx, id);
+        r = row < 0 ? nullptr : &t.rows[std::size_t(row)];
+    } else {
+        r = impl::effective_row(t, id);
+    }
+    if (!r)
+        return false;
+    if (out)
+        *out = {r->value.down, r->value.pressed, r->value.released, r->value.x,
+                r->value.y,    r->value.rx,      r->value.ry};
+    return true;
+}
+
+const char *active_mode(impl::App *a) { return impl::app_active_mode(a); }
+
+std::size_t bindings_text(impl::App *a, char *out, std::size_t cap) {
+    if (!a || !out || cap == 0)
+        return 0;
+    const std::string text = impl::table_save(a->input.table, nullptr);
+    const std::size_t n = std::min(text.size(), cap - 1);
+    text.copy(out, n);
+    out[n] = '\0';
+    return n;
+}
+
+void bindings_load(impl::App *a, const char *text) {
+    if (a && text)
+        impl::table_load(a->input.table, text);
 }
 
 std::size_t world_legend(impl::App *a, const char *title, char *out,
@@ -152,12 +173,11 @@ std::size_t world_legend(impl::App *a, const char *title, char *out,
         return 0;
     std::string line;
     for (const Chip &c : sv::world_legend(a, *w)) {
-        if (c.key.empty() && c.label.empty())
+        if (c.blank())
             continue;
         if (!line.empty())
             line += "  ";
-        line +=
-            c.lit ? "[" + c.key + " " + c.label + "]" : c.key + " " + c.label;
+        line += chip_text(c);
     }
     const std::size_t n = std::min(line.size(), cap - 1);
     line.copy(out, n);
