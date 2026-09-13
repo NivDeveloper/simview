@@ -12,6 +12,12 @@ namespace {
 
 constexpr float kTau = 6.283185307179586f;
 
+// The same ink at a fraction of its alpha.
+ImU32 fade(ImU32 col, float by) {
+    const ImU32 a = ImU32(float((col >> 24) & 0xFF) * by);
+    return (col & 0x00FFFFFFu) | (a << 24);
+}
+
 // Every icon is drawn in the unit square and scaled on the way out,
 // so a shape is described once, in the proportions it was designed
 // at, and never in pixels.
@@ -117,6 +123,12 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         return;
 
     const Pen p{dl, at, size, col, std::max(1.0f, size * 0.085f)};
+    // The cut-out ink, and a pen in it, for what the pad's glyphs
+    // carve out of their solid shapes.
+    ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+    bg.w = 1.0f;
+    const ImU32 cut = ImGui::ColorConvertFloat4ToU32(bg);
+    const Pen k{dl, at, size, cut, p.t};
 
     switch (ic) {
     case Icon::Home:
@@ -319,9 +331,9 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         return;
     }
 
-    // The pad as the prompt sets draw it: a letter in a ring, a wide low
-    // bumper and a tall trigger with their names, a stick a cap in a
-    // well, a click the cap pressed, a D-pad arm filled.
+    // The pad as the prompt sets draw it: solid shapes with the name
+    // cut out — a letter in a disc, a wide bumper, a tall trigger, a
+    // stick, a click pressed onto a bar, and a D-pad arm lit.
     case Icon::PadA:
     case Icon::PadB:
     case Icon::PadX:
@@ -330,80 +342,72 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
                              : ic == Icon::PadB ? "B"
                              : ic == Icon::PadX ? "X"
                                                 : "Y";
-        p.ring(0.50f, 0.50f, 0.44f);
-        p.text(0.50f, 0.50f, 0.58f, letter);
+        p.disc(0.50f, 0.50f, 0.42f);
+        p.text(0.50f, 0.50f, 0.58f, letter, cut);
         return;
     }
 
     case Icon::PadLB:
     case Icon::PadRB:
-        p.arc(0.02f, 0.80f, 0.02f, 0.16f, 0.28f, 0.14f, 0.50f, 0.14f);
-        p.arc(0.50f, 0.14f, 0.72f, 0.14f, 0.98f, 0.16f, 0.98f, 0.80f);
-        p.line(0.02f, 0.80f, 0.98f, 0.80f);
-        p.text(0.50f, 0.50f, 0.48f, ic == Icon::PadLB ? "LB" : "RB");
+        p.slab(0.04f, 0.26f, 0.96f, 0.74f, 0.24f);
+        p.text(0.50f, 0.50f, 0.44f, ic == Icon::PadLB ? "LB" : "RB", cut);
         return;
 
     case Icon::PadLT:
     case Icon::PadRT:
-        p.box(0.14f, 0.04f, 0.86f, 0.96f, 0.24f);
-        p.text(0.50f, 0.50f, 0.48f, ic == Icon::PadLT ? "LT" : "RT");
+        p.slab(0.16f, 0.08f, 0.84f, 0.92f, 0.26f);
+        p.text(0.50f, 0.50f, 0.44f, ic == Icon::PadLT ? "LT" : "RT", cut);
         return;
 
-    // A stick is a double ring with its hand's letter; a click fills
-    // the cap and cuts the letter out of it.
     case Icon::PadLS:
     case Icon::PadRS:
-    case Icon::PadL3:
-    case Icon::PadR3: {
-        const bool left = ic == Icon::PadLS || ic == Icon::PadL3;
-        const bool click = ic == Icon::PadL3 || ic == Icon::PadR3;
-        p.ring(0.50f, 0.50f, 0.46f);
-        if (click) {
-            // Cut out in the panel's own colour, made opaque: a theme
-            // may fade its windows, a cut-out must not fade with them.
-            ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
-            bg.w = 1.0f;
-            p.disc(0.50f, 0.50f, 0.29f);
-            p.text(0.50f, 0.50f, 0.42f, left ? "L" : "R",
-                   ImGui::ColorConvertFloat4ToU32(bg));
-        } else {
-            p.ring(0.50f, 0.50f, 0.36f);
-            p.text(0.50f, 0.50f, 0.44f, left ? "L" : "R");
-        }
+        p.disc(0.50f, 0.50f, 0.42f);
+        p.text(0.50f, 0.50f, 0.44f, ic == Icon::PadLS ? "LS" : "RS", cut);
         return;
-    }
+
+    // A click: the stick's disc pressed down onto a bar.
+    case Icon::PadL3:
+    case Icon::PadR3:
+        p.disc(0.50f, 0.44f, 0.38f);
+        p.text(0.50f, 0.44f, 0.42f, ic == Icon::PadL3 ? "L" : "R", cut);
+        p.slab(0.22f, 0.88f, 0.78f, 0.98f, 0.05f);
+        return;
 
     case Icon::PadStart:
-        p.ring(0.50f, 0.50f, 0.44f);
-        p.line(0.32f, 0.37f, 0.68f, 0.37f);
-        p.line(0.32f, 0.50f, 0.68f, 0.50f);
-        p.line(0.32f, 0.63f, 0.68f, 0.63f);
+        p.disc(0.50f, 0.50f, 0.42f);
+        k.line(0.32f, 0.38f, 0.68f, 0.38f);
+        k.line(0.32f, 0.50f, 0.68f, 0.50f);
+        k.line(0.32f, 0.62f, 0.68f, 0.62f);
         return;
 
     case Icon::PadBack:
-        p.ring(0.50f, 0.50f, 0.44f);
-        p.box(0.29f, 0.35f, 0.59f, 0.61f, 0.03f);
-        p.box(0.41f, 0.43f, 0.71f, 0.69f, 0.03f);
+        p.disc(0.50f, 0.50f, 0.42f);
+        k.box(0.30f, 0.36f, 0.56f, 0.60f, 0.03f);
+        k.slab(0.44f, 0.44f, 0.70f, 0.68f, 0.03f);
+        p.box(0.44f, 0.44f, 0.70f, 0.68f, 0.03f);
+        k.box(0.46f, 0.46f, 0.68f, 0.66f, 0.02f);
         return;
 
+    // A solid cross; the arm in question full, the others dimmed.
     case Icon::Dpad:
     case Icon::DpadUp:
     case Icon::DpadDown:
     case Icon::DpadLeft:
-    case Icon::DpadRight:
+    case Icon::DpadRight: {
+        const Pen dim{dl, at, size, fade(col, ic == Icon::Dpad ? 1.0f : 0.4f),
+                      p.t};
+        dim.slab(0.35f, 0.02f, 0.65f, 0.98f, 0.10f);
+        dim.slab(0.02f, 0.35f, 0.98f, 0.65f, 0.10f);
         if (ic == Icon::DpadUp)
-            p.slab(0.36f, 0.04f, 0.64f, 0.36f);
+            p.slab(0.35f, 0.02f, 0.65f, 0.40f, 0.10f);
         if (ic == Icon::DpadDown)
-            p.slab(0.36f, 0.64f, 0.64f, 0.96f);
+            p.slab(0.35f, 0.60f, 0.65f, 0.98f, 0.10f);
         if (ic == Icon::DpadLeft)
-            p.slab(0.04f, 0.36f, 0.36f, 0.64f);
+            p.slab(0.02f, 0.35f, 0.40f, 0.65f, 0.10f);
         if (ic == Icon::DpadRight)
-            p.slab(0.64f, 0.36f, 0.96f, 0.64f);
-        p.poly({0.36f, 0.04f, 0.64f, 0.04f, 0.64f, 0.36f, 0.96f, 0.36f,
-                0.96f, 0.64f, 0.64f, 0.64f, 0.64f, 0.96f, 0.36f, 0.96f,
-                0.36f, 0.64f, 0.04f, 0.64f, 0.04f, 0.36f, 0.36f, 0.36f},
-               true);
+            p.slab(0.60f, 0.35f, 0.98f, 0.65f, 0.10f);
         return;
+    }
     }
 }
 
