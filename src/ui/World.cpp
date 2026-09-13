@@ -231,9 +231,31 @@ std::vector<Chip> world_legend(impl::App *a, impl::WorldState &w) {
     return chips;
 }
 
+// The crosshair itself: a dot and four ticks at the centre of the
+// aimed picture, haloed so it reads on any scene.
+void world_reticle(impl::App *a, impl::WorldState &w) {
+    if (a->aimed != &w || w.rect[2] <= 0.0f)
+        return;
+    ImDrawList *dl = ImGui::GetForegroundDrawList();
+    const ImVec2 c(w.rect[0] + w.rect[2] * 0.5f, w.rect[1] + w.rect[3] * 0.5f);
+    const ImU32 ink = ImGui::GetColorU32(ImGuiCol_Text, 0.9f);
+    const ImU32 halo = ImGui::GetColorU32(ImGuiCol_WindowBg, 0.7f);
+    const float in = 5.0f, out = 12.0f;
+    for (int pass = 0; pass < 2; ++pass) {
+        const ImU32 col = pass ? ink : halo;
+        const float t = pass ? 1.5f : 3.5f;
+        dl->AddLine({c.x - out, c.y}, {c.x - in, c.y}, col, t);
+        dl->AddLine({c.x + in, c.y}, {c.x + out, c.y}, col, t);
+        dl->AddLine({c.x, c.y - out}, {c.x, c.y - in}, col, t);
+        dl->AddLine({c.x, c.y + in}, {c.x, c.y + out}, col, t);
+        dl->AddCircleFilled(c, pass ? 2.0f : 3.0f, col);
+    }
+}
+
 // Drawn at `at`, which is the top-left of the picture. The caller owns
 // the window; this only knows where the corner is.
 void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
+    world_reticle(a, w);
     if (!w.controls)
         return;
     const ImVec2 keep = ImGui::GetCursorScreenPos();
@@ -264,9 +286,12 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
 // which lets it through — full width, so a bar whose words change
 // never clips for the frame an auto-sized window takes to catch up.
 void ui_world_overlay(impl::App *a) {
-    if (!a || !a->world || !a->world->controls)
+    if (!a || !a->world)
         return;
     impl::WorldState &w = *a->world;
+    world_reticle(a, w);
+    if (!w.controls)
+        return;
     const ImGuiViewport *vp = ImGui::GetMainViewport();
     const float pad = ImGui::GetStyle().WindowPadding.x;
     const int flags =

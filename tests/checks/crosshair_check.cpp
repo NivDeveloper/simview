@@ -8,6 +8,7 @@
 // pointer is the one aimed; a key held into the switch-back moves
 // nothing after.
 
+#include "harness/Bmp.h"
 #include "harness/Harness.h"
 #include "harness/Input.h"
 #include "probe/Probe.h"
@@ -63,15 +64,24 @@ int main() {
         .Bind({.id = "quit", .controls = {Ctl(Key::Escape)}}, [&] { ++quits; });
     app.Step();
 
-    // ── Tab flies, and a flight is aimed ─────────────────────────────
+    // ── Tab flies, a flight is aimed, and the crosshair is drawn ─────
     CHECK(app.Modes().Camera() == CameraMode::Orbit);
     CHECK(app.Modes().Pointer() == PointerStyle::Cursor);
+    Bmp bare, aimed_shot;
+    REQUIRE(harness::shot(app, "crosshair_off", bare));
     input::tap(app, Key::Tab);
     CHECK(app.Modes().Camera() == CameraMode::Fly);
     CHECK(app.Modes().Pointer() == PointerStyle::Crosshair);
     CHECK(probe::aimed(app.Raw(), nullptr));
     CHECK_EQ(probe::pointer(app.Raw(), nullptr, nullptr),
              int(PointerStyle::Crosshair));
+    app.Step();
+    REQUIRE(harness::shot(app, "crosshair_on", aimed_shot));
+    const std::size_t centre_off = lit_count(bare, 386, 286, 414, 314, 40);
+    const std::size_t centre_on = lit_count(aimed_shot, 386, 286, 414, 314, 40);
+    std::printf("  the centre lit: %zu without the crosshair, %zu with\n",
+                centre_off, centre_on);
+    CHECK_GT(centre_on, centre_off + 20);
 
     // ── W moves eye and focus along forward, and is the flight's ─────
     const auto start = cam(app);
