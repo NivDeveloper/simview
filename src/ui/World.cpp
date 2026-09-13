@@ -28,6 +28,14 @@ void world_camera_gesture(impl::WorldState &w, bool hovered, bool active) {
         if (w.stroking && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f))
             world_stroke(w, w.stroke_x, w.stroke_y, io.MousePos.x,
                          io.MousePos.y);
+        // What the drag began on, asked once at the press: every stroke
+        // of it carries the answer.
+        if (!w.stroking) {
+            Pick p{};
+            const bool hit = world_pick(w, io.MousePos.x, io.MousePos.y, &p);
+            w.stroke_item = hit ? p.cloud : impl::Cloud{};
+            w.stroke_index = hit ? p.index : -1;
+        }
         w.stroking = true;
         w.stroke_x = io.MousePos.x;
         w.stroke_y = io.MousePos.y;

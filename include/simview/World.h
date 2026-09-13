@@ -63,14 +63,26 @@ struct Stroke;
 
 namespace impl {
 bool stroke_crosses(const Stroke &, const float p[3], const float q[3]);
+bool stroke_carry(const Stroke &, const float at[3], float to[3]);
 }
 
 struct Stroke {
     float from[2] = {0.0f, 0.0f};
     float to[2] = {0.0f, 0.0f};
     float clip[16] = {};
+    impl::Cloud item;
+    std::int32_t index = -1;
     bool Crosses(const float p[3], const float q[3]) const {
         return impl::stroke_crosses(*this, p, q);
+    }
+    bool Carry(const float at[3], float to[3]) const {
+        return impl::stroke_carry(*this, at, to);
+    }
+    bool On(const sv::Cloud &c) const {
+        return item.p != nullptr && item.p == c.Raw().p;
+    }
+    bool On(const sv::Wire &w) const {
+        return item.p != nullptr && item.p == w.Raw().p;
     }
 };
 

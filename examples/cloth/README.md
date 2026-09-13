@@ -1,9 +1,11 @@
 # cloth — a hanging sheet you can cut
 
-A square of cloth hangs by its top edge, or by its two corners, over a
-ball it can drape on. Choose the cut tool and drag across it: every
-spring the stroke crosses is gone, and a spring stretched past its limit
-tears on its own, so a slit runs on under the cloth's weight.
+A square of cloth hangs by its top edge, or by its two corners, with a
+ball in front of it. Choose the cut tool: drag across the cloth and
+every spring the stroke crosses is gone, drag the ball and it goes where
+the pointer takes it, through the cloth if you like. A spring stretched
+past its limit tears on its own, so a slit runs on under the cloth's
+weight.
 
 ```sh
 make          # configures and builds; needs g++-16 for -freflection
@@ -11,7 +13,8 @@ make          # configures and builds; needs g++-16 for -freflection
 ```
 
 Space toggles, R restarts, Esc quits. Drag to orbit, wheel to zoom;
-with the cut tool on, the right button orbits instead.
+with the cut tool on, the right button orbits instead. The sim runs at
+sixty ticks a second, real time.
 
 ## How it is built
 

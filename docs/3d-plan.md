@@ -472,10 +472,14 @@ midpoint.
 **A stroke is a drag with the cut tool on.** The tool is a field on the
 world, offered in the on-picture menu only where something listens
 (`OnStroke`). While it is on, a left drag hands each frame's motion on
-as a `Stroke`: two picture-space points and the view it was drawn
-through, so `Crosses(p, q)` answers whether a world segment's projection
-crossed it — the whole of what a cut needs, and nothing the world has to
-know about the data. The right button orbits meanwhile. A stroke through
+as a `Stroke`: two picture-space points, the view it was drawn through,
+and what the drag began on, picked once at the press. `Crosses(p, q)`
+answers whether a world segment's projection crossed it — the whole of
+what a cut needs — and `Carry(at, to)` moves a world point along it in
+the picture's plane at that point's depth, which is the whole of what
+dragging something is; `On(item)` says which of the two a stroke means.
+Nothing the world has to know about the data. The right button orbits
+meanwhile. A stroke through
 a picture nobody has seen is nothing: headless, that means a shot must
 have been drawn, which is what `stroke_check` learned first.
 

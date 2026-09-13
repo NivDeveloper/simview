@@ -1,6 +1,7 @@
 // A cloth hung by its top edge: position-based dynamics on a grid of
 // springs, every spring family a stencil over the grid. Choose "cut" and
-// drag to cut it; a spring stretched past its limit tears.
+// drag to cut it, or drag the ball through it; a spring stretched past
+// its limit tears.
 //
 // Space toggles, R restarts, Esc quits. Right-drag orbits while cutting.
 #include <simview/simview.h>
@@ -13,7 +14,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
-#include <span>
 #include <utility>
 #include <vector>
 
@@ -31,8 +31,8 @@ constexpr idx N = 40;             // particles per side
 constexpr f32 L = 1.6f;           // side, metres
 constexpr f32 h = L / f32(N - 1); // a structural spring's rest length
 constexpr f32 z0 = 0.15f;         // the bottom edge's height at rest
-constexpr f32 ball_at[3] = {0.0f, 0.3f, 0.8f};
 constexpr f32 ball_r = 0.3f;
+constexpr f32 ball_start[3] = {0.0f, -0.35f, 0.8f}; // the camera's side
 
 // The solver: a 1/60 s tick in eight substeps of two averaged Jacobi
 // pulls, over-relaxed; the settings that hold a hanging cloth within a
@@ -70,6 +70,7 @@ struct Params {
     f32 tear = 1.6f; // a spring past this many rest lengths is gone
     int pin = 0;     // 0 the top edge, 1 its two corners
     bool ball = true;
+    f32 ball_at[3] = {ball_start[0], ball_start[1], ball_start[2]};
 };
 
 struct Cut {
@@ -170,10 +171,10 @@ void substep(State &s, const Grid &W, const Params &p) {
     xn = where(xn[i, j, 2_c] < 0.0f, xn[i, j, n] * keep[n], xn[i, j, n]);
 
     if (p.ball) {
-        Tensor<f32, 3> c{ball_at[0], ball_at[1], ball_at[2]};
-        auto dx = xn[i, j, 0_c] - ball_at[0];
-        auto dy = xn[i, j, 1_c] - ball_at[1];
-        auto dz = xn[i, j, 2_c] - ball_at[2];
+        Tensor<f32, 3> c{p.ball_at[0], p.ball_at[1], p.ball_at[2]};
+        auto dx = xn[i, j, 0_c] - p.ball_at[0];
+        auto dy = xn[i, j, 1_c] - p.ball_at[1];
+        auto dz = xn[i, j, 2_c] - p.ball_at[2];
         auto r = Fmax(Sqrt(dx * dx + dy * dy + dz * dz), 1e-6f);
         xn = where(r < ball_r, c[n] + (xn[i, j, n] - c[n]) * (ball_r / r),
                    xn[i, j, n]);
@@ -238,15 +239,17 @@ int main() {
     Grid W = pinned(knobs.pin);
     int pinned_as = knobs.pin;
 
-    sv::Sync<std::vector<float>> pos, alive_r, alive_u;
+    sv::Sync<std::vector<float>> pos, alive_r, alive_u, ball_pos;
 
-    auto publish = [&] {
+    auto publish = [&](const Params &p) {
         auto flat = [](const auto &t) {
             return std::vector<float>(t.data(), t.data() + t.size());
         };
         pos.Publish(flat(state.x));
         alive_r.Publish(flat(state.s.right));
         alive_u.Publish(flat(state.s.up));
+        ball_pos.Publish(p.ball ? std::vector<float>(p.ball_at, p.ball_at + 3)
+                                : std::vector<float>{});
     };
 
     auto world = app.World({});
@@ -271,17 +274,18 @@ int main() {
     auto wire_r = world.Wire(pos, edges_of(kReach[0]), thread);
     auto wire_u = world.Wire(pos, edges_of(kReach[1]), thread);
 
-    auto ball = world.Cloud({
+    sv::CloudDesc sphere{
         .color = {0.95f, 0.62f, 0.28f, 1.0f},
         .radius = ball_r,
         .shape = sv::CloudShape::Sphere,
-    });
+    };
+    auto ball = world.Cloud(ball_pos, sphere);
     if (!wire_r || !wire_u || !ball)
         return 1;
 
     wire_r.Mask(alive_r);
     wire_u.Mask(alive_u);
-    publish();
+    publish(knobs);
 
     sv::Executor sim([&](const sv::Tick &) {
         Params p;
@@ -307,17 +311,22 @@ int main() {
         }
 
         step(state, W, p);
-        publish();
+        publish(p);
     });
 
     sim.OnRestart([&] {
         state = rest();
-        std::lock_guard l(shared.lock);
-        shared.cuts.clear();
-        publish();
+        Params p;
+        {
+            std::lock_guard l(shared.lock);
+            shared.cuts.clear();
+            p = shared.params;
+        }
+        publish(p);
     });
 
     sim.SetDt(kDt);
+    sim.SetDelayNs(16'666'667); // 60 ticks a second: real time
     sim.Play();
 
     int tool = 0;
@@ -340,8 +349,6 @@ int main() {
             std::lock_guard l(shared.lock);
             shared.params = knobs;
         }
-        ball.Update(knobs.ball ? std::span<const float>(ball_at)
-                               : std::span<const float>());
 
         // The tool has two switches, the panel's and the picture's: the
         // one that moved since last frame wins.
@@ -361,9 +368,15 @@ int main() {
         .OnKey(sv::Key::R, [&] { sim.Restart(); })
         .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
 
-    // Every spring whose segment the stroke crosses, tested against the
-    // frame's own copy of the positions, queued for the next tick.
+    // A stroke that began on the ball carries it; any other cuts every
+    // spring whose segment it crosses, tested against the frame's own
+    // copy of the positions and queued for the next tick.
     world.OnStroke([&](const sv::Stroke &st) {
+        if (st.On(ball)) {
+            st.Carry(knobs.ball_at, knobs.ball_at);
+            return;
+        }
+
         auto &x = pos.Shown();
         if (x.size() < N * N * 3)
             return;

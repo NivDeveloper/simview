@@ -100,6 +100,7 @@ void worker_loop(ExecutorImpl *e) {
             if (e->st == St::Step)
                 e->st = St::Paused; // one-shot
         }
+        const auto started = std::chrono::steady_clock::now();
         {
             SV_ZONE("step");
             e->run_body();
@@ -114,8 +115,11 @@ void worker_loop(ExecutorImpl *e) {
                    now - e->recent.front() > std::chrono::seconds(1))
                 e->recent.pop_front();
         }
+        // The delay is a floor on the tick-to-tick interval, so 16.7 ms
+        // is 60 a second however long the body took.
         if (const auto d = e->delay_ns.load(std::memory_order_relaxed))
-            std::this_thread::sleep_for(std::chrono::nanoseconds(d));
+            std::this_thread::sleep_until(started +
+                                          std::chrono::nanoseconds(d));
     }
 }
 

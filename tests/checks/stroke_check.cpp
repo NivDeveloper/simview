@@ -99,6 +99,25 @@ int main() {
     }
     CHECK(crossed_y);
     CHECK(!crossed_z);
+    // It began on nothing: neither edge is under (cx + off, cy - 60).
+    CHECK(!strokes.front().On(wire));
+
+    // ── a stroke knows what it began on, and carries a point along ───
+    // Pressed on the Z edge, dragged 40 px right: the edge by index, and
+    // a point at the focus carried 40 px worth of world +Y at that depth.
+    strokes.clear();
+    input::drag(app, cx, cy - 60.0f, cx + 40.0f, cy - 60.0f);
+    REQUIRE(strokes.size() >= 1);
+    CHECK(strokes.front().On(wire));
+    CHECK_EQ(strokes.front().index, 1);
+    const float at[3] = {0.0f, 0.0f, 0.0f};
+    float carried[3] = {0.0f, 0.0f, 0.0f};
+    REQUIRE(strokes.front().Carry(at, carried));
+    std::printf("  carried the focus to (%.3f %.3f %.3f); 40 px is %.3f\n",
+                carried[0], carried[1], carried[2], 40.0f / kPxPerUnit);
+    CHECK_LT(std::fabs(carried[1] - 40.0f / kPxPerUnit), 0.02f);
+    CHECK_LT(std::fabs(carried[0]), 0.01f);
+    CHECK_LT(std::fabs(carried[2]), 0.01f);
 
     // ── the right button orbits under the cut tool ───────────────────
     strokes.clear();

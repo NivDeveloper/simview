@@ -427,6 +427,8 @@ void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1) {
     s.to[1] = (y1 - w.rect[1]) / w.rect[3];
     for (int k = 0; k < 16; ++k)
         s.clip[k] = w.last_view.world_to_clip.m[k];
+    s.item = w.stroke_item;
+    s.index = w.stroke_index;
     for (const impl::WorldState::StrokeCb &c : w.strokes)
         if (c.fn)
             c.fn(s, c.user);
@@ -459,6 +461,28 @@ bool stroke_crosses(const Stroke &s, const float p[3], const float q[3]) {
     const float o4 = side(cx, cy, dx, dy, bx, by);
     return ((o1 > 0.0f) != (o2 > 0.0f)) && ((o3 > 0.0f) != (o4 > 0.0f)) &&
            o1 != 0.0f && o2 != 0.0f && o3 != 0.0f && o4 != 0.0f;
+}
+
+// A world point carried along the stroke in the plane of the picture
+// through it: the same depth, shifted by what the pointer moved.
+bool stroke_carry(const Stroke &s, const float at[3], float to[3]) {
+    Mat4 m;
+    for (int k = 0; k < 16; ++k)
+        m.m[k] = s.clip[k];
+    float w = 0.0f;
+    const Vec3 c = transform_point(m, {at[0], at[1], at[2]}, &w);
+    if (w <= 0.0f)
+        return false;
+    const Vec3 moved{c.x + 2.0f * (s.to[0] - s.from[0]),
+                     c.y - 2.0f * (s.to[1] - s.from[1]), c.z};
+    float wi = 0.0f;
+    const Vec3 p = transform_point(mat_inverse(m), moved, &wi);
+    if (wi == 0.0f)
+        return false;
+    to[0] = p.x;
+    to[1] = p.y;
+    to[2] = p.z;
+    return true;
 }
 
 void world_on_stroke(World w, void (*fn)(const Stroke &, void *), void *user,

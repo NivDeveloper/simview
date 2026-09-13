@@ -75,6 +75,8 @@ struct WorldState {
     int tool = 0; // sv::Tool
     bool stroking = false;
     float stroke_x = 0.0f, stroke_y = 0.0f; // window points, last frame
+    Cloud stroke_item{};                    // what the drag began on
+    std::int32_t stroke_index = -1;
 
     // The item and element the focus tracks, when it tracks one.
     WorldItem *followed = nullptr;
