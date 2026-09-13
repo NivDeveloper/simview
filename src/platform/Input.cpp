@@ -214,7 +214,13 @@ void poll(App *a) {
         if (ev.type == SDL_EVENT_GAMEPAD_REMOVED)
             pad_removed(a, ev.gdevice.which);
         if (ev.type == SDL_EVENT_MOUSE_MOTION) {
-            if (a->aimed)
+            // A warp's echo lands where the pad put the cursor.
+            const bool echo = in.warped &&
+                              std::fabs(ev.motion.x - in.warp_x) < 2.0f &&
+                              std::fabs(ev.motion.y - in.warp_y) < 2.0f;
+            if (echo)
+                in.warped = false;
+            else if (a->aimed)
                 note_event(a, Look(ev.motion.xrel, ev.motion.yrel));
             else
                 in.last = Device::Mouse;

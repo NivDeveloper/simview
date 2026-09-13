@@ -143,9 +143,12 @@ void ui_pointer_feed(impl::App *a) {
             std::fmin(std::fmax(p.y, vp->Pos.y), vp->Pos.y + vp->Size.y - 1.0f);
         io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
         io.AddMousePosEvent(p.x, p.y);
-        if (a->platform.win)
-            SDL_WarpMouseInWindow(a->platform.win, p.x - vp->Pos.x,
-                                  p.y - vp->Pos.y);
+        if (a->platform.win) {
+            in.warped = true;
+            in.warp_x = p.x - vp->Pos.x;
+            in.warp_y = p.y - vp->Pos.y;
+            SDL_WarpMouseInWindow(a->platform.win, in.warp_x, in.warp_y);
+        }
         in.last = Device::Pad;
     }
 

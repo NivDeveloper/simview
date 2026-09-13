@@ -68,6 +68,10 @@ struct Input {
     PadState pad;
     SDL_Gamepad *pad_device = nullptr;
     Device last = Device::Mouse; // the device in the reader's hands
+    // Where the pad's cursor warped the OS cursor: the motion event
+    // that echoes it is the pad's, not the mouse's.
+    bool warped = false;
+    float warp_x = 0.0f, warp_y = 0.0f;
 
     ActionTable table;
     std::vector<ActionCb> callbacks;
