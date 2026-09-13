@@ -27,19 +27,22 @@ using f32 = float;
 using idx = size_t;
 using u32 = std::uint32_t;
 
-constexpr idx N = 40;             // particles per side
+constexpr idx N = 100;            // particles per side
 constexpr f32 L = 1.6f;           // side, metres
 constexpr f32 h = L / f32(N - 1); // a structural spring's rest length
 constexpr f32 z0 = 0.15f;         // the bottom edge's height at rest
 constexpr f32 ball_r = 0.3f;
 constexpr f32 ball_start[3] = {0.0f, -0.35f, 0.8f}; // the camera's side
 
-// The solver: a 1/60 s tick in eight substeps of two averaged Jacobi
-// pulls, over-relaxed; the settings that hold a hanging cloth within a
-// few percent at under two milliseconds a tick.
+// The solver: a 1/60 s tick in substeps of two averaged Jacobi pulls,
+// over-relaxed. The pulls propagate one spring a pass, so a longer chain
+// needs more substeps to hold: eight at N = 40 keeps a hanging cloth
+// within a tenth at 1.4 ms a tick, twenty at N = 100 at 21 ms.
 constexpr f32 kDt = 1.0f / 60.0f, kDamping = 0.02f, kRelax = 1.5f;
 constexpr f32 kBend = 0.25f; // the bend springs' weight
-constexpr int kIterations = 2, kSubsteps = 8;
+constexpr int kIterations = 2;
+constexpr int kSubsteps = std::max(8, int(N) / 5);
+constexpr f32 kRamp = 1.0f; // seconds over which gravity comes on
 
 using Vecs = Tensor<f32, N, N, 3>; // (column, row, xyz)
 using Grid = Tensor<f32, N, N>;
@@ -63,6 +66,8 @@ Grid &family(Springs &s, int f) {
 struct State {
     Vecs x, xo; // now, and a step ago
     Springs s;
+    f32 t = 0.0f; // since the start
+    f32 ball[3] = {ball_start[0], ball_start[1], ball_start[2]};
 };
 
 struct Params {
@@ -119,92 +124,103 @@ Grid pinned(int mode) {
     });
 }
 
-// One substep: predict under gravity, pull every spring toward its rest
-// length (Jacobi, averaged over the springs that pulled), collide, then
-// drop the springs that stretched too far.
+// One substep: predict under gravity, then a few rounds of pulling every
+// spring toward its rest length (Jacobi, averaged over the springs that
+// pulled) and putting particles back out of the floor and the ball, and
+// finally drop the springs that stretched too far.
 void substep(State &s, const Grid &W, const Params &p) {
     constexpr f32 dt = kDt / f32(kSubsteps);
     constexpr f32 damping = kDamping / f32(kSubsteps);
-    Tensor<f32, 3> g{0.0f, 0.0f, -p.gravity};
+    // Gravity comes on over the first second, so the sheet never
+    // free-falls before the pulls have reached down from the pinned row.
+    Tensor<f32, 3> g{0.0f, 0.0f, -p.gravity * std::min(1.0f, s.t / kRamp)};
 
     Vecs xn = s.x[i, j, n] +
               W[i, j] * ((s.x[i, j, n] - s.xo[i, j, n]) * (1.0f - damping) +
                          g[n] * (dt * dt));
-    Springs &sp = s.s;
 
-    auto pull = [&](const auto &alive, auto ni, auto nj, f32 rest_len, f32 k,
-                    Vecs &d, Grid &cnt) {
-        auto dx = xn[ni, nj, 0_c] - xn[i, j, 0_c];
-        auto dy = xn[ni, nj, 1_c] - xn[i, j, 1_c];
-        auto dz = xn[ni, nj, 2_c] - xn[i, j, 2_c];
-        auto len = Fmax(Sqrt(dx * dx + dy * dy + dz * dz), 1e-6f);
-        auto share = W[i, j] / (W[i, j] + W[ni, nj] + 1e-9f);
-        Grid coef =
-            where(alive > 0.0f, k * share * (1.0f - rest_len / len), 0.0f);
-        d += coef[i, j] * (xn[ni, nj, n] - xn[i, j, n]);
-        cnt += where(alive > 0.0f, k, 0.0f);
+    // A spring family by its shift: the move that restores each spring's
+    // rest length, once per spring, handed to both ends — the near end
+    // takes its mass's share of it, the far end the negative of its own.
+    auto spring = [&](const Grid &alive, auto dc, auto dr, f32 rest_len, f32 k,
+                      Vecs &d, Grid &cnt) {
+        auto fi = clamp(i + dc), fj = clamp(j + dr);
+        auto gap = xn[fi, fj, n] - xn[i, j, n];
+        auto len = Fmax(Sqrt(fold<n>(gap * gap)), 1e-6f);
+
+        Grid coef = where(
+            alive[i, j] > 0.0f,
+            k * (1.0f - rest_len / len) / (W[i, j] + W[fi, fj] + 1e-9f), 0.0f);
+
+        Vecs move = coef[i, j] * gap;
+        d += W[i, j] * move[i, j, n];
+        d -= W[i, j] * move[zero(i - dc), zero(j - dr), n];
+
+        Grid held = where(alive[i, j] > 0.0f, k, 0.0f);
+        cnt += held[i, j] + held[zero(i - dc), zero(j - dr)];
     };
 
-    f32 hd = h * 1.41421356f, hb = 2.0f * h, kb = kBend;
+    // The floor, and the ball: a particle inside is put back on the
+    // surface, along its own offset from the centre.
+    Tensor<f32, 3> keep{1.0f, 1.0f, 0.0f};
+    Tensor<f32, 3> c{s.ball[0], s.ball[1], s.ball[2]};
+    auto collide = [&] {
+        xn = where(xn[i, j, 2_c] < 0.0f, xn[i, j, n] * keep[n], xn[i, j, n]);
+        if (!p.ball)
+            return;
+        auto off = xn[i, j, n] - c[n];
+        Grid r = Fmax(Sqrt(fold<n>(off * off)), 1e-6f);
+        xn = where(r[i, j] < ball_r, c[n] + off * (ball_r / r[i, j]),
+                   xn[i, j, n]);
+    };
+
+    f32 hd = h * 1.41421356f, hb = 2.0f * h;
 
     for (int it = 0; it < kIterations; ++it) {
         Vecs d(gen::Fill(0.0f));
         Grid cnt(gen::Fill(0.0f));
-        pull(sp.right[i, j], clamp(i + 1_c), j, h, 1.0f, d, cnt);
-        pull(sp.right[zero(i - 1_c), j], clamp(i - 1_c), j, h, 1.0f, d, cnt);
-        pull(sp.up[i, j], i, clamp(j + 1_c), h, 1.0f, d, cnt);
-        pull(sp.up[i, zero(j - 1_c)], i, clamp(j - 1_c), h, 1.0f, d, cnt);
-        pull(sp.diag_a[i, j], clamp(i + 1_c), clamp(j + 1_c), hd, 1.0f, d, cnt);
-        pull(sp.diag_a[zero(i - 1_c), zero(j - 1_c)], clamp(i - 1_c),
-             clamp(j - 1_c), hd, 1.0f, d, cnt);
-        pull(sp.diag_b[i, j], clamp(i + 1_c), clamp(j - 1_c), hd, 1.0f, d, cnt);
-        pull(sp.diag_b[zero(i - 1_c), zero(j + 1_c)], clamp(i - 1_c),
-             clamp(j + 1_c), hd, 1.0f, d, cnt);
-        pull(sp.bend_r[i, j], clamp(i + 2_c), j, hb, kb, d, cnt);
-        pull(sp.bend_r[zero(i - 2_c), j], clamp(i - 2_c), j, hb, kb, d, cnt);
-        pull(sp.bend_u[i, j], i, clamp(j + 2_c), hb, kb, d, cnt);
-        pull(sp.bend_u[i, zero(j - 2_c)], i, clamp(j - 2_c), hb, kb, d, cnt);
+        spring(s.s.right, 1_c, 0_c, h, 1.0f, d, cnt);
+        spring(s.s.up, 0_c, 1_c, h, 1.0f, d, cnt);
+        spring(s.s.diag_a, 1_c, 1_c, hd, 1.0f, d, cnt);
+        spring(s.s.diag_b, 1_c, -1_c, hd, 1.0f, d, cnt);
+        spring(s.s.bend_r, 2_c, 0_c, hb, kBend, d, cnt);
+        spring(s.s.bend_u, 0_c, 2_c, hb, kBend, d, cnt);
         xn += kRelax * d[i, j, n] / Fmax(cnt[i, j], 1.0f);
-    }
-
-    Tensor<f32, 3> keep{1.0f, 1.0f, 0.0f};
-    xn = where(xn[i, j, 2_c] < 0.0f, xn[i, j, n] * keep[n], xn[i, j, n]);
-
-    if (p.ball) {
-        Tensor<f32, 3> c{p.ball_at[0], p.ball_at[1], p.ball_at[2]};
-        auto dx = xn[i, j, 0_c] - p.ball_at[0];
-        auto dy = xn[i, j, 1_c] - p.ball_at[1];
-        auto dz = xn[i, j, 2_c] - p.ball_at[2];
-        auto r = Fmax(Sqrt(dx * dx + dy * dy + dz * dz), 1e-6f);
-        xn = where(r < ball_r, c[n] + (xn[i, j, n] - c[n]) * (ball_r / r),
-                   xn[i, j, n]);
+        collide();
     }
 
     s.xo = std::move(s.x);
     s.x = std::move(xn);
+    s.t += dt;
 
-    Vecs &x = s.x;
-    auto holds = [&](auto ni, auto nj, f32 rest_len) {
-        auto dx = x[ni, nj, 0_c] - x[i, j, 0_c];
-        auto dy = x[ni, nj, 1_c] - x[i, j, 1_c];
-        auto dz = x[ni, nj, 2_c] - x[i, j, 2_c];
+    // A spring stretched past its limit is gone.
+    auto tear = [&](Grid &alive, auto dc, auto dr, f32 rest_len) {
+        auto fi = clamp(i + dc), fj = clamp(j + dr);
+        auto gap = s.x[fi, fj, n] - s.x[i, j, n];
         f32 limit = p.tear * rest_len;
-        return 1.0f * (dx * dx + dy * dy + dz * dz < limit * limit);
+        alive *= 1.0f * (fold<n>(gap * gap) < limit * limit);
     };
 
-    s.s.right *= holds(clamp(i + 1_c), j, h);
-    s.s.up *= holds(i, clamp(j + 1_c), h);
-    s.s.diag_a *= holds(clamp(i + 1_c), clamp(j + 1_c), hd);
-    s.s.diag_b *= holds(clamp(i + 1_c), clamp(j - 1_c), hd);
-    s.s.bend_r *= holds(clamp(i + 2_c), j, hb);
-    s.s.bend_u *= holds(i, clamp(j + 2_c), hb);
+    tear(s.s.right, 1_c, 0_c, h);
+    tear(s.s.up, 0_c, 1_c, h);
+    tear(s.s.diag_a, 1_c, 1_c, hd);
+    tear(s.s.diag_b, 1_c, -1_c, hd);
+    tear(s.s.bend_r, 2_c, 0_c, hb);
+    tear(s.s.bend_u, 0_c, 2_c, hb);
 }
 
 // One tick: the sag gravity adds per substep shrinks with its square,
-// which buys more than iterations do.
+// which buys more than iterations do. The ball's move since the last
+// tick is spread over the substeps, so a fast drag pushes the cloth a
+// little at a time rather than throwing it a whole frame's distance.
 void step(State &s, const Grid &W, const Params &p) {
-    for (int t = 0; t < kSubsteps; ++t)
+    f32 from[3] = {s.ball[0], s.ball[1], s.ball[2]};
+    for (int t = 0; t < kSubsteps; ++t) {
+        f32 along = f32(t + 1) / f32(kSubsteps);
+        for (int k = 0; k < 3; ++k)
+            s.ball[k] = from[k] + (p.ball_at[k] - from[k]) * along;
         substep(s, W, p);
+    }
 }
 
 // A wire's edges for one family, in the mask's own order — spring (c, r)
@@ -248,7 +264,7 @@ int main() {
         pos.Publish(flat(state.x));
         alive_r.Publish(flat(state.s.right));
         alive_u.Publish(flat(state.s.up));
-        ball_pos.Publish(p.ball ? std::vector<float>(p.ball_at, p.ball_at + 3)
+        ball_pos.Publish(p.ball ? std::vector<float>(state.ball, state.ball + 3)
                                 : std::vector<float>{});
     };
 
@@ -322,6 +338,7 @@ int main() {
             shared.cuts.clear();
             p = shared.params;
         }
+        std::copy(p.ball_at, p.ball_at + 3, state.ball);
         publish(p);
     });
 
