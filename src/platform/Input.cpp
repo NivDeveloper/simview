@@ -67,12 +67,48 @@ void pad_axes(Input &in, const std::int16_t raw[6]) {
     in.pad.rt = trigger(raw[5]);
 }
 
-void pad_buttons(App *a, bool fast, bool back) {
+void pad_buttons(App *a, bool fast, bool back, bool tool) {
     Gamepad &g = a->input.pad;
     if (back && !g.back && a->flying)
         world_fly_end(a);
+    if (tool && !g.tool)
+        ui_tool_cycle(a);
     g.fast = fast;
     g.back = back;
+    g.tool = tool;
+}
+
+const char *key_name(Key k) {
+    static const char *const letters[] = {
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"};
+    static const char *const digits[] = {"1", "2", "3", "4", "5",
+                                         "6", "7", "8", "9", "0"};
+    const int c = int(k);
+    if (c >= int(Key::A) && c <= int(Key::Z))
+        return letters[c - int(Key::A)];
+    if (c >= int(Key::N1) && c <= int(Key::N0))
+        return digits[c - int(Key::N1)];
+    switch (k) {
+    case Key::Escape:
+        return "Esc";
+    case Key::Tab:
+        return "Tab";
+    case Key::Space:
+        return "Space";
+    case Key::Right:
+        return "Right";
+    case Key::Left:
+        return "Left";
+    case Key::Down:
+        return "Down";
+    case Key::Up:
+        return "Up";
+    case Key::LeftShift:
+        return "Shift";
+    default:
+        return "?";
+    }
 }
 
 void pad_close(App *a) {
@@ -93,6 +129,8 @@ void dispatch_key(App *a, const Event &e) {
         if (flight_key(e))
             return;
     } else if (press && Is(e, Key::Tab) && ui_fly_begin(a)) {
+        return;
+    } else if (press && ui_tool_key(a, e)) {
         return;
     }
     in_order(a->input.event_cbs, [&](const Ecb &c) { c.fn(e, c.user); });
@@ -164,10 +202,11 @@ void poll(App *a) {
                 pad, SDL_GamepadAxis(int(SDL_GAMEPAD_AXIS_LEFTX) + i));
         pad_axes(a->input, raw);
         pad_buttons(a, SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_STICK),
-                    SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST));
+                    SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST),
+                    SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH));
         const Gamepad &g = a->input.pad;
         if (g.lx != 0.0f || g.ly != 0.0f || g.rx != 0.0f || g.ry != 0.0f ||
-            g.lt != 0.0f || g.rt != 0.0f || g.fast || g.back)
+            g.lt != 0.0f || g.rt != 0.0f || g.fast || g.back || g.tool)
             a->input.last_pad = true;
     }
 }

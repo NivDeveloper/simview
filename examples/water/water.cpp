@@ -655,9 +655,9 @@ int main() {
         shown = start;
     });
 
-    app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
-        .OnKey(sv::Key::R, [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
+        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
+        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
 
     // A click on the water or the floor is a jet there. The pick is a
     // world point; the tank is that point less the offset it is drawn at.

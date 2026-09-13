@@ -10,6 +10,9 @@
 #include <imgui.h>
 #include <nvrhi/vulkan.h>
 
+#include <algorithm>
+#include <string>
+
 namespace sv {
 namespace probe {
 
@@ -132,9 +135,29 @@ void gamepad(impl::App *a, const std::int16_t raw[6]) {
     a->input.pad.present = true;
 }
 
-void gamepad_buttons(impl::App *a, bool fast, bool back) {
+void gamepad_buttons(impl::App *a, bool fast, bool back, bool tool) {
     if (a)
-        impl::pad_buttons(a, fast, back);
+        impl::pad_buttons(a, fast, back, tool);
+}
+
+std::size_t world_legend(impl::App *a, const char *title, char *out,
+                         std::size_t cap) {
+    impl::WorldState *w = world_of(a, title);
+    if (!w || !out || cap == 0)
+        return 0;
+    std::string line;
+    for (const Chip &c : sv::world_legend(a, *w)) {
+        if (c.key.empty() && c.label.empty())
+            continue;
+        if (!line.empty())
+            line += "  ";
+        line +=
+            c.lit ? "[" + c.key + " " + c.label + "]" : c.key + " " + c.label;
+    }
+    const std::size_t n = std::min(line.size(), cap - 1);
+    line.copy(out, n);
+    out[n] = '\0';
+    return n;
 }
 
 bool pick(impl::App *a, const char *title, float x, float y, Pick *out) {

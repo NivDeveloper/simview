@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace sv {
 
@@ -101,16 +102,17 @@ constexpr float kFlyPerSecond = 1.0f; // orbit distances, before the multiplier
 constexpr float kFlyShift = 4.0f;
 constexpr float kFlyWheel = 0.25f; // e-folds of speed per wheel notch
 constexpr float kPadTurn = 500.0f; // pixels a second at full deflection
+constexpr float kPadCarry = 0.5f;  // of the picture a second, carrying
+constexpr float kPadPush = 1.0f;   // of the point's depth a second
 
 // The keys, the captured pointer and the pad, once a frame. The keys
 // and the pointer are a flight's; the pad steers without one. The step
 // scales with the orbit distance as a pan does.
-void world_camera_steer(impl::WorldState &w, impl::Input &in, float dt,
-                        bool flying) {
+void world_camera_steer(impl::WorldState &w, impl::Input &in,
+                        const impl::Gamepad &g, float dt, bool flying) {
     const auto down = [&](Key k) {
         return flying && in.held.test(std::size_t(k));
     };
-    const impl::Gamepad &g = in.pad;
     if (in.wheel != 0.0f)
         w.fly_speed = std::clamp(w.fly_speed * std::exp(in.wheel * kFlyWheel),
                                  0.05f, 20.0f);
@@ -136,6 +138,19 @@ void world_camera_steer(impl::WorldState &w, impl::Input &in, float dt,
     in.look_dx = in.look_dy = in.wheel = 0.0f;
 }
 
+// Under a stroke tool the pad's move half, left stick and triggers, is
+// a stroke, not a walk — carried in the picture's plane, pushed and
+// pulled — and cleared from the copy the camera reads. Else false.
+bool world_pad_stroke(impl::WorldState &w, impl::Gamepad &g, float dt) {
+    if (w.tool == int(Tool::Camera) || w.strokes.empty())
+        return false;
+    if (g.lx != 0.0f || g.ly != 0.0f || g.lt != 0.0f || g.rt != 0.0f)
+        world_stroke_pad(w, g.lx * kPadCarry * dt, g.ly * kPadCarry * dt,
+                         (g.rt - g.lt) * kPadPush * dt);
+    g.lx = g.ly = g.lt = g.rt = 0.0f;
+    return true;
+}
+
 // Forgotten at take-off: a release can land in another window, and a
 // press remembered from before the flight would move it forever.
 void forget_keys(impl::App *a) {
@@ -143,7 +158,41 @@ void forget_keys(impl::App *a) {
     a->input.look_dx = a->input.look_dy = a->input.wheel = 0.0f;
 }
 
+// The world a tool key or the pad's Y means: under the pointer, else
+// the window's — and only one with a stroke listener has tools.
+impl::WorldState *tool_world(impl::App *a) {
+    impl::WorldState *w = a->pointed ? a->pointed : a->world.get();
+    return w && !w->strokes.empty() ? w : nullptr;
+}
+
+// DATA, so the keys, the menu and the bar agree by construction.
+struct ToolKey {
+    Tool tool;
+    Key key;
+    const char *name;
+};
+constexpr ToolKey kTools[] = {{Tool::Camera, Key::N1, "camera"},
+                              {Tool::Cut, Key::N2, "cut"},
+                              {Tool::Drag, Key::N3, "drag"}};
+
 } // namespace
+
+bool ui_tool_key(impl::App *a, const Event &e) {
+    impl::WorldState *w = a ? tool_world(a) : nullptr;
+    if (!w)
+        return false;
+    for (const ToolKey &t : kTools)
+        if (Is(e, t.key)) {
+            w->tool = int(t.tool);
+            return true;
+        }
+    return false;
+}
+
+void ui_tool_cycle(impl::App *a) {
+    if (impl::WorldState *w = a ? tool_world(a) : nullptr)
+        w->tool = (w->tool + 1) % int(sizeof kTools / sizeof kTools[0]);
+}
 
 void world_fly_begin(impl::App *a, impl::WorldState &w) {
     if (!a || a->flying)
@@ -240,18 +289,173 @@ void world_menu(impl::App *a, impl::WorldState &w) {
     // A tool is offered only where something listens for it.
     if (!w.strokes.empty()) {
         ImGui::SeparatorText("tool");
-        if (ImGui::Selectable("camera", w.tool == int(Tool::Camera)))
-            w.tool = int(Tool::Camera);
-        if (ImGui::Selectable("cut", w.tool == int(Tool::Cut)))
-            w.tool = int(Tool::Cut);
-        if (ImGui::Selectable("drag", w.tool == int(Tool::Drag)))
-            w.tool = int(Tool::Drag);
+        for (const ToolKey &t : kTools) {
+            const std::string entry =
+                std::string(t.name) + "  (" + impl::key_name(t.key) + ")";
+            if (ImGui::Selectable(entry.c_str(), w.tool == int(t.tool)))
+                w.tool = int(t.tool);
+        }
     }
 
     ImGui::SeparatorText("navigate");
     if (ImGui::Selectable("fly  (Tab)"))
         world_fly_begin(a, w);
 }
+
+namespace {
+
+Chip cap(const char *key, const char *label, bool lit = false) {
+    return {key, label, -1, "", false, lit};
+}
+
+Chip glyph(Icon ic, const char *key, const char *label, const char *hold = "") {
+    return {key, label, int(ic), hold, false, false};
+}
+
+Chip button(const char *key, const char *label) {
+    return {key, label, -1, "", true, false};
+}
+
+const Chip kBreak{};
+
+// A pad's stroke tool, and the pad in flight.
+void pad_chips(std::vector<Chip> &chips, const char *stick, const char *trig,
+               bool tools) {
+    chips.push_back(glyph(Icon::StickLeft, "left stick", stick));
+    chips.push_back(glyph(Icon::StickRight, "right stick", "look"));
+    chips.push_back(glyph(Icon::Trigger, "triggers", trig));
+    if (tools)
+        chips.push_back(button("Y", "tool"));
+}
+
+} // namespace
+
+// In flight the bar is the only control, naming the device in hand.
+// Otherwise one line of keys — the tools, Tab, the sim's labelled ones
+// — and one of the device, pointer or pad, under the tool that is on.
+std::vector<Chip> world_legend(impl::App *a, impl::WorldState &w) {
+    std::vector<Chip> chips;
+    const bool pad = a->input.pad.present && a->input.last_pad;
+    if (a->flying == &w) {
+        if (pad) {
+            chips.push_back(button("B", "release"));
+            pad_chips(chips, "move", "down / up", false);
+            chips.push_back(button("L3", "faster"));
+        } else {
+            chips.push_back(cap("Esc", "release"));
+            chips.push_back(cap("W A S D", "move"));
+            chips.push_back(cap("Q E", "down / up"));
+            chips.push_back(cap("Shift", "faster"));
+            chips.push_back(glyph(Icon::MouseWheel, "wheel", "speed"));
+        }
+        return chips;
+    }
+
+    const bool tools = !w.strokes.empty();
+    const bool stroke = tools && w.tool != int(Tool::Camera);
+    const char *does = w.tool == int(Tool::Cut) ? "cut" : "move";
+    if (tools)
+        for (const ToolKey &t : kTools)
+            chips.push_back(
+                cap(impl::key_name(t.key), t.name, w.tool == int(t.tool)));
+    chips.push_back(cap("Tab", "fly"));
+    for (const impl::Bind &b : a->input.binds)
+        chips.push_back(cap(impl::key_name(b.key), b.label.c_str()));
+    chips.push_back(kBreak);
+
+    if (pad && stroke) {
+        pad_chips(chips, does, "pull / push", true);
+    } else if (pad) {
+        pad_chips(chips, "move", "down / up", tools);
+    } else if (stroke) {
+        chips.push_back(glyph(Icon::MouseLeft, "drag", does));
+        chips.push_back(glyph(Icon::MouseRight, "right-drag", "orbit"));
+    } else {
+        chips.push_back(glyph(Icon::MouseLeft, "drag", "orbit"));
+        chips.push_back(glyph(Icon::MouseLeft, "shift-drag", "pan", "Shift"));
+        chips.push_back(glyph(Icon::MouseWheel, "wheel", "zoom"));
+    }
+    return chips;
+}
+
+namespace {
+
+// One keycap: the word centred on a rounded slab — a disc for a pad
+// button — sized from the font so it sits on the text's own line.
+void keycap(const char *word, bool round, bool lit) {
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    const float h = ImGui::GetTextLineHeight() + 4.0f;
+    const ImVec2 tw = ImGui::CalcTextSize(word);
+    const float w = round ? h : std::max(h, tw.x + 10.0f);
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    const ImVec2 p1{p0.x + w, p0.y + h};
+    const ImU32 face =
+        ImGui::GetColorU32(lit ? ImGuiCol_ButtonActive : ImGuiCol_FrameBg);
+    const ImU32 edge = ImGui::GetColorU32(ImGuiCol_Border);
+    const ImU32 ink =
+        ImGui::GetColorU32(lit ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    const float r = round ? h * 0.5f : 4.0f;
+    dl->AddRectFilled(p0, p1, face, r);
+    dl->AddRect(p0, p1, edge, r);
+    dl->AddText({p0.x + (w - tw.x) * 0.5f, p0.y + (h - tw.y) * 0.5f}, ink,
+                word);
+    ImGui::Dummy({w, h});
+}
+
+// A chip: its keycaps, one a word, or its glyph, then the label; the
+// current one in the reading colour and the rest dimmed. An empty
+// chip ends the line.
+void draw_chips(const std::vector<Chip> &chips) {
+    const float gap = ImGui::GetFontSize() * 0.4f;
+    bool first = true;
+    for (const Chip &c : chips) {
+        if (c.key.empty() && c.label.empty()) {
+            first = true;
+            continue;
+        }
+        if (!first)
+            ImGui::SameLine(0.0f, gap * 4.0f);
+        first = false;
+
+        if (c.icon >= 0) {
+            if (!c.hold.empty()) {
+                keycap(c.hold.c_str(), false, false);
+                ImGui::SameLine(0.0f, gap * 0.5f);
+            }
+            const float h = ImGui::GetTextLineHeight() + 4.0f;
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            impl::icon_draw(ImGui::GetWindowDrawList(), Icon(c.icon), at, h,
+                            ImGui::GetColorU32(ImGuiCol_TextDisabled));
+            ImGui::Dummy({h, h});
+        } else {
+            std::string word;
+            bool any = false;
+            for (std::size_t i = 0; i <= c.key.size(); ++i) {
+                if (i < c.key.size() && c.key[i] != ' ') {
+                    word += c.key[i];
+                    continue;
+                }
+                if (word.empty())
+                    continue;
+                if (any)
+                    ImGui::SameLine(0.0f, gap * 0.5f);
+                keycap(word.c_str(), c.round, c.lit);
+                any = true;
+                word.clear();
+            }
+        }
+
+        ImGui::SameLine(0.0f, gap);
+        // Text sits on the cap's own centre line.
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+        if (c.lit)
+            ImGui::TextUnformatted(c.label.c_str());
+        else
+            ImGui::TextDisabled("%s", c.label.c_str());
+    }
+}
+
+} // namespace
 
 // Drawn at `at`, which is the top-left of the picture. The caller owns
 // the window; this only knows where the corner is.
@@ -262,29 +466,20 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
     const float pad = ImGui::GetStyle().WindowPadding.x;
     ImGui::SetCursorScreenPos(ImVec2(at.x + pad, at.y + pad));
     ImGui::PushID(&w);
-    if (a->flying == &w) {
-        // No pointer to press a button with: the hint IS the control,
-        // and it names the device in the reader's hands.
-        ImGui::TextDisabled(
-            a->input.last_pad
-                ? "B  release    left stick  move    right stick  look    "
-                  "triggers  down / up    L3  faster"
-                : "Esc  release    W A S D  move    Q E  down / up    "
-                  "Shift  faster    wheel  speed");
-    } else {
+    // In flight there is no pointer to press a button with: the bar IS
+    // the control.
+    if (a->flying != &w) {
         if (impl::icon_button(Icon::Cube, "view", "camera and what is drawn"))
             ImGui::OpenPopup("##world_menu");
         if (ImGui::BeginPopup("##world_menu")) {
             world_menu(a, w);
             ImGui::EndPopup();
         }
-        if (w.tool != int(Tool::Camera) && !w.strokes.empty()) {
-            ImGui::SameLine();
-            ImGui::TextDisabled(w.tool == int(Tool::Cut)
-                                    ? "cut  drag    orbit  right-drag"
-                                    : "move  drag    orbit  right-drag");
-        }
+        ImGui::SameLine(0.0f, ImGui::GetFontSize());
     }
+    ImGui::BeginGroup();
+    draw_chips(world_legend(a, w));
+    ImGui::EndGroup();
     ImGui::PopID();
     // ImGui warns about a cursor moved with nothing following.
     ImGui::SetCursorScreenPos(keep);
@@ -299,6 +494,7 @@ void ui_world_overlay(impl::App *a) {
     const ImGuiViewport *vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowBgAlpha(0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     if (ImGui::Begin("##world_controls", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                          ImGuiWindowFlags_NoSavedSettings |
@@ -308,6 +504,7 @@ void ui_world_overlay(impl::App *a) {
                          ImGuiWindowFlags_NoBringToFrontOnFocus))
         world_controls(a, *a->world, vp->WorkPos);
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 void ui_world_input(impl::App *a) {
@@ -315,7 +512,7 @@ void ui_world_input(impl::App *a) {
         return;
     const float dt = ImGui::GetIO().DeltaTime;
     if (a->flying) {
-        world_camera_steer(*a->flying, a->input, dt, true);
+        world_camera_steer(*a->flying, a->input, a->input.pad, dt, true);
         return;
     }
     if (a->world) {
@@ -334,9 +531,12 @@ void ui_world_input(impl::App *a) {
     }
     // A pad needs no flight: it has no hotkeys to collide with and no
     // pointer to hide. It steers the world under the pointer, else the
-    // window's.
-    if (impl::WorldState *t = a->pointed ? a->pointed : a->world.get())
-        world_camera_steer(*t, a->input, dt, false);
+    // window's — and under a stroke tool its move half strokes instead.
+    if (impl::WorldState *t = a->pointed ? a->pointed : a->world.get()) {
+        impl::Gamepad g = a->input.pad;
+        world_pad_stroke(*t, g, dt);
+        world_camera_steer(*t, a->input, g, dt, false);
+    }
 }
 
 namespace impl {

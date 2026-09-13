@@ -137,6 +137,11 @@ void world_picked(impl::WorldState &, const Pick &);
 // view drawn, to everyone who asked. Nothing has been drawn: nothing.
 void world_stroke(impl::WorldState &, float x0, float y0, float x1, float y1);
 
+// The gamepad's stroke: from the picture's centre by (dx, dy) of the
+// picture, pushing by `push` of the carried point's depth; it began on
+// nothing, and says it came from the pad.
+void world_stroke_pad(impl::WorldState &, float dx, float dy, float push);
+
 // The readback pipeline, made on first use: `src` at binding 0, `dst`
 // at 1, a count in push constants. Null when the device refused.
 nvrhi::IComputePipeline *world_readback(impl::WorldState &);

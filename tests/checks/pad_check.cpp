@@ -177,6 +177,13 @@ int main() {
     probe::gamepad_buttons(app.Raw(), false, false);
     input::tap(app, Key::Escape);
 
+    // ── Y is the tools' button, and this world has none ──────────────
+    probe::gamepad_buttons(app.Raw(), false, false, true);
+    app.Step();
+    CHECK(w.Tool() == Tool::Camera);
+    probe::gamepad_buttons(app.Raw(), false, false, false);
+    app.Step();
+
     // ── a panel world under the pointer takes the pad ────────────────
     sv::World side = app.World({.title = "side"});
     REQUIRE(bool(side));

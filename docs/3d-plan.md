@@ -484,6 +484,41 @@ meanwhile. A stroke through
 a picture nobody has seen is nothing: headless, that means a shot must
 have been drawn, which is what `stroke_check` learned first.
 
+**The tools have keys, and a gamepad strokes too.** `1 2 3` take the
+camera, cut and drag tools, and the pad's Y takes the next one round —
+in the engine, on the world under the pointer else the window's, and
+only where that world has a stroke listener, which is exactly where
+the menu offers a tool; elsewhere the digits are the sim's keys, as
+Tab is the engine's only while the app has a world. Under a stroke
+tool the pad's MOVE half — the left stick and the triggers — is a
+stroke, not a walk: one a frame from the picture's centre, begun on
+nothing, marked `pad`, the stick's deflection as the picture-space
+delta and the triggers as a `push`, a fraction of the carried point's
+depth, which `Carry` applies along the point's own line of sight so it
+keeps its place in the picture. The look half stays the camera's, so
+the right stick still turns under a tool. The listener decides what a
+pad stroke means: the cloth carries the ball outright under drag, since
+a pad has no pointer to press with, and ignores it under cut, since a
+cut needs a path. The mapping is data (`kTools`), so the keys, the
+menu's entries and the bar agree by construction.
+
+**The key bar.** The corner overlay's hint became a bar built from
+data: `world_legend` returns chips — what to press and what it does —
+and one drawing renders them, a keycap a word, a glyph where a gesture
+has one (the mouse with the button in question filled, a thumbstick
+leaning to its side, a trigger), the current tool lit. Its first line
+is the keys: the tools, Tab, and whatever the sim bound with a label
+through `OnKey(key, label, fn)` — an unlabelled `OnKey` is bound and
+never shown, so a sim opts a key into the bar by naming it. Its second
+line is the device in the reader's hands, pointer or pad, under the
+tool that is on; in flight the bar is the whole control, as the hint
+was. A probe flattens the same chips to one line, so `stroke_check`
+and `world_controls_check` prove what the bar says rather than hunting
+text in a picture. What this fixed: the hints were strings written by
+hand at three sites and nothing could list a key the sim had bound,
+so a bar was impossible without a table, and the table is now the one
+source for dispatch and display alike.
+
 `examples/cloth` is the case: a spring lattice hung from its top edge,
 position-based dynamics with every spring family a stencil over the
 grid, two wires for the structural springs with the families' own masks

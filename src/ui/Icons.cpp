@@ -276,6 +276,48 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.fill({0.19f, 0.15f, 0.68f, 0.50f, 0.19f, 0.85f});
         p.slab(0.73f, 0.15f, 0.86f, 0.85f, 0.04f);
         return;
+
+    // A mouse, the button in question filled: the same body three
+    // times, so the three read as one device and differ in one place.
+    case Icon::MouseLeft:
+        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
+        p.line(0.50f, 0.06f, 0.50f, 0.46f);
+        p.line(0.20f, 0.46f, 0.80f, 0.46f);
+        p.slab(0.23f, 0.10f, 0.47f, 0.43f, 0.10f);
+        return;
+
+    case Icon::MouseRight:
+        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
+        p.line(0.50f, 0.06f, 0.50f, 0.46f);
+        p.line(0.20f, 0.46f, 0.80f, 0.46f);
+        p.slab(0.53f, 0.10f, 0.77f, 0.43f, 0.10f);
+        return;
+
+    case Icon::MouseWheel:
+        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
+        p.line(0.20f, 0.46f, 0.80f, 0.46f);
+        p.slab(0.42f, 0.14f, 0.58f, 0.38f, 0.07f);
+        return;
+
+    // A thumbstick from above: the well, and the cap leaning to the
+    // side the stick is on.
+    case Icon::StickLeft:
+        p.ring(0.50f, 0.50f, 0.40f);
+        p.disc(0.38f, 0.50f, 0.19f);
+        return;
+
+    case Icon::StickRight:
+        p.ring(0.50f, 0.50f, 0.40f);
+        p.disc(0.62f, 0.50f, 0.19f);
+        return;
+
+    // A trigger from the side: the blade curling out from the grip.
+    case Icon::Trigger:
+        p.arc(0.30f, 0.90f, 0.30f, 0.30f, 0.42f, 0.12f, 0.80f, 0.14f);
+        p.arc(0.50f, 0.90f, 0.50f, 0.50f, 0.58f, 0.34f, 0.80f, 0.34f);
+        p.line(0.80f, 0.14f, 0.80f, 0.34f);
+        p.line(0.30f, 0.90f, 0.50f, 0.90f);
+        return;
     }
 }
 

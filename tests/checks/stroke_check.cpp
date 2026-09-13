@@ -3,7 +3,10 @@
 // What this proves: with the camera tool a drag orbits and no stroke
 // fires; with the cut tool the same drag fires strokes and the camera
 // holds still; a stroke crosses the segment it swept across and not
-// the one beside it; and the right button still orbits under the tool.
+// the one beside it; the right button still orbits under the tool;
+// the tool keys take the tool only where something listens, and are
+// the sim's otherwise; a gamepad's move half strokes under a tool and
+// its Y takes the next one; and the key bar says all of this.
 
 #include "harness/Harness.h"
 #include "harness/Input.h"
@@ -14,16 +17,36 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
 
 constexpr float kPxPerUnit = 600.0f / (2.0f * 0.41421356f * 5.0f);
+constexpr std::int16_t kFull = 32767;
 
 sv::probe::CameraState cam(sv::App &app) {
     sv::probe::CameraState c{};
     CHECK(sv::probe::camera_of(app.Raw(), nullptr, &c));
     return c;
+}
+
+// Hold the pad's axes for some frames, then let go.
+void hold(sv::App &app, std::int16_t lx, std::int16_t ly, std::int16_t rx,
+          std::int16_t lt, std::int16_t rt, int frames) {
+    const std::int16_t raw[6] = {lx, ly, rx, 0, lt, rt};
+    sv::probe::gamepad(app.Raw(), raw);
+    for (int f = 0; f < frames; ++f)
+        app.Step();
+    const std::int16_t rest[6] = {0, 0, 0, 0, 0, 0};
+    sv::probe::gamepad(app.Raw(), rest);
+    app.Step();
+}
+
+bool bar_says(sv::App &app, const char *what) {
+    char line[512];
+    sv::probe::world_legend(app.Raw(), nullptr, line, sizeof line);
+    return std::strstr(line, what) != nullptr;
 }
 
 constexpr sv::CameraDesc kLevel{.focus = {0.0f, 0.0f, 0.0f},
@@ -52,12 +75,47 @@ int main() {
     auto wire = w.Wire(edges, {.width = 4.0f});
     REQUIRE(bool(wire));
     CHECK(wire.Update(pts));
+    app.Step();
+
+    // ── with nobody listening there are no tools: 2 is the sim's key,
+    // and the bar lists what the sim labelled and no tool ────────────
+    int twos = 0;
+    app.OnKey(Key::N2, [&] { ++twos; });
+    app.OnKey(Key::Space, "pause", [] {});
+    input::tap(app, Key::N2);
+    CHECK_EQ(twos, 1);
+    CHECK(w.Tool() == Tool::Camera);
+    CHECK(bar_says(app, "Space pause"));
+    CHECK(bar_says(app, "Tab fly"));
+    CHECK(bar_says(app, "drag orbit"));
+    CHECK(!bar_says(app, "camera"));
+
     std::vector<Stroke> strokes;
     w.OnStroke([&](const Stroke &s) { strokes.push_back(s); });
     // A stroke goes through the picture the reader saw, so one must
     // have been drawn: headless, that is a shot.
     Bmp img;
     REQUIRE(harness::shot(app, "stroke_setup", img));
+
+    // ── with a listener the keys 1 2 3 are the tools', never the sim's,
+    // and the bar lights the one that is on ──────────────────────────
+    input::tap(app, Key::N2);
+    CHECK(w.Tool() == Tool::Cut);
+    CHECK_EQ(twos, 1);
+    CHECK(bar_says(app, "[2 cut]"));
+    CHECK(bar_says(app, "drag cut"));
+    input::tap(app, Key::N3);
+    CHECK(w.Tool() == Tool::Drag);
+    CHECK(bar_says(app, "[3 drag]"));
+    CHECK(bar_says(app, "drag move"));
+    input::tap(app, Key::N1);
+    CHECK(w.Tool() == Tool::Camera);
+    CHECK(bar_says(app, "[1 camera]"));
+    {
+        char line[512];
+        probe::world_legend(app.Raw(), nullptr, line, sizeof line);
+        std::printf("  the bar: %s\n", line);
+    }
 
     const float cx = 400.0f, cy = 300.0f, off = kPxPerUnit * 0.5f;
 
@@ -130,6 +188,88 @@ int main() {
     REQUIRE(strokes.size() >= 1);
     CHECK(strokes.front().tool == Tool::Drag);
     CHECK(strokes.front().On(wire));
+    CHECK(!strokes.front().pad);
+    CHECK_EQ(strokes.front().push, 0.0f);
+
+    // ── under a stroke tool the pad's left stick strokes instead of
+    // walking: one a frame, from the pad, begun on nothing, and the
+    // camera stays put; a carried point goes the stick's way ─────────
+    strokes.clear();
+    const auto put = cam(app);
+    hold(app, kFull, 0, 0, 0, 0, 5);
+    std::printf("  stick right under drag: %zu strokes, camera moved %.5f\n",
+                strokes.size(), input::moved(put, cam(app)));
+    REQUIRE(strokes.size() >= 5);
+    CHECK_LT(input::moved(put, cam(app)), 1e-5f);
+    CHECK_LT(input::turned(put, cam(app)), 1e-4f);
+    for (const Stroke &s : strokes) {
+        CHECK(s.pad);
+        CHECK(s.tool == Tool::Drag);
+        CHECK(!s.On(wire));
+        CHECK_EQ(s.push, 0.0f);
+    }
+    REQUIRE(strokes.front().Carry(at, carried));
+    std::printf("  one frame of stick carried the focus to (%.3f %.3f %.3f)\n",
+                carried[0], carried[1], carried[2]);
+    CHECK_GT(carried[1], 0.02f);
+    CHECK_LT(std::fabs(carried[0]), 1e-3f);
+    CHECK_LT(std::fabs(carried[2]), 1e-3f);
+
+    // ── the triggers push along the line of sight: away on the right,
+    // toward on the left, and the point keeps its place in the picture
+    strokes.clear();
+    hold(app, 0, 0, 0, 0, kFull, 3);
+    REQUIRE(strokes.size() >= 1);
+    CHECK_GT(strokes.front().push, 0.0f);
+    REQUIRE(strokes.front().Carry(at, carried));
+    const auto view = cam(app);
+    float along = 0.0f, across = 0.0f;
+    for (int i = 0; i < 3; ++i)
+        along += (carried[i] - at[i]) * view.forward[i];
+    for (int i = 0; i < 3; ++i) {
+        const float side = (carried[i] - at[i]) - along * view.forward[i];
+        across += side * side;
+    }
+    std::printf("  right trigger pushed the focus %.3f along, %.5f across\n",
+                along, std::sqrt(across));
+    CHECK_GT(along, 0.03f);
+    CHECK_LT(std::sqrt(across), 1e-3f);
+    strokes.clear();
+    hold(app, 0, 0, 0, kFull, 0, 3);
+    REQUIRE(strokes.size() >= 1);
+    CHECK_LT(strokes.front().push, 0.0f);
+
+    // ── the right stick is still the camera's under a tool ───────────
+    const auto level = cam(app);
+    hold(app, 0, 0, kFull, 0, 0, 5);
+    std::printf("  right stick under drag: turned %.2f deg\n",
+                input::turned(level, cam(app)));
+    CHECK_GT(input::turned(level, cam(app)), 1.0f);
+    w.Camera(kLevel);
+    REQUIRE(harness::shot(app, "stroke_level_again", img));
+
+    // ── Y takes the next tool round, on its edge ─────────────────────
+    probe::gamepad_buttons(app.Raw(), false, false, true);
+    app.Step();
+    CHECK(w.Tool() == Tool::Camera); // after drag comes camera
+    app.Step();
+    CHECK(w.Tool() == Tool::Camera); // still held: no edge
+    probe::gamepad_buttons(app.Raw(), false, false, false);
+    app.Step();
+    probe::gamepad_buttons(app.Raw(), false, false, true);
+    app.Step();
+    CHECK(w.Tool() == Tool::Cut);
+    probe::gamepad_buttons(app.Raw(), false, false, false);
+    app.Step();
+
+    // ── and under the camera tool the whole pad is the camera's ──────
+    w.Tool(Tool::Camera);
+    strokes.clear();
+    const auto walk = cam(app);
+    hold(app, kFull, 0, 0, 0, 0, 5);
+    CHECK_GT(input::moved(walk, cam(app)), 0.05f);
+    CHECK_EQ(strokes.size(), std::size_t(0));
+    w.Camera(kLevel);
     w.Tool(Tool::Cut);
 
     // ── the right button orbits under the cut tool ───────────────────

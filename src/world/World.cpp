@@ -435,6 +435,24 @@ void world_stroke(impl::WorldState &w, float x0, float y0, float x1, float y1) {
             c.fn(s, c.user);
 }
 
+void world_stroke_pad(impl::WorldState &w, float dx, float dy, float push) {
+    if (!w.viewed || w.rect[2] <= 0.0f || w.rect[3] <= 0.0f ||
+        w.strokes.empty())
+        return;
+    Stroke s{};
+    s.from[0] = s.from[1] = 0.5f;
+    s.to[0] = 0.5f + dx;
+    s.to[1] = 0.5f + dy;
+    for (int k = 0; k < 16; ++k)
+        s.clip[k] = w.last_view.world_to_clip.m[k];
+    s.tool = Tool(w.tool);
+    s.pad = true;
+    s.push = push;
+    for (const impl::WorldState::StrokeCb &c : w.strokes)
+        if (c.fn)
+            c.fn(s, c.user);
+}
+
 namespace impl {
 
 // Both ends projected through the view the stroke was drawn in, then a
@@ -465,7 +483,8 @@ bool stroke_crosses(const Stroke &s, const float p[3], const float q[3]) {
 }
 
 // A world point carried along the stroke in the plane of the picture
-// through it: the same depth, shifted by what the pointer moved.
+// through it: the same depth, shifted by what the pointer moved; then a
+// push slides it along its own line of sight, its place in the picture kept.
 bool stroke_carry(const Stroke &s, const float at[3], float to[3]) {
     Mat4 m;
     for (int k = 0; k < 16; ++k)
@@ -476,10 +495,18 @@ bool stroke_carry(const Stroke &s, const float at[3], float to[3]) {
         return false;
     const Vec3 moved{c.x + 2.0f * (s.to[0] - s.from[0]),
                      c.y - 2.0f * (s.to[1] - s.from[1]), c.z};
+    const Mat4 inv = mat_inverse(m);
     float wi = 0.0f;
-    const Vec3 p = transform_point(mat_inverse(m), moved, &wi);
+    Vec3 p = transform_point(inv, moved, &wi);
     if (wi == 0.0f)
         return false;
+    if (s.push != 0.0f) {
+        // The line of sight through the carried point: the near plane
+        // and one depth behind it, as a pick builds its ray.
+        const Vec3 near = transform_point(inv, {moved.x, moved.y, 1.0f});
+        const Vec3 mid = transform_point(inv, {moved.x, moved.y, 0.5f});
+        p = p + normalize(mid - near) * (s.push * w);
+    }
     to[0] = p.x;
     to[1] = p.y;
     to[2] = p.z;

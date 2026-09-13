@@ -293,6 +293,11 @@ void app_post_event(App *a, const Event &e) {
         a->input.posted.push_back(e);
 }
 
+void app_bind(App *a, Key k, const char *label) {
+    if (a && label && *label)
+        a->input.binds.push_back({k, label});
+}
+
 Stats app_stats(App *a) { return a ? a->stats : Stats{}; }
 
 Scene app_scene(App *a) { return a ? Scene{&a->scene} : Scene{}; }

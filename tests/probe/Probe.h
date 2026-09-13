@@ -94,7 +94,13 @@ bool flying(impl::App *, const char *title);
 // two triggers — through the same dead zone a device goes through.
 // The pad counts as present from the first call.
 void gamepad(impl::App *, const std::int16_t raw[6]);
-void gamepad_buttons(impl::App *, bool fast, bool back);
+void gamepad_buttons(impl::App *, bool fast, bool back, bool tool = false);
+
+// The named world's key bar as one line, chips joined by two spaces
+// and the current one in brackets — so a check reads what the bar
+// says rather than hunting text in a picture. Returns the length.
+std::size_t world_legend(impl::App *, const char *title, char *out,
+                         std::size_t cap);
 
 // A pick at window point (x, y) through the named world's last drawn
 // view, bypassing the gesture; and whether the world follows anything,

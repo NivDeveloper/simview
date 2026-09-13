@@ -39,7 +39,13 @@ enum class Icon : std::uint8_t {
     Forward,
     Play,
     Pause,
-    Step
+    Step,
+    MouseLeft,
+    MouseRight,
+    MouseWheel,
+    StickLeft,
+    StickRight,
+    Trigger
 };
 
 struct Config {

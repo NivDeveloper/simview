@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <vector>
@@ -88,6 +89,15 @@ int main() {
     input::press(app);
     input::release(app);
     CHECK(popup_open());
+
+    // The bar beside the button says what the pointer does here, and
+    // a panel world has one of its own.
+    char line[256];
+    REQUIRE(probe::world_legend(app.Raw(), "scene", line, sizeof line) > 0);
+    std::printf("(the scene's bar: %s)\n", line);
+    CHECK(std::strstr(line, "Tab fly") != nullptr);
+    CHECK(std::strstr(line, "drag orbit") != nullptr);
+    CHECK(std::strstr(line, "wheel zoom") != nullptr);
 
     // Every preset a DIFFERENT view. Applied from the table the menu
     // loops, so two entries that ended up the same fail here.

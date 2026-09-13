@@ -12,9 +12,13 @@ make          # configures and builds; needs g++-16 for -freflection
 ./build/cloth
 ```
 
-Space toggles, R restarts, Esc quits. Drag to orbit, wheel to zoom;
-with a tool on, the right button orbits instead. The sim runs at
-sixty ticks a second, real time.
+The keys 1, 2 and 3 pick the camera, cut and drag tools; Space
+toggles, R restarts, Esc quits, and the bar at the top of the picture
+lists them. Drag to orbit, wheel to zoom; with a tool on, the right
+button orbits instead. On a gamepad, Y picks the next tool; under the
+drag tool the left stick moves the ball across the picture, the
+triggers pull it toward you and push it away, and the right stick
+still looks around. The sim runs at sixty ticks a second, real time.
 
 ## How it is built
 

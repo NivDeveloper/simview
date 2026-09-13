@@ -211,9 +211,9 @@ int main() {
         sim.SetDt(double(h));
     });
 
-    app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
-        .OnKey(sv::Key::R, [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
+        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
+        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
 
     app.Run();
 }

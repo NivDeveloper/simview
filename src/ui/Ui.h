@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <forward_list>
 #include <string>
+#include <vector>
 
 struct ImFont;
 struct ImGuiContext;
@@ -86,6 +87,25 @@ void world_fly_end(impl::App *);
 // Tab's half: the world under the pointer, else the window's. True
 // whenever the app has a world at all — then Tab is the engine's.
 bool ui_fly_begin(impl::App *);
+
+// The tool keys, 1 2 3, and the pad's Y, the next tool round: only
+// where the world under the pointer, else the window's, has a stroke
+// listener, which is where the menu offers a tool. True when taken.
+bool ui_tool_key(impl::App *, const Event &);
+void ui_tool_cycle(impl::App *);
+
+// The key bar's entries, the current one lit: `key` is spoken —
+// "Space", "W A S D", "right-drag" — and drawn a keycap a word unless
+// a glyph stands for it; an empty chip ends a line. A check reads them.
+struct Chip {
+    std::string key;
+    std::string label;
+    int icon = -1;      // an Icon, drawn in the keycaps' place
+    std::string hold;   // a key held with the glyph's gesture
+    bool round = false; // a pad button: the cap is a disc
+    bool lit = false;
+};
+std::vector<Chip> world_legend(impl::App *, impl::WorldState &);
 
 // The view presets, as the menu loops them. Shared so a test applies
 // the same table rather than a copy of it.

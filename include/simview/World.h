@@ -74,6 +74,8 @@ struct Stroke {
     impl::Cloud item;
     std::int32_t index = -1;
     sv::Tool tool = sv::Tool::Cut;
+    bool pad = false;
+    float push = 0.0f;
     bool Crosses(const float p[3], const float q[3]) const {
         return impl::stroke_crosses(*this, p, q);
     }

@@ -520,11 +520,13 @@ int main() {
         }
     });
 
-    app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
-        .OnKey(sv::Key::Up, [&] { relax = std::min(0.5f, relax * 1.3f); })
-        .OnKey(sv::Key::Down, [&] { relax = std::max(0.002f, relax / 1.3f); })
-        .OnKey(sv::Key::R, [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
+        .OnKey(sv::Key::Up, "slower relaxation",
+               [&] { relax = std::min(0.5f, relax * 1.3f); })
+        .OnKey(sv::Key::Down, "faster relaxation",
+               [&] { relax = std::max(0.002f, relax / 1.3f); })
+        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
+        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
 
     app.Run();
 }

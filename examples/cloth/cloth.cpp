@@ -3,7 +3,10 @@
 // cuts it where the pointer drags; the drag tool moves the ball, through
 // it if you like; a spring stretched past its limit tears.
 //
-// Space toggles, R restarts, Esc quits. Right-drag orbits under a tool.
+// 1 2 3 pick the tool, Space toggles, R restarts, Esc quits. Right-drag
+// orbits under a tool. On a gamepad, Y picks the next tool; under the
+// drag tool the left stick moves the ball and the triggers pull and
+// push it.
 #include <simview/simview.h>
 
 #include <Tensor/Gen.h>
@@ -402,20 +405,23 @@ int main() {
         pin_shown = knobs.pin;
     });
 
-    app.OnKey(sv::Key::Space, [&] { sim.Toggle(); })
-        .OnKey(sv::Key::R, [&] { sim.Restart(); })
-        .OnKey(sv::Key::Escape, [&] { app.RequestQuit(); });
+    app.OnKey(sv::Key::Space, "pause", [&] { sim.Toggle(); })
+        .OnKey(sv::Key::R, "restart", [&] { sim.Restart(); })
+        .OnKey(sv::Key::Escape, "quit", [&] { app.RequestQuit(); });
 
-    // The drag tool carries the ball when a stroke began on it. The cut
-    // tool cuts every spring whose segment the stroke crosses, tested
-    // against the frame's own copy of the positions and queued for the
-    // next tick.
+    // The drag tool carries the ball: a pointer stroke when it began on
+    // the ball, a gamepad stroke outright, since a pad has no pointer to
+    // press with. The cut tool cuts every spring whose segment the
+    // stroke crosses, tested against the frame's own copy of the
+    // positions and queued for the next tick; a pad cannot cut.
     world.OnStroke([&](const sv::Stroke &st) {
         if (st.tool == sv::Tool::Drag) {
-            if (st.On(ball))
+            if (st.pad || st.On(ball))
                 st.Carry(knobs.ball_at, knobs.ball_at);
             return;
         }
+        if (st.pad)
+            return;
 
         auto &x = pos.Shown();
         if (x.size() < N * N * 3)

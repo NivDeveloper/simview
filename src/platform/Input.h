@@ -7,6 +7,7 @@
 #include <bitset>
 #include <cstdint>
 #include <forward_list>
+#include <string>
 #include <vector>
 
 struct SDL_Gamepad;
@@ -22,11 +23,19 @@ struct Gamepad {
     float lx = 0.0f, ly = 0.0f, rx = 0.0f, ry = 0.0f, lt = 0.0f, rt = 0.0f;
     bool fast = false; // the left stick pressed: the pad's Shift
     bool back = false; // B: the pad's Escape
+    bool tool = false; // Y: the next tool
     bool present = false;
+};
+
+// A key the sim bound WITH a label, so the key bar can list it.
+struct Bind {
+    Key key;
+    std::string label;
 };
 
 struct Input {
     std::forward_list<Ecb> event_cbs;
+    std::vector<Bind> binds;
     // Events posted through the automation seam, delivered by the
     // next Step or loop iteration exactly like SDL's own.
     std::vector<Event> posted;
@@ -50,11 +59,14 @@ struct Input {
 // arithmetic a device does.
 void pad_axes(Input &, const std::int16_t raw[6]);
 
-// The two buttons the camera reads. B's rising edge ends a flight, so
-// this wants the app and not just its input.
-void pad_buttons(App *, bool fast, bool back);
+// The three buttons read. B's rising edge ends a flight and Y's picks
+// the next tool, so this wants the app and not just its input.
+void pad_buttons(App *, bool fast, bool back, bool tool);
 
 void pad_close(App *);
+
+// A key as the key bar spells it: "Space", "Esc", "1", "W".
+const char *key_name(Key);
 
 // Deliver the posted events, exactly where SDL's own land.
 void deliver_posted(App *);

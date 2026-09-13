@@ -38,6 +38,7 @@ void app_step(App *);
 bool app_shot(App *, const char *bmp_path);
 void app_on_ui(App *, void (*fn)(void *), void *user);
 void app_post_event(App *, const Event &);
+void app_bind(App *, Key, const char *label);
 Stats app_stats(App *);
 
 }
@@ -95,6 +96,11 @@ class App {
             if (e.type == Event::Type::KeyDown && !e.repeat && Is(e, k))
                 fn();
         });
+    }
+
+    App &OnKey(Key k, const char *label, std::function<void()> fn) {
+        impl::app_bind(a_, k, label);
+        return OnKey(k, std::move(fn));
     }
 
     void RequestQuit() { impl::app_request_quit(a_); }
