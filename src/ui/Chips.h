@@ -12,14 +12,16 @@ namespace sv {
 // keycap a word or a glyph, then what it does. An empty chip ends a
 // line; `hold` is a key held with the glyph's gesture.
 struct Chip {
-    std::vector<std::string> caps;
-    std::string joiner = " "; // between caps: " " or " + "
-    int icon = -1;            // an Icon in the caps' place
+    std::vector<std::string> caps; // the words, as a check reads them
+    std::vector<int> icons;        // Icons drawn in the caps' place
+    std::string joiner = " ";      // between caps: " " or " + "
     std::string hold;
+    int hold_icon = -1;
     std::string label;
-    bool round = false; // a pad's caps are pills
     bool lit = false;
-    bool blank() const { return caps.empty() && icon < 0 && label.empty(); }
+    bool blank() const {
+        return caps.empty() && icons.empty() && label.empty();
+    }
 };
 
 // The ONE spelling of a binding: the bar and the settings page agree

@@ -133,7 +133,7 @@ int main() {
     CHECK(says(app, "LS move"));
     CHECK(says(app, "LB RB down / up"));
     CHECK(says(app, "L3 faster"));
-    CHECK(says(app, "D-pad speed"));
+    CHECK(says(app, "D-pad left D-pad right speed"));
 
     return check::summary("bar");
 }

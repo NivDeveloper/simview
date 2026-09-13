@@ -34,53 +34,108 @@ bool dpad(Control c) {
            c.code <= int(Pad::Right);
 }
 
+int pad_icon(std::int32_t code) {
+    switch (Pad(code)) {
+    case Pad::A:
+        return int(Icon::PadA);
+    case Pad::B:
+        return int(Icon::PadB);
+    case Pad::X:
+        return int(Icon::PadX);
+    case Pad::Y:
+        return int(Icon::PadY);
+    case Pad::LB:
+        return int(Icon::PadLB);
+    case Pad::RB:
+        return int(Icon::PadRB);
+    case Pad::LT:
+        return int(Icon::PadLT);
+    case Pad::RT:
+        return int(Icon::PadRT);
+    case Pad::L3:
+        return int(Icon::PadL3);
+    case Pad::R3:
+        return int(Icon::PadR3);
+    case Pad::Start:
+        return int(Icon::PadStart);
+    case Pad::Back:
+        return int(Icon::PadBack);
+    case Pad::Up:
+        return int(Icon::DpadUp);
+    case Pad::Down:
+        return int(Icon::DpadDown);
+    case Pad::Left:
+        return int(Icon::DpadLeft);
+    case Pad::Right:
+        return int(Icon::DpadRight);
+    case Pad::LS:
+        return int(Icon::PadLS);
+    case Pad::RS:
+        return int(Icon::PadRS);
+    default:
+        return -1;
+    }
+}
+
+// A control's icon, or -1 for a key, which is a cap.
+int icon_of(Control k) {
+    if (k.device == Device::Mouse)
+        return mouse_icon(k.code);
+    if (k.device == Device::Pad)
+        return pad_icon(k.code);
+    return -1;
+}
+
+// One control into a chip: its word for the reader of text, its icon
+// for the reader of the bar.
+void put(Chip &c, Control k) {
+    c.caps.push_back(impl::control_word(k));
+    const int ic = icon_of(k);
+    if (ic >= 0)
+        c.icons.push_back(ic);
+}
+
 } // namespace
 
 Chip chip_for(const Binding &b, const char *label, bool lit) {
     Chip c;
     c.label = label ? label : "";
     c.lit = lit;
-    c.round = impl::device_of(b) == Device::Pad;
-    if (b.modifier.device != Device::None)
+    if (b.modifier.device != Device::None) {
         c.hold = impl::control_word(b.modifier);
-    const auto word = [&](Control k) { return impl::control_word(k); };
-    switch (b.shape) {
-    case Shape::Plain: {
-        const Control k = b.controls[0];
-        if (k.device == Device::Mouse) {
-            c.icon = mouse_icon(k.code);
-            c.caps = {word(k)};
-            if (k.code == int(Mouse::DoubleClick))
-                c.hold = "2×";
-        } else if (dpad(k)) {
-            c.caps = {"D-pad"};
-        } else {
-            c.caps = {word(k)};
-        }
-        break;
+        c.hold_icon = icon_of(b.modifier);
     }
+    switch (b.shape) {
+    case Shape::Plain:
+        put(c, b.controls[0]);
+        if (b.controls[0] == ControlOf(Mouse::DoubleClick))
+            c.hold = "2×";
+        break;
     case Shape::Axis:
-        if (dpad(b.controls[0]))
-            c.caps = {"D-pad"};
-        else
-            c.caps = {word(b.controls[0]), word(b.controls[1])};
+        put(c, b.controls[0]);
+        put(c, b.controls[1]);
         break;
     case Shape::Axis2:
-        if (dpad(b.controls[0]))
+        if (dpad(b.controls[0])) {
             c.caps = {"D-pad"};
-        else // up, left, down, right: the shape a hand knows
-            c.caps = {word(b.controls[3]), word(b.controls[0]),
-                      word(b.controls[2]), word(b.controls[1])};
+            c.icons = {int(Icon::Dpad)};
+        } else { // up, left, down, right: the shape a hand knows
+            put(c, b.controls[3]);
+            put(c, b.controls[0]);
+            put(c, b.controls[2]);
+            put(c, b.controls[1]);
+        }
         break;
     case Shape::Drag: {
         const Control k = b.controls[0];
         if (k.device == Device::Mouse) {
-            c.icon = mouse_icon(k.code);
+            c.icons = {mouse_icon(k.code)};
             c.caps = {k.code == int(Mouse::Left)    ? "drag"
                       : k.code == int(Mouse::Right) ? "right-drag"
                                                     : "middle-drag"};
         } else {
-            c.caps = {word(k), "RS"};
+            put(c, k);
+            put(c, ControlOf(Pad::RS));
             c.joiner = " + ";
         }
         break;
@@ -140,27 +195,42 @@ void draw_chips(const std::vector<Chip> &chips) {
             ImGui::SameLine(0.0f, gap * 4.0f);
         first = false;
 
+        const float h = chip_height();
+        const auto glyph = [&](int ic) {
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            icon_draw(ImGui::GetWindowDrawList(), Icon(ic), at, h,
+                      ImGui::GetColorU32(c.lit ? ImGuiCol_Text
+                                               : ImGuiCol_TextDisabled));
+            ImGui::Dummy({h, h});
+        };
+        const auto plus = [&] {
+            ImGui::SameLine(0.0f, gap * 0.5f);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+            ImGui::TextDisabled("+");
+            ImGui::SameLine(0.0f, gap * 0.5f);
+        };
         if (!c.hold.empty()) {
-            keycap(c.hold.c_str(), false, false);
+            if (c.hold_icon >= 0)
+                glyph(c.hold_icon);
+            else
+                keycap(c.hold.c_str(), false, false);
             ImGui::SameLine(0.0f, gap * 0.5f);
         }
-        if (c.icon >= 0) {
-            const float h = chip_height();
-            const ImVec2 at = ImGui::GetCursorScreenPos();
-            icon_draw(ImGui::GetWindowDrawList(), Icon(c.icon), at, h,
-                      ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            ImGui::Dummy({h * 0.8f, h});
+        if (!c.icons.empty()) {
+            for (std::size_t i = 0; i < c.icons.size(); ++i) {
+                if (i && c.joiner == " + ")
+                    plus();
+                else if (i)
+                    ImGui::SameLine(0.0f, gap * 0.25f);
+                glyph(c.icons[i]);
+            }
         } else {
             for (std::size_t i = 0; i < c.caps.size(); ++i) {
-                if (i) {
-                    if (c.joiner == " + ") {
-                        ImGui::SameLine(0.0f, gap * 0.5f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
-                        ImGui::TextDisabled("+");
-                    }
+                if (i && c.joiner == " + ")
+                    plus();
+                else if (i)
                     ImGui::SameLine(0.0f, gap * 0.5f);
-                }
-                keycap(c.caps[i].c_str(), c.round, c.lit);
+                keycap(c.caps[i].c_str(), false, c.lit);
             }
         }
 

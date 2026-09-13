@@ -44,7 +44,26 @@ enum class Icon : std::uint8_t {
     MouseLeft,
     MouseRight,
     MouseMiddle,
-    MouseWheel
+    MouseWheel,
+    PadA,
+    PadB,
+    PadX,
+    PadY,
+    PadLB,
+    PadRB,
+    PadLT,
+    PadRT,
+    PadLS,
+    PadRS,
+    PadL3,
+    PadR3,
+    PadStart,
+    PadBack,
+    Dpad,
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight
 };
 
 struct Config {

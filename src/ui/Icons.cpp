@@ -80,6 +80,18 @@ struct Pen {
                            c, t, 0);
     }
 
+    // A word centred at (cx, cy), `scale` of the square tall: the
+    // letter on a face button, the name on a bumper.
+    void text(float cx, float cy, float scale, const char *word,
+              ImU32 ink = 0) const {
+        ImFont *font = ImGui::GetFont();
+        const float px = scale * s;
+        const ImVec2 sz = font->CalcTextSizeA(px, 1e9f, 0.0f, word);
+        const ImVec2 p = at(cx, cy);
+        dl->AddText(font, px, {p.x - sz.x * 0.5f, p.y - sz.y * 0.5f},
+                    ink ? ink : c, word);
+    }
+
     // A tooth ring: `n` teeth alternating between two radii, stroked as
     // one closed outline. Six and not eight, because a tooth narrower
     // than the stroke is a smudge at 16px.
@@ -306,6 +318,92 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
             p.slab(0.42f, 0.11f, 0.58f, 0.38f, 0.08f);
         return;
     }
+
+    // The pad as the prompt sets draw it: a letter in a ring, a wide low
+    // bumper and a tall trigger with their names, a stick a cap in a
+    // well, a click the cap pressed, a D-pad arm filled.
+    case Icon::PadA:
+    case Icon::PadB:
+    case Icon::PadX:
+    case Icon::PadY: {
+        const char *letter = ic == Icon::PadA   ? "A"
+                             : ic == Icon::PadB ? "B"
+                             : ic == Icon::PadX ? "X"
+                                                : "Y";
+        p.ring(0.50f, 0.50f, 0.44f);
+        p.text(0.50f, 0.50f, 0.58f, letter);
+        return;
+    }
+
+    case Icon::PadLB:
+    case Icon::PadRB:
+        p.arc(0.02f, 0.80f, 0.02f, 0.16f, 0.28f, 0.14f, 0.50f, 0.14f);
+        p.arc(0.50f, 0.14f, 0.72f, 0.14f, 0.98f, 0.16f, 0.98f, 0.80f);
+        p.line(0.02f, 0.80f, 0.98f, 0.80f);
+        p.text(0.50f, 0.50f, 0.48f, ic == Icon::PadLB ? "LB" : "RB");
+        return;
+
+    case Icon::PadLT:
+    case Icon::PadRT:
+        p.box(0.14f, 0.04f, 0.86f, 0.96f, 0.24f);
+        p.text(0.50f, 0.50f, 0.48f, ic == Icon::PadLT ? "LT" : "RT");
+        return;
+
+    // A stick is a double ring with its hand's letter; a click fills
+    // the cap and cuts the letter out of it.
+    case Icon::PadLS:
+    case Icon::PadRS:
+    case Icon::PadL3:
+    case Icon::PadR3: {
+        const bool left = ic == Icon::PadLS || ic == Icon::PadL3;
+        const bool click = ic == Icon::PadL3 || ic == Icon::PadR3;
+        p.ring(0.50f, 0.50f, 0.46f);
+        if (click) {
+            // Cut out in the panel's own colour, made opaque: a theme
+            // may fade its windows, a cut-out must not fade with them.
+            ImVec4 bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+            bg.w = 1.0f;
+            p.disc(0.50f, 0.50f, 0.29f);
+            p.text(0.50f, 0.50f, 0.42f, left ? "L" : "R",
+                   ImGui::ColorConvertFloat4ToU32(bg));
+        } else {
+            p.ring(0.50f, 0.50f, 0.36f);
+            p.text(0.50f, 0.50f, 0.44f, left ? "L" : "R");
+        }
+        return;
+    }
+
+    case Icon::PadStart:
+        p.ring(0.50f, 0.50f, 0.44f);
+        p.line(0.32f, 0.37f, 0.68f, 0.37f);
+        p.line(0.32f, 0.50f, 0.68f, 0.50f);
+        p.line(0.32f, 0.63f, 0.68f, 0.63f);
+        return;
+
+    case Icon::PadBack:
+        p.ring(0.50f, 0.50f, 0.44f);
+        p.box(0.29f, 0.35f, 0.59f, 0.61f, 0.03f);
+        p.box(0.41f, 0.43f, 0.71f, 0.69f, 0.03f);
+        return;
+
+    case Icon::Dpad:
+    case Icon::DpadUp:
+    case Icon::DpadDown:
+    case Icon::DpadLeft:
+    case Icon::DpadRight:
+        if (ic == Icon::DpadUp)
+            p.slab(0.36f, 0.04f, 0.64f, 0.36f);
+        if (ic == Icon::DpadDown)
+            p.slab(0.36f, 0.64f, 0.64f, 0.96f);
+        if (ic == Icon::DpadLeft)
+            p.slab(0.04f, 0.36f, 0.36f, 0.64f);
+        if (ic == Icon::DpadRight)
+            p.slab(0.64f, 0.36f, 0.96f, 0.64f);
+        p.poly({0.36f, 0.04f, 0.64f, 0.04f, 0.64f, 0.36f, 0.96f, 0.36f,
+                0.96f, 0.64f, 0.64f, 0.64f, 0.64f, 0.96f, 0.36f, 0.96f,
+                0.36f, 0.64f, 0.04f, 0.64f, 0.04f, 0.36f, 0.36f, 0.36f},
+               true);
+        return;
     }
 }
 
