@@ -11,7 +11,8 @@ make          # configures and builds; needs g++-16 for -freflection
 ```
 
 Space toggles, Up/Down move the relaxation time, R restarts, Esc
-quits.
+quits; on a pad RB, the D-pad, LB. Tab flies, Ctrl+Tab aims a
+crosshair, F1 rebinds any of it.
 Hover a particle and it brightens; click it to tag it: the camera follows it
 and its momentum joins the thermalization plot. Double-click re-centres on a
 point.

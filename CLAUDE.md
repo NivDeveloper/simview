@@ -177,14 +177,23 @@ Next: 3-D scene kinds, and more than one window.
   and nothing else changes; a cloud may carry per-point VALUES beside
   its positions for a colormap, through the same three doors; up to
   four directional lights ride the view block, and an unlit world
-  keeps the light at the camera it always had. **Tab flies the world
-  under the pointer** (W A S D, Q E, the mouse to look, Esc back): the
-  mode is ONE fact on the App, begun and ended by one function each,
-  keys are a held set cleared at take-off and read once a frame, never
-  a stored velocity, and in flight the mouse is the
-  platform's because ImGui is made blind. **A gamepad steers the same
-  camera with no mode at all**, both devices live at once and a key
-  on a stick still one full deflection — `docs/3d-plan.md`, "Flight".
+  keeps the light at the camera it always had. **Input is controls →
+  actions → contexts** (`docs/input.md`): a control is a key, a mouse
+  button or motion, a pad button or stick; an action is an id with a
+  label and a kind; a context is a layer of rows, seven the engine's
+  (base, orbit|fly, cursor|crosshair, stroke, mode) plus one per app
+  mode. The MODE is app state, never the device's: the camera is Orbit
+  or Fly and the pointer a Cursor or a Crosshair (Fly brings the
+  crosshair) on both hands; under the cursor the pad's right stick
+  moves the same cursor and A is the mouse's left button, to ImGui and
+  the world alike. One pure resolve (`src/core/Actions.cpp`,
+  `bindings_check` with no device): chorded before bare, higher context
+  before lower, claims per (control, role), one source counted once,
+  rates clamped to one deflection. Every engine action is bound on both
+  hands; F1 opens the page that rebinds any row, saved beside
+  `layout.ini`, file over code over defaults. Cut and drag are the
+  cloth's modes (`app.Mode`, `OnStroke`, `OnCarry`), not the library's.
+  `PostEvent` carries any control and lands where the OS's do.
   **A click picks** (`Pick`, `world.OnPick`, `world.Follow`): the
   WORLD asks each item's `pick` hook and keeps the nearest, a cloud
   answers from its host copy or not at all, the grid answers as the
@@ -232,7 +241,9 @@ Next: 3-D scene kinds, and more than one window.
   one — is refused at REGISTRATION, where the call that made it is
   still on the stack. And the vocabulary is simview's own: a slider
   takes `Scale::Log`, never an ImGui flag, because no public header
-  may name ImGui.
+  may name ImGui. The settings page (`src/ui/Settings.cpp`) is NOT a
+  widget kind: it is one engine-internal window of one shape, drawn in
+  raw ImGui like the world's menu, and it costs the four sites nothing.
 - **One look, and it is not a setting.** `ui_theme` runs once at
   bring-up and is the only place a colour, a radius or a spacing is
   chosen: a palette of eleven values, every widget colour one of them

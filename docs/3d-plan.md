@@ -122,7 +122,10 @@ src/world/Channel.h      a channel: host, Sync or device buffer, and
 src/world/Cloud.cpp      the cloud item, three ops rows, three doors
 src/world/Wire.cpp       the wire item: edges over a channel, a mask
 src/world/GridAxes.cpp   the grid and the axes, as ordinary items
-src/ui/World.cpp    world_create, the camera controller, the stroke
+src/ui/World.cpp    world_create, the camera's handlers, the menu, the bar
+src/ui/Pointer.cpp  the pointer in both styles, and the gestures
+src/ui/Actions.cpp  the frame's resolve and dispatch, the modes seam
+src/core/Actions.h  the model: controls, bindings, contexts, resolve
 shaders/{world_view,cloud,mesh,wire,grid3,axes3}.slang
 ```
 
@@ -170,74 +173,23 @@ mouse, and none of them was visible in a picture:
   W1 as "the controller has no headless check"; this is what was
   behind it.
 
-## Flight
+## Flight, and the pointer styles
 
-Tab captures the world under the pointer, or the window's, and the
-camera becomes a first-person one: the pointer's motion turns it about
-the EYE, W A S D move it along its own right and forward, Q and E
-along world up, Shift is faster and the wheel scales the speed. Tab or
-Escape releases it, and so does the window losing focus — a window
-that cannot show its own cursor must not keep it hidden. The world
-menu has a `fly` entry naming the key, and in flight the corner
-button gives way to a one-line hint, since there is no pointer to
-press a button with.
-
-The mode is ONE fact: `App::flying`, the world being flown or null,
-written by `world_fly_begin` and `world_fly_end` and nowhere else.
-Beginning does four things together — relative mouse mode on the SDL
-window, ImGui made blind to mouse and keyboard, the held-key set
-cleared, the pointer set — and ending undoes the three that persist,
-so the mode cannot be half-entered. That is
-where its predecessor spent its bugs: vklib flipped a bool on the
-camera from inside a key callback and patched the cursor, the UI's
-event acceptance and a stored velocity around it, and needed a
-first-frame flag to swallow the jump that computing deltas from
-absolute positions produced across the switch.
-
-Three consequences of that one fact:
-
-- **Keys are a held SET, read once a frame, not a velocity set on
-  press.** A flight begins by clearing it, because a release can land
-  in another window and a press remembered from before take-off would
-  move the camera forever. The step is the state of the set times the
-  frame time; nothing is remembered between frames. Clearing it at
-  landing too was written and removed: nothing reads the set out of
-  flight, and the drill could not tell the two apart.
-- **In flight the mouse is the platform's, not ImGui's.** SDL's
-  relative motion and wheel are summed in `poll` into `Input`. ImGui's
-  own delta cannot serve: SDL3's relative mode still moves the reported
-  position inside the window, and ImGui would keep hovering panels
-  under a hidden cursor. `NoMouse` and `NoKeyboard` are what stop that,
-  and the orbit gesture is gated besides — a press latched before the
-  flight would otherwise still be active under it.
-- **The flight keeps exactly its own keys.** W A S D Q E Shift Tab
-  Escape stop at the engine; Space and R still reach the sim, so a
-  pause or a restart works in the air. Out of flight the engine
-  consumes one key, Tab, and only while the app has a world. One
-  dispatch function serves SDL's events and `PostEvent`'s, which is
-  what makes a posted W a real W.
-
-Which world Tab takes is `App::pointed`, rewritten every UI frame by
-whoever is hovered — a panel world by its WINDOW, since an
-overlap-allowed item learns its hover a frame late, the window's world
-when no panel claimed the pointer — and read by the next Tab.
-
-**A gamepad steers without a flight.** The left stick walks, the
-right stick looks, the triggers lift, the left stick pressed is its
-Shift and B its Escape. It needs no mode: a pad has no hotkeys to
-collide with and no pointer to hide, so it steers the world under the
-pointer, else the window's, whenever it is touched, and in a flight
-it steers the flown world beside the keys and the mouse. Both devices
-are live at once and the hand-off is seamless: a key on top of a
-stick is still ONE full deflection, never twice the speed, and the
-in-flight hint names whichever device spoke last. The pad is the
-platform's, six axes and two buttons polled once a frame in `poll`
-into `Input`, and ImGui never sees it — its own copy would be cleared
-by `NoKeyboard` in flight and would open the device a second time.
-The subsystem is optional: a machine that cannot enumerate pads runs
-and says so in the log. `pad_check` pushes raw axes through the same
-dead zone a device does, because a stick at rest never reads exactly
-zero.
+The camera is Orbit or Fly and the pointer a Cursor or a Crosshair,
+app state on both hands — Tab and Back, Ctrl+Tab and R3 — and Fly
+brings the crosshair with it. Under the crosshair the mouse is
+captured, ImGui is blind, both devices turn the camera and a press acts
+at the centre; entering and leaving is one function (`ui_pointer_style`)
+that sets and undoes relative mouse mode, ImGui's blindness, the aimed
+world and the held-key set together, so the style cannot be
+half-entered — which is where its predecessor spent its bugs: vklib
+flipped a bool on the camera from inside a key callback and patched
+the cursor, the UI's event acceptance and a stored velocity around it.
+Focus loss ends the crosshair, since a window that cannot show its own
+cursor must not keep it hidden. The whole model — controls, actions,
+contexts, the resolve, the bar, the settings page — is
+`docs/input.md`; `crosshair_check` proves the flight and the styles
+headless, `input_check` the orbit on both hands.
 
 The camera stays the turntable and grows two mutators. `turn` is
 orbit's rotation applied about the eye, re-deriving the focus, so
@@ -246,21 +198,6 @@ ahead. `move` shifts eye and focus together, at a rate scaled by the
 orbit distance as `pan` is. Neither clamps the pitch, as orbit does
 not. Under orthographic projection turning works and moving ahead is
 invisible, and that is left as it is.
-
-`fly_check` proves it headless — relative mode needs a window and is
-a no-op without one; every other fact flips the same either way. W
-moves eye and focus by one vector along forward; E rises along world Z
-only; a look holds the eye and keeps forward's height; a drag in
-flight moves nothing; Shift and the wheel scale the step; Escape
-releases, and a key held into the release moves nothing after, nor
-does one whose release was lost before the next flight; W never
-reaches the sim while Space does, and both are the sim's again
-afterwards; the panel world under the pointer is the one captured and
-the window's does not turn; a press latched before the flight does not
-orbit under it; over a plain panel Tab falls back to the window's
-world. Two things it cannot reach: a text field keeping Tab, which is
-the OS-event typing gate that `PostEvent` bypasses by design, and the
-release on focus loss, which is an SDL event.
 
 ## Picking
 
@@ -469,66 +406,32 @@ copy changed. A wire picks by the nearest edge the ray passes within
 the click's slop of, masked-out edges excluded; a followed edge is its
 midpoint.
 
-**A stroke is a drag with a stroke tool on, cut or drag.** The tool is a
-field on the world, offered in the on-picture menu only where something
-listens (`OnStroke`). While one is on, a left drag hands each frame's
-motion on as a `Stroke`: two picture-space points, the view it was
-drawn through, what the drag began on, picked once at the press, and
-which tool was on, so one listener serves both. `Crosses(p, q)`
-answers whether a world segment's projection crossed it — the whole of
-what a cut needs — and `Carry(at, to)` moves a world point along it in
-the picture's plane at that point's depth, which is the whole of what
-dragging something is; `On(item)` says which of the two a stroke means.
-Nothing the world has to know about the data. The right button orbits
-meanwhile. A stroke through
-a picture nobody has seen is nothing: headless, that means a shot must
-have been drawn, which is what `stroke_check` learned first.
-
-**The tools have keys, and a gamepad strokes too.** `1 2 3` take the
-camera, cut and drag tools, and the pad's Y takes the next one round —
-in the engine, on the world under the pointer else the window's, and
-only where that world has a stroke listener, which is exactly where
-the menu offers a tool; elsewhere the digits are the sim's keys, as
-Tab is the engine's only while the app has a world. Under a stroke
-tool the pad's MOVE half — the left stick and the triggers — is a
-stroke, not a walk: one a frame from the picture's centre, begun on
-nothing, marked `pad`, the stick's deflection as the picture-space
-delta and the triggers as a `push`, a fraction of the carried point's
-depth, which `Carry` applies along the point's own line of sight so it
-keeps its place in the picture. The look half stays the camera's, so
-the right stick still turns under a tool. The listener decides what a
-pad stroke means: the cloth carries the ball outright under drag, since
-a pad has no pointer to press with, and ignores it under cut, since a
-cut needs a path. The mapping is data (`kTools`), so the keys, the
-menu's entries and the bar agree by construction.
-
-**The key bar.** The corner overlay's hint became a bar built from
-data: `world_legend` returns chips — what to press and what it does —
-and one drawing renders them, a keycap a word, a glyph where a gesture
-has one (the mouse with the button in question filled, or its wheel),
-a pill in the name the controller prints on itself (LS RS LT RT Y B)
-for the pad, the current tool lit. The bar follows whichever device
-spoke last, a mouse event out of flight included. Its first line
-is the keys: the tools, Tab, and whatever the sim bound with a label
-through `OnKey(key, label, fn)` — an unlabelled `OnKey` is bound and
-never shown, so a sim opts a key into the bar by naming it. Its second
-line is the device in the reader's hands, pointer or pad, under the
-tool that is on; in flight the bar is the whole control, as the hint
-was. A probe flattens the same chips to one line, so `stroke_check`
-and `world_controls_check` prove what the bar says rather than hunting
-text in a picture. What this fixed: the hints were strings written by
-hand at three sites and nothing could list a key the sim had bound,
-so a bar was impossible without a table, and the table is now the one
-source for dispatch and display alike.
+**A stroke is a drag with the primary button under a mode of the
+app's.** A mode (`app.Mode({.name, .enter})`) is entered by a key or a
+pad button and listens with `OnStroke` and `OnCarry`; while one is on,
+each frame's pointer motion under the primary is a `Stroke`: two
+picture-space points, the view they were drawn through, what the press
+began on, and a depth the wheel or the triggers push while carrying.
+`Crosses(p, q)` answers whether a world segment's projection crossed
+it — the whole of what a cut needs — and `Carry(at, to)` moves a world
+point along it in the picture's plane at that point's depth, then along
+its line of sight by the depth, which is the whole of what dragging
+something is; `On(item)` says what it began on. Nothing the world has
+to know about the data; the right button, or B with the stick, orbits
+meanwhile. A stroke through a picture nobody has seen is nothing:
+headless, a shot must have been drawn first. The rest — the contexts,
+the resolve, the crosshair's sweep, the bar and the settings page — is
+`docs/input.md`; `modes_check` proves the modes, `cursor_check` the
+one pointer both hands move.
 
 `examples/cloth` is the case: a spring lattice hung from its top edge,
 position-based dynamics with every spring family a stencil over the
 grid, two wires for the structural springs with the families' own masks
-as their masks, cut with the pointer and tearing where a spring is
-stretched past its limit. The sim runs on the host, which is what makes
-the cut exact and immediate: the stroke callback tests every spring
-against the frame's own copy of the positions and queues the crossings
-for the next tick.
+as their masks, a cut mode and a drag mode of its own, tearing where a
+spring is stretched past its limit. The sim runs on the host, which is
+what makes the cut exact and immediate: the stroke callback tests every
+spring against the frame's own copy of the positions and queues the
+crossings for the next tick.
 
 ## Stated limitations
 

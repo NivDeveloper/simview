@@ -232,9 +232,12 @@ Three laws, each learned from the predecessor:
   its own dockspace — which is how a working dockspace became
   decorative.
 - **ImGui capture gates the OS's events, never the sim's own.** A
-  panel wanting the keyboard swallows key events before hotkeys see
-  them; `PostEvent` bypasses capture entirely, because the automation
-  seam addresses the app and must not depend on invisible UI state.
+  panel wanting the keyboard drops key presses before the bindings see
+  them, and one owning the pointer takes the mouse's bindings for the
+  frame; `PostEvent` bypasses capture entirely, because the automation
+  seam addresses the app and must not depend on invisible UI state —
+  and a posted pointer event is injected into ImGui's queue too, so a
+  panel still sees the click.
 
 ## The scene
 
@@ -509,10 +512,12 @@ than a design coupling.
   byte-identically to onscreen; `--shot`-style offscreen capture is
   API, not a debug hack — the pixel tests and eyeless verification
   depend on it.
-- **Input vocabulary**: `Key` names only the ~20 keys sims bind, with
-  numeric values that are the USB-HID/SDL scancodes (a standard
-  adopted, not a mirror that drifts); unnamed keys pass through as the
-  integer. (Arrives in Move 2.)
+- **Input vocabulary**: `Key` names the keys sims bind, with numeric
+  values that are the USB-HID/SDL scancodes (a standard adopted, not a
+  mirror that drifts); unnamed keys pass through as the integer. Beside
+  it `Mouse` and `Pad`, and a `Binding` shapes controls of ONE hand into
+  a value; an action is an id with a label and a kind; modes are the
+  app's. The model and its rules: `docs/input.md`.
 - Names are admitted to the view/plot vocabulary only if they hide a
   decision the caller would otherwise get wrong.
 

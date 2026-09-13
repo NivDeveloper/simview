@@ -240,10 +240,12 @@ src/
   core/      App.h                     the composed App — the one union
              Callbacks.h Error.h       shared by two layers, so below both
              Error.cpp                 set_error, last_error, version
+             Actions.h Actions.cpp     controls → actions → contexts: the
+                                       table, the resolve, the file — no device
   platform/  Device.cpp                gpud/SDL bring-up, window, lifecycle
              Frame.cpp                 frame_build, frame_render, the presenters,
                                        and app_run / app_step / app_shot
-             Input.cpp                 poll, posted events, delivery
+             Input.cpp                 note_event, poll, the posted seam
   scene/     Kinds.h                   KindOps, Shader, Blend, Placement
              Scene.cpp                 scene_draw, the range, views, release
              Field.cpp Particles.cpp   one file per kind: state, uniforms,
@@ -254,6 +256,9 @@ src/
              Context.cpp               lifecycle, dockspace, viewports, view panel
              Plot.cpp PlotDraw.cpp     plots and panels: registration / drawing
              View.cpp                  view registration
+             Actions.cpp               the frame's resolve and dispatch, modes
+             Pointer.cpp               cursor and crosshair, the gestures
+             Chips.cpp Settings.cpp    the bar's spelling, the settings page
   door/      Gpud.cpp
   sync/      Sync.cpp
   testing/   Probe.cpp                 never installed — see below
@@ -295,11 +300,12 @@ The rule:
   `stall_frame` (a frame made to wait on a value nothing signals, so
   `hang_check` can prove the bounded wait reports it), the timing
   records (`timings_on`, `gpu_sections`, `compute_batches` — the last
-  frame's stamps, for `timing_check`), and synthetic pointer input
-  with the camera state to check it against (`mouse_move`,
-  `mouse_button`, `mouse_wheel`, `camera_of` — what
-  `tests/harness/Input.h` is built on) — what a check asks that a
-  consumer never may.
+  frame's stamps, for `timing_check`), and the input's reading side
+  with the camera state to check it against (`camera_of`, `pointer`,
+  `aimed`, `last_device`, `action`, the bindings text both ways, the
+  settings cells — every synthetic input itself goes through the
+  public `PostEvent`, which `tests/harness/Input.h` is built on) —
+  what a check asks that a consumer never may.
 - Test-only exports live in `sv::probe`, never `sv::impl`. One grep
   answers "what exists only for tests?".
 - They live in one file, `src/testing/Probe.cpp`, declared in a header
