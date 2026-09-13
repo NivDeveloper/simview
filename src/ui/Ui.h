@@ -102,7 +102,7 @@ struct Chip {
     std::string label;
     int icon = -1;      // an Icon, drawn in the keycaps' place
     std::string hold;   // a key held with the glyph's gesture
-    bool round = false; // a pad button: the cap is a disc
+    bool round = false; // a pad button: the cap is a pill
     bool lit = false;
 };
 std::vector<Chip> world_legend(impl::App *, impl::WorldState &);

@@ -170,15 +170,17 @@ void poll(App *a) {
             pad_open(a, ev.gdevice.which);
         if (ev.type == SDL_EVENT_GAMEPAD_REMOVED)
             pad_removed(a, ev.gdevice.which);
+        // The pointer spoke: the bar shows the pointer's gestures again.
+        if (ev.type == SDL_EVENT_MOUSE_MOTION ||
+            ev.type == SDL_EVENT_MOUSE_WHEEL ||
+            ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+            a->input.last_pad = false;
         if (a->flying && ev.type == SDL_EVENT_MOUSE_MOTION) {
             a->input.look_dx += ev.motion.xrel;
             a->input.look_dy += ev.motion.yrel;
-            a->input.last_pad = false;
         }
-        if (a->flying && ev.type == SDL_EVENT_MOUSE_WHEEL) {
+        if (a->flying && ev.type == SDL_EVENT_MOUSE_WHEEL)
             a->input.wheel += ev.wheel.y;
-            a->input.last_pad = false;
-        }
         if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
             const Event e{ev.type == SDL_EVENT_KEY_DOWN ? Event::Type::KeyDown
                                                         : Event::Type::KeyUp,

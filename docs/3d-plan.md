@@ -505,8 +505,10 @@ menu's entries and the bar agree by construction.
 **The key bar.** The corner overlay's hint became a bar built from
 data: `world_legend` returns chips — what to press and what it does —
 and one drawing renders them, a keycap a word, a glyph where a gesture
-has one (the mouse with the button in question filled, a thumbstick
-leaning to its side, a trigger), the current tool lit. Its first line
+has one (the mouse with the button in question filled, or its wheel),
+a pill in the name the controller prints on itself (LS RS LT RT Y B)
+for the pad, the current tool lit. The bar follows whichever device
+spoke last, a mouse event out of flight included. Its first line
 is the keys: the tools, Tab, and whatever the sim bound with a label
 through `OnKey(key, label, fn)` — an unlabelled `OnKey` is bound and
 never shown, so a sim opts a key into the bar by naming it. Its second

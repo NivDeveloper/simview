@@ -133,6 +133,11 @@ void gamepad(impl::App *a, const std::int16_t raw[6]) {
         return;
     impl::pad_axes(a->input, raw);
     a->input.pad.present = true;
+    // A touched pad is the device in hand, as the platform's poll says.
+    const impl::Gamepad &g = a->input.pad;
+    if (g.lx != 0.0f || g.ly != 0.0f || g.rx != 0.0f || g.ry != 0.0f ||
+        g.lt != 0.0f || g.rt != 0.0f)
+        a->input.last_pad = true;
 }
 
 void gamepad_buttons(impl::App *a, bool fast, bool back, bool tool) {

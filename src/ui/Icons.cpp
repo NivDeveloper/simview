@@ -298,26 +298,6 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.line(0.20f, 0.46f, 0.80f, 0.46f);
         p.slab(0.42f, 0.14f, 0.58f, 0.38f, 0.07f);
         return;
-
-    // A thumbstick from above: the well, and the cap leaning to the
-    // side the stick is on.
-    case Icon::StickLeft:
-        p.ring(0.50f, 0.50f, 0.40f);
-        p.disc(0.38f, 0.50f, 0.19f);
-        return;
-
-    case Icon::StickRight:
-        p.ring(0.50f, 0.50f, 0.40f);
-        p.disc(0.62f, 0.50f, 0.19f);
-        return;
-
-    // A trigger from the side: the blade curling out from the grip.
-    case Icon::Trigger:
-        p.arc(0.30f, 0.90f, 0.30f, 0.30f, 0.42f, 0.12f, 0.80f, 0.14f);
-        p.arc(0.50f, 0.90f, 0.50f, 0.50f, 0.58f, 0.34f, 0.80f, 0.34f);
-        p.line(0.80f, 0.14f, 0.80f, 0.34f);
-        p.line(0.30f, 0.90f, 0.50f, 0.90f);
-        return;
     }
 }
 

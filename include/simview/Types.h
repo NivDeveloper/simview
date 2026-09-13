@@ -42,10 +42,7 @@ enum class Icon : std::uint8_t {
     Step,
     MouseLeft,
     MouseRight,
-    MouseWheel,
-    StickLeft,
-    StickRight,
-    Trigger
+    MouseWheel
 };
 
 struct Config {

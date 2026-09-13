@@ -318,12 +318,13 @@ Chip button(const char *key, const char *label) {
 
 const Chip kBreak{};
 
-// A pad's stroke tool, and the pad in flight.
+// A pad's stroke tool, and the pad in flight, in the names a
+// controller prints on itself.
 void pad_chips(std::vector<Chip> &chips, const char *stick, const char *trig,
                bool tools) {
-    chips.push_back(glyph(Icon::StickLeft, "left stick", stick));
-    chips.push_back(glyph(Icon::StickRight, "right stick", "look"));
-    chips.push_back(glyph(Icon::Trigger, "triggers", trig));
+    chips.push_back(button("LS", stick));
+    chips.push_back(button("RS", "look"));
+    chips.push_back(button("LT RT", trig));
     if (tools)
         chips.push_back(button("Y", "tool"));
 }
@@ -380,13 +381,13 @@ std::vector<Chip> world_legend(impl::App *a, impl::WorldState &w) {
 
 namespace {
 
-// One keycap: the word centred on a rounded slab — a disc for a pad
+// One keycap: the word centred on a rounded slab — a pill for a pad
 // button — sized from the font so it sits on the text's own line.
 void keycap(const char *word, bool round, bool lit) {
     ImDrawList *dl = ImGui::GetWindowDrawList();
     const float h = ImGui::GetTextLineHeight() + 4.0f;
     const ImVec2 tw = ImGui::CalcTextSize(word);
-    const float w = round ? h : std::max(h, tw.x + 10.0f);
+    const float w = std::max(h, tw.x + 10.0f);
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
     const ImVec2 p1{p0.x + w, p0.y + h};
     const ImU32 face =

@@ -190,6 +190,11 @@ int main() {
     CHECK(strokes.front().On(wire));
     CHECK(!strokes.front().pad);
     CHECK_EQ(strokes.front().push, 0.0f);
+    // Two presses at one spot inside the double-click time: the second
+    // framed the picked point, as a double-click does. Level again, and
+    // draw the picture the pad's strokes go through.
+    w.Camera(kLevel);
+    REQUIRE(harness::shot(app, "stroke_level_pad", img));
 
     // ── under a stroke tool the pad's left stick strokes instead of
     // walking: one a frame, from the pad, begun on nothing, and the
@@ -214,6 +219,17 @@ int main() {
     CHECK_GT(carried[1], 0.02f);
     CHECK_LT(std::fabs(carried[0]), 1e-3f);
     CHECK_LT(std::fabs(carried[2]), 1e-3f);
+
+    // ── the bar follows the device in hand: the pad's names while the
+    // pad spoke last, the pointer's again after a key ────────────────
+    CHECK(bar_says(app, "LS move"));
+    CHECK(bar_says(app, "LT RT pull / push"));
+    CHECK(bar_says(app, "Y tool"));
+    CHECK(!bar_says(app, "drag move"));
+    REQUIRE(harness::shot(app, "stroke_pad_bar", img));
+    input::tap(app, Key::N3);
+    CHECK(bar_says(app, "drag move"));
+    CHECK(!bar_says(app, "LS move"));
 
     // ── the triggers push along the line of sight: away on the right,
     // toward on the left, and the point keeps its place in the picture
