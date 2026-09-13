@@ -203,18 +203,20 @@ int main() {
     CHECK_LT(cam(app).distance, zoom_before.distance);
     w.Camera(kLevel);
 
-    // ── A plus the right stick is the same stroke ────────────────────
+    // ── RT held with the right stick is the same stroke ──────────────
     app.Modes().Enter("cut");
     strokes.clear();
     input::move(app, cx + off, cy - 60.0f);
     const auto put = cam(app);
-    input::pad(app, Pad::A, true);
+    input::stick(app, Pad::RT, 1.0f);
+    app.Step();
     input::stick(app, Pad::RS, 0.0f, 1.0f);
     for (int f = 0; f < 8; ++f)
         app.Step();
     input::stick(app, Pad::RS, 0.0f, 0.0f);
-    input::pad(app, Pad::A, false);
-    std::printf("  A + right stick under cut: %zu strokes, turned %.4f\n",
+    input::stick(app, Pad::RT, 0.0f);
+    app.Step();
+    std::printf("  RT + right stick under cut: %zu strokes, turned %.4f\n",
                 strokes.size(), input::turned(put, cam(app)));
     REQUIRE(strokes.size() >= 5);
     CHECK_LT(input::turned(put, cam(app)), 1e-3f);
@@ -222,7 +224,7 @@ int main() {
     for (const Stroke &s : strokes)
         crossed_y = crossed_y || s.Crosses(y0, y1);
     CHECK(crossed_y);
-    CHECK(bar_says(app, "A + RS cut"));
+    CHECK(bar_says(app, "RT + RS cut"));
 
     // ── under a crosshair a turn sweeps the stroke ───────────────────
     // In flight: a look turns about the eye, so what the crosshair was

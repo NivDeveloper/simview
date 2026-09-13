@@ -75,7 +75,8 @@ int main() {
     if (!app)
         return check::skip("mesh", LastError());
 
-    sv::World w = app.World({.title = "mesh", .grid = false, .axes = false});
+    sv::World w = app.World(
+        {.title = "mesh", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(w));
     w.Camera({.focus = {0.0f, 0.0f, 0.0f},
               .distance = 4.0f,
@@ -119,7 +120,8 @@ int main() {
     // ── one draw for the whole crowd ─────────────────────────────────
     // Instancing is the point of a mesh item: the cost of a thousand
     // is one call, not a thousand.
-    sv::World many = app.World({.title = "many", .grid = false, .axes = false});
+    sv::World many = app.World(
+        {.title = "many", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(many));
     many.Camera({.focus = {0.0f, 0.0f, 0.0f}, .distance = 30.0f});
     app.OnUi([] {
@@ -197,7 +199,8 @@ int main() {
     // Three faces are visible from a corner and each takes the light
     // differently, so a cube's shading is a few steps where a sphere's
     // is a gradient. Its own world, so nothing else answers.
-    sv::World cw = app.World({.title = "cube", .grid = false, .axes = false});
+    sv::World cw = app.World(
+        {.title = "cube", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(cw));
     cw.Camera({.focus = {0.0f, 0.0f, 0.0f},
                .distance = 4.0f,
@@ -235,7 +238,8 @@ int main() {
     // background is a pixel the edge only partly covers. Without
     // multisampling an edge is a staircase and there are none of
     // those; with it there is a rim of them all the way round.
-    sv::World aw = app.World({.title = "edge", .grid = false, .axes = false});
+    sv::World aw = app.World(
+        {.title = "edge", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(aw));
     aw.Camera({.focus = {0.0f, 0.0f, 0.0f},
                .distance = 4.0f,
@@ -277,7 +281,8 @@ int main() {
     // world used to move the first one, and the next frame drew from
     // freed memory — every world in this check until now held exactly
     // one shape, so none of them could have found it. An example did.
-    sv::World both = app.World({.title = "both", .grid = false, .axes = false});
+    sv::World both = app.World(
+        {.title = "both", .grid = false, .axes = false, .controls = false});
     REQUIRE(bool(both));
     both.Camera({.focus = {0.0f, 0.0f, 0.0f},
                  .distance = 6.0f,

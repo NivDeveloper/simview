@@ -657,11 +657,11 @@ int main() {
 
     app.Bind({.id = "pause",
               .label = "pause",
-              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::Start)}},
              [&] { sim.Toggle(); })
         .Bind({.id = "restart",
                .label = "restart",
-               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::Down)}},
               [&] { sim.Restart(); })
         .Bind({.id = "quit",
                .label = "quit",

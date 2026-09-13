@@ -48,7 +48,7 @@ int main() {
     int pauses = 0, others = 0;
     app.Bind({.id = "pause",
               .label = "pause",
-              .controls = {Ctl(Key::Space), Ctl(Pad::RB)}},
+              .controls = {Ctl(Key::Space), Ctl(Pad::Start)}},
              [&] { ++pauses; })
         .Bind({.id = "other", .label = "other", .controls = {Ctl(Key::O)}},
               [&] { ++others; });
@@ -60,7 +60,7 @@ int main() {
     CHECK_EQ(pauses, 0);
     input::tap(app, Key::P);
     CHECK_EQ(pauses, 1);
-    input::pad_tap(app, Pad::RB);
+    input::pad_tap(app, Pad::Start);
     CHECK_EQ(pauses, 2);
     CHECK(text(app).find("base.pause") == std::string::npos); // no file layer
 
@@ -70,7 +70,7 @@ int main() {
     CHECK_EQ(pauses, 2);
     input::tap(app, Key::Return);
     CHECK_EQ(pauses, 3);
-    input::pad_tap(app, Pad::RB);
+    input::pad_tap(app, Pad::Start);
     CHECK_EQ(pauses, 4);
     CHECK(says(app, "base.pause = Key.Return | -"));
 
@@ -86,7 +86,7 @@ int main() {
     CHECK(says(app, "base.pause = Key.Return | Pad.Y"));
     input::pad_tap(app, Pad::Y);
     CHECK_EQ(pauses, 5);
-    input::pad_tap(app, Pad::RB);
+    input::pad_tap(app, Pad::Start);
     CHECK_EQ(pauses, 5);
 
     // ── a trigger on an axis row, and a pair of keys ─────────────────

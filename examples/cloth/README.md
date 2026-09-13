@@ -17,11 +17,11 @@ R restarts, Esc quits; Tab flies, Ctrl+Tab aims a crosshair, F1 opens
 the page that rebinds any of it. The bar at the top of the picture
 lists what the device in your hands does. Drag to orbit, wheel to
 zoom; in a mode the drag strokes and the right button orbits instead.
-A gamepad does the same: X and Y enter the modes, B leaves, RB
-toggles, LB restarts, Back flies, R3 aims, Start opens the page; the
-right stick moves the cursor, A with it strokes, and in the drag mode
-the triggers pull the ball toward you and push it away. The sim runs
-at sixty ticks a second, real time.
+A gamepad does the same: X and Y enter the modes, B leaves, Start
+toggles, D-pad down restarts, D-pad up flies, R3 aims, Back opens the
+page; the right stick moves the cursor, RT held with it strokes and LT
+with it orbits, and in the drag mode the bumpers pull the ball toward
+you and push it away. The sim runs at sixty ticks a second, real time.
 
 ## How it is built
 

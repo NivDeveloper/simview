@@ -21,8 +21,8 @@ constexpr Icon kAll[] = {
     Icon::Perspective, Icon::Orthographic, Icon::Camera,    Icon::Chart,
     Icon::Legend,      Icon::Histogram,    Icon::Density,   Icon::Profile,
     Icon::Joint,       Icon::Restart,      Icon::Forward,   Icon::Play,
-    Icon::Pause,       Icon::Step,         Icon::MouseLeft, Icon::MouseRight,
-    Icon::MouseMiddle, Icon::MouseWheel};
+    Icon::Pause,       Icon::Step,         Icon::Mouse,     Icon::MouseLeft,
+    Icon::MouseRight,  Icon::MouseMiddle,  Icon::MouseWheel};
 constexpr int kCount = int(sizeof kAll / sizeof kAll[0]);
 
 constexpr float kSize = 40.0f;

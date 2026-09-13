@@ -43,7 +43,8 @@ int main() {
     if (!app)
         return check::skip("grid", LastError());
 
-    sv::World w = app.World({.axes = false});
+    // No controls: the bar's pixels would answer for the grid's.
+    sv::World w = app.World({.axes = false, .controls = false});
     REQUIRE(bool(w));
     const auto look = [&](float distance, float azimuth, float elevation) {
         w.Camera({.focus = {0.0f, 0.0f, 0.0f},

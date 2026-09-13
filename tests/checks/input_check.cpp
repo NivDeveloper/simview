@@ -164,19 +164,21 @@ int main() {
     CHECK_LT(input::turned(window_before, window_after), 1.0f);
 
     // ── a pad orbits the same camera the same way ────────────────────
-    // A + right stick is the drag that orbits, the left stick pans, the
-    // triggers zoom, and the right stick alone moves the cursor and
-    // not the camera.
+    // RT held with the right stick is the drag that orbits, the left
+    // stick pans, the bumpers zoom, and the right stick alone moves the
+    // cursor and not the camera.
     input::move(app, 200.0f, 300.0f); // off the panels
     const auto pad_before = cam(app);
-    input::pad(app, Pad::A, true);
+    input::stick(app, Pad::RT, 1.0f);
+    app.Step();
     input::stick(app, Pad::RS, 1.0f, 0.0f);
     for (int f = 0; f < 5; ++f)
         app.Step();
     input::stick(app, Pad::RS, 0.0f, 0.0f);
-    input::pad(app, Pad::A, false);
+    input::stick(app, Pad::RT, 0.0f);
+    app.Step();
     const auto pad_after = cam(app);
-    std::printf("  A + right stick, 5 frames: turned %.2f deg, moved %.4f\n",
+    std::printf("  RT + right stick, 5 frames: turned %.2f deg, moved %.4f\n",
                 input::turned(pad_before, pad_after),
                 input::moved(pad_before, pad_after));
     CHECK_GT(input::turned(pad_before, pad_after), 5.0f);
@@ -209,15 +211,14 @@ int main() {
     CHECK_GT(input::moved(ls_before, cam(app)), 1e-3f);
     CHECK_LT(input::turned(ls_before, cam(app)), 1e-3f);
 
-    const auto rt_before = cam(app);
-    input::stick(app, Pad::RT, 1.0f);
+    const auto rb_before = cam(app);
+    input::pad(app, Pad::RB, true);
     for (int f = 0; f < 5; ++f)
         app.Step();
-    input::stick(app, Pad::RT, 0.0f);
-    app.Step();
-    std::printf("  right trigger: distance %.3f -> %.3f\n", rt_before.distance,
+    input::pad(app, Pad::RB, false);
+    std::printf("  right bumper: distance %.3f -> %.3f\n", rb_before.distance,
                 cam(app).distance);
-    CHECK_LT(cam(app).distance, rt_before.distance - 0.01f);
+    CHECK_LT(cam(app).distance, rb_before.distance - 0.01f);
 
     // ── a sim with no world and no panel keeps its keys ──────────────
     {

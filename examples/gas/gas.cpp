@@ -186,7 +186,7 @@ int main() {
 
     app.Bind({.id = "pause",
               .label = "pause",
-              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::Start)}},
              [&] { running = !running; })
         .Bind({.id = "quit",
                .label = "quit",

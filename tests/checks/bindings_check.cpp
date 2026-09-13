@@ -395,8 +395,10 @@ int main() {
         s.rt = 0.9f;
         CHECK(capture_scan(s, Device::Keyboard) == ControlOf(Key::F1));
         CHECK(capture_scan(s, Device::Pad) == ControlOf(Pad::Y));
+        // A trigger edges like a button: past a half is its press.
         Snapshot t = frame();
         t.rt = 0.9f;
+        t.pad_pressed[int(Pad::RT)] = t.pad_down[int(Pad::RT)] = true;
         CHECK(capture_scan(t, Device::Pad) == ControlOf(Pad::RT));
         CHECK(capture_scan(t, Device::Keyboard).device == Device::None);
         t.mouse_pressed[1] = true;

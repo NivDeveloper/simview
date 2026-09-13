@@ -34,34 +34,35 @@ ActionRow &add(ActionTable &t, const char *ctx, const char *id,
                  {id, label, kind, v.data(), std::int32_t(v.size())});
 }
 
-// Every engine action, bound on both hands. A row's label is the
-// context's word for it: camera.turn is "orbit" here and "look" there.
+// Every engine action on both hands, the pad's as a pad stands in for a
+// mouse: RS the pointer, RT and LT its buttons, the bumpers its wheel.
+// A row's label is the context's word: camera.turn is "orbit" or "look".
 void engine_defaults(ActionTable &t) {
     add(t, "base", "settings", "settings", ActionKind::Button,
-        {Ctl(Key::F1), Ctl(Pad::Start)});
+        {Ctl(Key::F1), Ctl(Pad::Back)});
 
     add(t, "orbit", "mode.camera", "fly", ActionKind::Button,
-        {Ctl(Key::Tab), Ctl(Pad::Back)});
+        {Ctl(Key::Tab), Ctl(Pad::Up)});
     add(t, "orbit", "camera.turn", "orbit", ActionKind::Axis2,
-        {Drag(Mouse::Left), Drag(Mouse::Right), Drag(Pad::A), Drag(Pad::B)});
+        {Drag(Mouse::Left), Drag(Mouse::Right), Drag(Pad::RT), Drag(Pad::LT)});
     add(t, "orbit", "camera.slide", "pan", ActionKind::Axis2,
         {With(Key::LeftShift, Drag(Mouse::Left)), Drag(Mouse::Middle),
          Ctl(Pad::LS)});
     add(t, "orbit", "camera.depth", "zoom", ActionKind::Axis,
-        {Ctl(Mouse::Wheel), Axis(Pad::LT, Pad::RT)});
+        {Ctl(Mouse::Wheel), Axis(Pad::LB, Pad::RB)});
     add(t, "orbit", "camera.frame", "frame", ActionKind::Button,
         {Ctl(Mouse::DoubleClick)});
 
     add(t, "fly", "mode.camera", "orbit", ActionKind::Button,
-        {Ctl(Key::Tab), Ctl(Pad::Back)});
+        {Ctl(Key::Tab), Ctl(Pad::Up)});
     add(t, "fly", "camera.slide", "move", ActionKind::Axis2,
         {Axis2(Key::A, Key::D, Key::S, Key::W), Ctl(Pad::LS)});
     add(t, "fly", "camera.depth", "down / up", ActionKind::Axis,
-        {Axis(Key::Q, Key::E), Axis(Pad::LT, Pad::RT)});
+        {Axis(Key::Q, Key::E), Axis(Pad::LB, Pad::RB)});
     add(t, "fly", "camera.fast", "faster", ActionKind::Button,
         {Ctl(Key::LeftShift), Ctl(Pad::L3)});
     add(t, "fly", "camera.speed", "speed", ActionKind::Axis,
-        {Ctl(Mouse::Wheel), Axis(Pad::Down, Pad::Up)});
+        {Ctl(Mouse::Wheel), Axis(Pad::Left, Pad::Right)});
     add(t, "fly", "camera.frame", "frame", ActionKind::Button,
         {Ctl(Mouse::DoubleClick)});
 
@@ -71,22 +72,25 @@ void engine_defaults(ActionTable &t) {
         {Ctl(Mouse::Move), Ctl(Pad::RS)})
         .claims = false;
     add(t, "cursor", "pointer.primary", "pick", ActionKind::Button,
-        {Ctl(Mouse::Left), Ctl(Pad::A)});
+        {Ctl(Mouse::Left), Ctl(Pad::RT), Ctl(Pad::A)});
     add(t, "cursor", "pointer.secondary", "", ActionKind::Button,
-        {Ctl(Mouse::Right), Ctl(Pad::B)});
+        {Ctl(Mouse::Right), Ctl(Pad::LT)});
 
     add(t, "crosshair", "mode.pointer", "cursor", ActionKind::Button,
         {With(Key::LeftCtrl, Ctl(Key::Tab)), Ctl(Key::Escape), Ctl(Pad::R3),
          Ctl(Pad::B)});
     add(t, "crosshair", "camera.turn", "look", ActionKind::Axis2,
         {Ctl(Mouse::Move), Ctl(Pad::RS)});
+    // No pointer to drag with: the keys and the left stick slide.
+    add(t, "crosshair", "camera.slide", "move", ActionKind::Axis2,
+        {Axis2(Key::A, Key::D, Key::S, Key::W), Ctl(Pad::LS)});
     add(t, "crosshair", "pointer.primary", "pick", ActionKind::Button,
-        {Ctl(Mouse::Left), Ctl(Pad::A)});
+        {Ctl(Mouse::Left), Ctl(Pad::RT), Ctl(Pad::A)});
 
     add(t, "stroke", "pointer.drag", "", ActionKind::Axis2,
-        {Drag(Mouse::Left), Drag(Pad::A)});
+        {Drag(Mouse::Left), Drag(Pad::RT)});
     add(t, "stroke", "pointer.depth", "pull / push", ActionKind::Axis,
-        {Ctl(Mouse::Wheel), Axis(Pad::LT, Pad::RT)});
+        {Ctl(Mouse::Wheel), Axis(Pad::LB, Pad::RB)});
 
     add(t, "mode", "mode.exit", "exit", ActionKind::Button,
         {Ctl(Key::Escape), Ctl(Pad::B)});

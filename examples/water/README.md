@@ -10,10 +10,10 @@ make          # configures and builds; needs g++-16 for -freflection
 ./build/water
 ```
 
-Space toggles, R restarts, Esc quits; on a pad RB, LB. Drag to orbit,
-wheel to zoom; Tab flies, Ctrl+Tab aims a crosshair, F1 rebinds any of
-it. Click the water, or the floor, and a jet goes up there — with the
-mouse or with A under the pad's cursor.
+Space toggles, R restarts, Esc quits; on a pad Start and D-pad down.
+Drag to orbit, wheel to zoom; Tab flies, Ctrl+Tab aims a crosshair, F1
+rebinds any of it. Click the water, or the floor, and a jet goes up
+there — with the mouse or with RT under the pad's cursor.
 
 ## The controls
 

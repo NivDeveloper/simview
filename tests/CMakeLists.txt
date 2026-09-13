@@ -15,7 +15,7 @@ foreach(t field_check loop_check sync_check gpud_check ui_check plot_check
             cull_check panel_check theme_check derive_check surface_check icon_check
             chrome_check world_controls_check pick_check
             pick_screen_check wire_check modes_check cursor_check
-            crosshair_check settings_check layout_check)
+            crosshair_check settings_check bar_check layout_check)
     add_executable(${t} checks/${t}.cpp)
     target_link_libraries(${t} PRIVATE simview::simview)
     # Quoted includes resolve against the INCLUDING file's directory,

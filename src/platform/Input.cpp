@@ -82,11 +82,26 @@ int mouse_of(Uint8 button) {
 
 } // namespace
 
+// A trigger past a half is down, and its edges are noted as a
+// button's, so it clicks and gates a drag as a mouse button does.
+void trigger_edges(PadState &p) {
+    const int codes[2] = {int(Pad::LT), int(Pad::RT)};
+    for (int i = 0; i < 2; ++i) {
+        const bool d = p.axes[4 + i] > 0.5f;
+        if (d && !p.down[codes[i]])
+            p.pressed[codes[i]] = true;
+        if (!d && p.down[codes[i]])
+            p.released[codes[i]] = true;
+        p.down[codes[i]] = d;
+    }
+}
+
 void pad_axes(PadState &p, const std::int16_t raw[6]) {
     for (int i = 0; i < 4; ++i)
         p.axes[i] = stick(raw[i]);
     p.axes[4] = trigger(raw[4]);
     p.axes[5] = trigger(raw[5]);
+    trigger_edges(p);
 }
 
 void note_event(App *a, const Event &e) {
@@ -140,6 +155,7 @@ void note_event(App *a, const Event &e) {
             } else if (k == int(Pad::RT)) {
                 in.pad.axes[5] = e.x;
             }
+            trigger_edges(in.pad);
             if (e.x != 0.0f || e.y != 0.0f)
                 in.last = Device::Pad;
             return;

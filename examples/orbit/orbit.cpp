@@ -1,11 +1,11 @@
 // A world you can look around: a shell of particles coloured by
 // direction over a ground grid, lit from above and to one side.
 // Drag inside the window to orbit, shift-drag or middle-drag to pan,
-// wheel to zoom; on a pad A with the right stick orbits, the left
-// stick pans, the triggers zoom. Tab (Back) flies: W A S D and Q E
-// move, the mouse or the right stick looks, Shift (L3) is faster, the
-// wheel (D-pad) sets the speed, Esc (B) comes back. F1 rebinds any of
-// it, and the bar on the picture lists what your device does.
+// wheel to zoom; on a pad RT held with the right stick orbits, the
+// left stick pans, the bumpers zoom. Tab (D-pad up) flies: W A S D and
+// Q E move, the mouse or the right stick looks, Shift (L3) is faster,
+// the wheel (D-pad) sets the speed, Esc (B) comes back. F1 (Back)
+// rebinds any of it, and the bar lists what your device does.
 //
 // The world has no title, so it IS the window and the panel floats
 // over it. Give it one and it becomes a panel among panels instead.

@@ -22,6 +22,8 @@ int mouse_icon(std::int32_t code) {
         return int(Icon::MouseMiddle);
     case Mouse::Wheel:
         return int(Icon::MouseWheel);
+    case Mouse::Move:
+        return int(Icon::Mouse);
     default:
         return -1;
     }
@@ -45,13 +47,11 @@ Chip chip_for(const Binding &b, const char *label, bool lit) {
     switch (b.shape) {
     case Shape::Plain: {
         const Control k = b.controls[0];
-        if (k.device == Device::Mouse && mouse_icon(k.code) >= 0) {
+        if (k.device == Device::Mouse) {
             c.icon = mouse_icon(k.code);
             c.caps = {word(k)};
             if (k.code == int(Mouse::DoubleClick))
                 c.hold = "2×";
-        } else if (k.device == Device::Mouse) {
-            c.caps = {"mouse"};
         } else if (dpad(k)) {
             c.caps = {"D-pad"};
         } else {
@@ -104,11 +104,15 @@ std::string chip_text(const Chip &c) {
 
 namespace impl {
 
+// The bar's row height: a keycap's, and a glyph's, so the two sit on
+// one line.
+float chip_height() { return ImGui::GetTextLineHeight() + 8.0f; }
+
 void keycap(const char *word, bool round, bool lit) {
     ImDrawList *dl = ImGui::GetWindowDrawList();
-    const float h = ImGui::GetTextLineHeight() + 4.0f;
+    const float h = chip_height();
     const ImVec2 tw = ImGui::CalcTextSize(word);
-    const float w = std::max(h, tw.x + 10.0f);
+    const float w = std::max(h, tw.x + 12.0f);
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
     const ImVec2 p1{p0.x + w, p0.y + h};
     const ImU32 face =
@@ -141,17 +145,17 @@ void draw_chips(const std::vector<Chip> &chips) {
             ImGui::SameLine(0.0f, gap * 0.5f);
         }
         if (c.icon >= 0) {
-            const float h = ImGui::GetTextLineHeight() + 4.0f;
+            const float h = chip_height();
             const ImVec2 at = ImGui::GetCursorScreenPos();
             icon_draw(ImGui::GetWindowDrawList(), Icon(c.icon), at, h,
                       ImGui::GetColorU32(ImGuiCol_TextDisabled));
-            ImGui::Dummy({h, h});
+            ImGui::Dummy({h * 0.8f, h});
         } else {
             for (std::size_t i = 0; i < c.caps.size(); ++i) {
                 if (i) {
                     if (c.joiner == " + ") {
                         ImGui::SameLine(0.0f, gap * 0.5f);
-                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+                        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
                         ImGui::TextDisabled("+");
                     }
                     ImGui::SameLine(0.0f, gap * 0.5f);
@@ -164,7 +168,7 @@ void draw_chips(const std::vector<Chip> &chips) {
             continue;
         ImGui::SameLine(0.0f, gap);
         // Text sits on the cap's own centre line.
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
         if (c.lit)
             ImGui::TextUnformatted(c.label.c_str());
         else

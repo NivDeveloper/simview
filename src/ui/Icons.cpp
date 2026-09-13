@@ -59,6 +59,13 @@ struct Pen {
         dl->AddRectFilled(at(x0, y0), at(x1, y1), c, round * s);
     }
 
+    // A slab rounded on the corners named, so a fill can sit inside an
+    // outline's own corner.
+    void slab(float x0, float y0, float x1, float y1, float round,
+              ImDrawFlags corners) const {
+        dl->AddRectFilled(at(x0, y0), at(x1, y1), c, round * s, corners);
+    }
+
     void ring(float cx, float cy, float r) const {
         dl->AddCircle(at(cx, cy), r * s, c, 0, t);
     }
@@ -277,34 +284,28 @@ void icon_draw(ImDrawList *dl, Icon ic, ImVec2 at, float size, ImU32 col) {
         p.slab(0.73f, 0.15f, 0.86f, 0.85f, 0.04f);
         return;
 
-    // A mouse, the button in question filled: the same body three
-    // times, so the three read as one device and differ in one place.
+    // A mouse: one body five times, so they read as one device and
+    // differ in one place — the button in question filled to the
+    // body's own corner, the wheel a pill, the bare body a motion.
+    case Icon::Mouse:
     case Icon::MouseLeft:
-        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
-        p.line(0.50f, 0.06f, 0.50f, 0.46f);
-        p.line(0.20f, 0.46f, 0.80f, 0.46f);
-        p.slab(0.23f, 0.10f, 0.47f, 0.43f, 0.10f);
-        return;
-
     case Icon::MouseRight:
-        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
-        p.line(0.50f, 0.06f, 0.50f, 0.46f);
-        p.line(0.20f, 0.46f, 0.80f, 0.46f);
-        p.slab(0.53f, 0.10f, 0.77f, 0.43f, 0.10f);
-        return;
-
     case Icon::MouseMiddle:
-        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
-        p.line(0.50f, 0.06f, 0.50f, 0.46f);
-        p.line(0.20f, 0.46f, 0.80f, 0.46f);
-        p.slab(0.40f, 0.12f, 0.60f, 0.40f, 0.08f);
+    case Icon::MouseWheel: {
+        const float x0 = 0.22f, x1 = 0.78f, top = 0.03f, bottom = 0.97f;
+        const float split = 0.46f, r = 0.26f;
+        if (ic == Icon::MouseLeft)
+            p.slab(x0, top, 0.50f, split, r, ImDrawFlags_RoundCornersTopLeft);
+        if (ic == Icon::MouseRight)
+            p.slab(0.50f, top, x1, split, r, ImDrawFlags_RoundCornersTopRight);
+        p.box(x0, top, x1, bottom, r);
+        p.line(x0, split, x1, split);
+        if (ic != Icon::Mouse && ic != Icon::MouseWheel)
+            p.line(0.50f, top, 0.50f, split);
+        if (ic == Icon::MouseMiddle || ic == Icon::MouseWheel)
+            p.slab(0.42f, 0.11f, 0.58f, 0.38f, 0.08f);
         return;
-
-    case Icon::MouseWheel:
-        p.box(0.20f, 0.06f, 0.80f, 0.94f, 0.26f);
-        p.line(0.20f, 0.46f, 0.80f, 0.46f);
-        p.slab(0.42f, 0.14f, 0.58f, 0.38f, 0.07f);
-        return;
+    }
     }
 }
 

@@ -35,6 +35,8 @@ bool is_analog(Control c) {
     return is_stick(c) || is_trigger(c);
 }
 
+// A control with a press: a key, a mouse button, a pad button — and a
+// trigger, which is down past a half and edges like a button.
 bool is_button(Control c) {
     switch (c.device) {
     case Device::Keyboard:
@@ -44,10 +46,15 @@ bool is_button(Control c) {
                c.code == int(Mouse::Middle) ||
                c.code == int(Mouse::DoubleClick);
     case Device::Pad:
-        return is_pad_button(c.code);
+        return is_pad_button(c.code) || is_trigger(c);
     default:
         return false;
     }
+}
+
+bool pad_presses(std::int32_t code) {
+    return code >= 0 && code < kPadControls && code != int(Pad::LS) &&
+           code != int(Pad::RS);
 }
 
 bool down(const Snapshot &s, Control c) {
@@ -84,7 +91,7 @@ bool pressed(const Snapshot &s, Control c) {
             return s.double_click;
         return c.code >= 0 && c.code < 3 && s.mouse_pressed[c.code];
     case Device::Pad:
-        return is_pad_button(c.code) && s.pad_pressed[c.code];
+        return pad_presses(c.code) && s.pad_pressed[c.code];
     default:
         return false;
     }
@@ -98,7 +105,7 @@ bool released(const Snapshot &s, Control c) {
     case Device::Mouse:
         return c.code >= 0 && c.code < 3 && s.mouse_released[c.code];
     case Device::Pad:
-        return is_pad_button(c.code) && s.pad_released[c.code];
+        return pad_presses(c.code) && s.pad_released[c.code];
     default:
         return false;
     }
@@ -208,6 +215,8 @@ Read read(const Binding &b, const Snapshot &s, ActionKind kind) {
             level(s, c, &x, &y);
             if (kind == ActionKind::Button) {
                 v.down = std::hypot(x, y) > kHalf;
+                v.pressed = pressed(s, c);
+                v.released = released(s, c);
             } else if (c.device == Device::Mouse) {
                 v.x = x;
                 v.y = y;
@@ -457,16 +466,18 @@ void resolve(ActionTable &t, const Snapshot &s) {
     for (const Cand &c : cands) {
         ActionRow &r = t.rows[std::size_t(c.row)];
         const Binding &b = effective(r, c.dev)[std::size_t(c.bind)];
-        if (b.modifier.device != Device::None && !down(s, b.modifier))
-            continue;
         want.clear();
         claims_of(b, s, want);
         if (taken(set, want))
             continue;
+        // Alive is not shadowed: a chord whose modifier is up is still
+        // the bar's to list, it just says nothing this frame.
         if (c.dev == Device::Pad)
             r.alive_pad |= 1u << c.bind;
         else
             r.alive_km |= 1u << c.bind;
+        if (b.modifier.device != Device::None && !down(s, b.modifier))
+            continue;
         // A panel that owns the pointer takes the mouse's bindings for
         // the frame; they are still alive, so the bar still lists them.
         if (!s.mouse_free && mouse_bound(b))
@@ -546,7 +557,7 @@ constexpr KeyName kKeyNames[] = {
 constexpr const char *kMouseNames[] = {"Left", "Right", "Middle",
                                        "Move", "Wheel", "DoubleClick"};
 constexpr const char *kMouseWords[] = {"click", "right-click", "middle-click",
-                                       "move",  "wheel",       "double-click"};
+                                       "mouse", "wheel",       "double-click"};
 constexpr const char *kPadNames[] = {
     "A",  "B",     "X",    "Y",  "LB",   "RB",   "LT",    "RT", "L3",
     "R3", "Start", "Back", "Up", "Down", "Left", "Right", "LS", "RS"};
@@ -899,12 +910,8 @@ void table_load(ActionTable &t, const std::string &text) {
 Control capture_scan(const Snapshot &s, Device d) {
     if (d == Device::Pad) {
         for (int i = 0; i < kPadControls; ++i)
-            if (is_pad_button(i) && s.pad_pressed[i])
+            if (pad_presses(i) && s.pad_pressed[i])
                 return {Device::Pad, i};
-        if (s.lt > kHalf)
-            return ControlOf(Pad::LT);
-        if (s.rt > kHalf)
-            return ControlOf(Pad::RT);
         if (std::hypot(s.lx, s.ly) > kHalf)
             return ControlOf(Pad::LS);
         if (std::hypot(s.rx, s.ry) > kHalf)

@@ -82,19 +82,19 @@ int main() {
 
     app.Bind({.id = "pause",
               .label = "pause",
-              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::RB)}},
+              .controls = {sv::Ctl(sv::Key::Space), sv::Ctl(sv::Pad::Start)}},
              [&] { sim.Toggle(); })
         .Bind({.id = "warmer",
                .label = "warmer",
-               .controls = {sv::Ctl(sv::Key::Up), sv::Ctl(sv::Pad::Up)}},
+               .controls = {sv::Ctl(sv::Key::Up), sv::Ctl(sv::Pad::Right)}},
               [&] { temperature = std::min(4.5f, temperature + 0.05f); })
         .Bind({.id = "cooler",
                .label = "cooler",
-               .controls = {sv::Ctl(sv::Key::Down), sv::Ctl(sv::Pad::Down)}},
+               .controls = {sv::Ctl(sv::Key::Down), sv::Ctl(sv::Pad::Left)}},
               [&] { temperature = std::max(0.05f, temperature - 0.05f); })
         .Bind({.id = "restart",
                .label = "restart",
-               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::LB)}},
+               .controls = {sv::Ctl(sv::Key::R), sv::Ctl(sv::Pad::Down)}},
               [&] { sim.Restart(); })
         .Bind({.id = "quit",
                .label = "quit",

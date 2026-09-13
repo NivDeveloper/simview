@@ -207,12 +207,14 @@ std::vector<Chip> world_legend(impl::App *a, impl::WorldState &w) {
         chip(*r, "settings", false);
     chips.push_back(Chip{});
 
+    // What the hand does here: a mode's stroke first, then the camera,
+    // then the way out. A pick and a double-click are not listed — they
+    // are what a click is everywhere, and the page names them.
     const char *mode = impl::app_active_mode(a);
     const bool orbit = in.camera == CameraMode::Orbit;
-    const char *ids[] = {"camera.turn",     "camera.slide", "camera.depth",
-                         "camera.fast",     "camera.speed", "camera.frame",
-                         "pointer.primary", "pointer.drag", "pointer.depth",
-                         "mode.exit"};
+    const char *ids[] = {"pointer.drag", "pointer.depth", "camera.turn",
+                         "camera.slide", "camera.depth",  "camera.fast",
+                         "camera.speed", "mode.exit"};
     for (const char *id : ids) {
         const impl::ActionRow *r = row(id);
         if (!r || !r->enabled)
@@ -222,6 +224,8 @@ std::vector<Chip> world_legend(impl::App *a, impl::WorldState &w) {
             label = mode ? mode : "";
         else if (r->id == "camera.turn" && orbit)
             label = "orbit";
+        else if (r->id == "camera.slide" && orbit)
+            label = "pan";
         chip(*r, label, false);
     }
     return chips;
@@ -256,24 +260,51 @@ void world_controls(impl::App *a, impl::WorldState &w, ImVec2 at) {
     ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
-// WantCaptureMouse is the whole test: true while a panel is hovered
-// or owns a drag.
+// Two windows: the button's, which takes the pointer, and the bar's,
+// which lets it through — full width, so a bar whose words change
+// never clips for the frame an auto-sized window takes to catch up.
 void ui_world_overlay(impl::App *a) {
     if (!a || !a->world || !a->world->controls)
         return;
+    impl::WorldState &w = *a->world;
     const ImGuiViewport *vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(vp->WorkPos);
-    ImGui::SetNextWindowBgAlpha(0.0f);
+    const float pad = ImGui::GetStyle().WindowPadding.x;
+    const int flags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    if (ImGui::Begin("##world_controls", nullptr,
-                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                         ImGuiWindowFlags_NoSavedSettings |
-                         ImGuiWindowFlags_AlwaysAutoResize |
-                         ImGuiWindowFlags_NoFocusOnAppearing |
-                         ImGuiWindowFlags_NoNav |
-                         ImGuiWindowFlags_NoBringToFrontOnFocus))
-        world_controls(a, *a->world, vp->WorkPos);
+    ImGui::PushID(&w);
+
+    float bar_x = vp->WorkPos.x + pad;
+    if (a->aimed != &w) {
+        ImGui::SetNextWindowPos(vp->WorkPos);
+        ImGui::SetNextWindowBgAlpha(0.0f);
+        if (ImGui::Begin("##world_controls", nullptr,
+                         flags | ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (impl::icon_button(Icon::Cube, "view",
+                                  "camera and what is drawn"))
+                ImGui::OpenPopup("##world_menu");
+            if (ImGui::BeginPopup("##world_menu")) {
+                world_menu(a, w);
+                ImGui::EndPopup();
+            }
+            bar_x = ImGui::GetWindowPos().x + ImGui::GetWindowSize().x;
+        }
+        ImGui::End();
+    }
+
+    ImGui::SetNextWindowPos(ImVec2(bar_x, vp->WorkPos.y));
+    ImGui::SetNextWindowSize(
+        ImVec2(vp->WorkPos.x + vp->WorkSize.x - bar_x, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.0f);
+    if (ImGui::Begin("##world_bar", nullptr,
+                     flags | ImGuiWindowFlags_NoInputs |
+                         ImGuiWindowFlags_AlwaysAutoResize))
+        impl::draw_chips(world_legend(a, w));
     ImGui::End();
+
+    ImGui::PopID();
     ImGui::PopStyleVar();
 }
 

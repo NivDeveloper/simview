@@ -77,21 +77,31 @@ at its centre with the picture turning under it. Fly and Cursor are
 mutually exclusive: `Camera(Fly)` brings the crosshair, `Pointer(Cursor)`
 brings the orbit. Neither is a property of a device.
 
+The pad's side follows the way a pad stands in for a mouse on a desk:
+the right stick is the pointer, RT and LT its two buttons (a trigger
+past a half is down, and edges like a button), the bumpers its wheel,
+the left stick the other hand; face buttons are never chorded with a
+stick. Start is left to the app for pause, as consoles have it.
+
 | action | Orbit + Cursor | Orbit + Crosshair | Fly + Crosshair |
 | --- | --- | --- | --- |
-| turn | drag, right-drag · A + RS, B + RS | mouse · RS | mouse · RS |
-| slide | Shift + drag, middle-drag · LS | Shift + drag, middle-drag · LS | W A S D · LS |
-| depth | wheel · LT RT | wheel · LT RT | Q E · LT RT |
-| fast / speed | | | Shift · L3 / wheel · D-pad |
+| turn | drag, right-drag · RT + RS, LT + RS | mouse · RS | mouse · RS |
+| slide | Shift + drag, middle-drag · LS | W A S D · LS | W A S D · LS |
+| depth | wheel · LB RB | wheel · LB RB | Q E · LB RB |
+| fast / speed | | | Shift · L3 / wheel · D-pad ◂ ▸ |
 | frame | 2× click | 2× click | 2× click |
-| toggle camera | Tab · Back | Tab · Back | Tab · Back |
+| toggle camera | Tab · D-pad ▴ | Tab · D-pad ▴ | Tab · D-pad ▴ |
 | toggle pointer | Ctrl+Tab · R3 | Ctrl+Tab, Esc · R3, B | Ctrl+Tab, Esc · R3, B |
-| settings | F1 · Start | F1 · Start | F1 · Start |
+| settings | F1 · Back | F1 · Back | F1 · Back |
 
 Under the cursor the pad's right stick moves the SAME cursor the mouse
-does, warped along in a window and fed to ImGui headless, and A is the
-mouse's left button to ImGui and the resolver alike: a panel's checkbox,
-a hover and a pick behave the same from either device (`cursor_check`).
+does, warped along in a window and fed to ImGui headless, and RT (or
+A) is the mouse's left button to ImGui and the resolver alike: a
+panel's checkbox, a hover and a pick behave the same from either device
+(`cursor_check`). The bar lists what the hand in use does under the
+state that is on — a mode's stroke first, then the camera, then the
+way out — and not the click and the double-click, which are what a
+click is everywhere; `bar_check` reads and shoots every state.
 Under the crosshair the mouse is captured, ImGui is blind, both devices
 turn the camera, and a press acts at the centre; a stroke there runs
 from where the aim point was last frame to the centre, so a turn sweeps

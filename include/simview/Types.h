@@ -40,6 +40,7 @@ enum class Icon : std::uint8_t {
     Play,
     Pause,
     Step,
+    Mouse,
     MouseLeft,
     MouseRight,
     MouseMiddle,
